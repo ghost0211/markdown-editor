@@ -223,3 +223,9 @@
   border-radius: 0.5rem;
   margin: 1em 0;
 }
+
+/* Code Blocks & High-Contrast Fallback */
+.markdown-body pre code {
+  color: #c9d1d9;
+  background-color: transparent;
+}

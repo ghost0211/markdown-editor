@@ -5,6 +5,8 @@ import React, {
   useState,
   useCallback,
   useMemo,
+  useContext,
+  createContext,
 } from 'react';
 import Markdown, { Components, ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
@@ -14,6 +16,19 @@ import { openExternalUrl } from '@/lib/native';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import 'highlight.js/styles/github-dark.css';
+
+/**
+ * Centralized color constants for code blocks (GitHub Dark compatible).
+ * Using explicit styles ensures high contrast in both light and dark UI themes
+ * regardless of CSS bundle order or body inheritance.
+ */
+export const CODE_THEME = {
+  bg: '#0d1117',
+  headerBg: '#161b22',
+  headerBorder: '#30363d',
+  headerText: '#8b949e',
+  text: '#c9d1d9',
+} as const;
 
 export interface PreviewHandle {
   scrollToAnchor: (slug: string, line?: number) => void;
@@ -109,45 +124,104 @@ function findElementInContainer(
 
 const TOP_SCROLL_OFFSET = 16;
 
-interface CodeProps extends React.ComponentPropsWithoutRef<'code'> {
+/**
+ * Recursively extracts plain text content from React nodes / AST children.
+ */
+export function extractTextContent(node: React.ReactNode): string {
+  if (typeof node === 'string') return node;
+  if (typeof node === 'number') return String(node);
+  if (!node) return '';
+  if (Array.isArray(node)) {
+    return node.map(extractTextContent).join('');
+  }
+  if (React.isValidElement(node) && node.props && 'children' in (node.props as Record<string, unknown>)) {
+    return extractTextContent((node.props as { children?: React.ReactNode }).children);
+  }
+  return '';
+}
+
+/**
+ * Context to distinguish block code (inside <pre>) from inline code (`...`).
+ */
+export const PreContext = createContext<boolean>(false);
+
+export const PreRenderer: React.FC<React.ComponentPropsWithoutRef<'pre'> & ExtraProps> = ({
+  children,
+}) => {
+  return <PreContext.Provider value={true}>{children}</PreContext.Provider>;
+};
+
+export interface CodeProps extends React.ComponentPropsWithoutRef<'code'> {
   className?: string;
   children?: React.ReactNode;
 }
 
-const CodeBlock: React.FC<CodeProps> = ({ className: codeClassName, children, ...props }) => {
+/**
+ * Pure inline code renderer with no internal hooks or state.
+ */
+export const InlineCode: React.FC<CodeProps> = ({ className, style, children, ...props }) => {
+  const combinedClassName = className
+    ? `bg-slate-200/80 dark:bg-slate-800 text-pink-600 dark:text-pink-400 font-mono text-xs px-1.5 py-0.5 rounded ${className}`
+    : 'bg-slate-200/80 dark:bg-slate-800 text-pink-600 dark:text-pink-400 font-mono text-xs px-1.5 py-0.5 rounded';
+
+  return (
+    <code className={combinedClassName} style={style} {...props}>
+      {children}
+    </code>
+  );
+};
+
+/**
+ * Fenced / indented block code component with unconditional hook execution,
+ * copy-to-clipboard state, and explicit high-contrast theme styling.
+ */
+export const BlockCode: React.FC<CodeProps> = ({
+  className: codeClassName,
+  style,
+  children,
+  ...props
+}) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
-  const match = /language-(\w+)/.exec(codeClassName || '');
+
+  const match = /language-([a-zA-Z0-9_-]+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
-  const rawCode = String(children).replace(/\n$/, '');
+  const rawCode = extractTextContent(children).replace(/\n$/, '');
 
   const handleCopy = useCallback(async () => {
     try {
-      await navigator.clipboard.writeText(rawCode);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      if (typeof navigator !== 'undefined' && navigator.clipboard) {
+        await navigator.clipboard.writeText(rawCode);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      }
     } catch {
       // ignore
     }
   }, [rawCode]);
 
-  const isInline = !match && !String(children).includes('\n');
-
-  if (isInline) {
-    return (
-      <code
-        className="bg-slate-200/80 dark:bg-slate-800 text-pink-600 dark:text-pink-400 font-mono text-xs px-1.5 py-0.5 rounded"
-        {...props}
-      >
-        {children}
-      </code>
-    );
-  }
-
   return (
-    <div className="relative group my-4 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-[#0d1117]">
-      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-slate-800 text-xs text-slate-400 font-mono select-none">
-        <span className="text-[11px] uppercase tracking-wider">{language || 'text'}</span>
+    <div
+      className="relative group my-4 rounded-lg overflow-hidden border shadow-sm"
+      style={{
+        backgroundColor: CODE_THEME.bg,
+        borderColor: CODE_THEME.headerBorder,
+      }}
+    >
+      <div
+        className="flex items-center justify-between px-3 py-1.5 border-b text-xs font-mono select-none"
+        style={{
+          backgroundColor: CODE_THEME.headerBg,
+          color: CODE_THEME.headerText,
+          borderColor: CODE_THEME.headerBorder,
+        }}
+      >
+        <span
+          className="text-[11px] uppercase tracking-wider font-semibold"
+          style={{ color: CODE_THEME.headerText }}
+        >
+          {language || 'text'}
+        </span>
         <button
           type="button"
           onClick={handleCopy}
@@ -168,15 +242,39 @@ const CodeBlock: React.FC<CodeProps> = ({ className: codeClassName, children, ..
           )}
         </button>
       </div>
-      <div className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed">
-        <pre className="!bg-transparent !p-0 !m-0">
-          <code className={codeClassName} {...props}>
+      <div
+        className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed"
+        style={{ backgroundColor: CODE_THEME.bg, color: CODE_THEME.text }}
+      >
+        <pre className="!bg-transparent !p-0 !m-0" style={{ color: 'inherit', margin: 0, padding: 0 }}>
+          <code
+            className={codeClassName}
+            style={{
+              ...style,
+              color: CODE_THEME.text,
+              backgroundColor: 'transparent',
+            }}
+            {...props}
+          >
             {children}
           </code>
         </pre>
       </div>
     </div>
   );
+};
+
+/**
+ * Dispatcher component mapped to markdown `code` tag.
+ * Reads PreContext to route to either InlineCode or BlockCode cleanly,
+ * ensuring React hook order is never conditionally altered.
+ */
+export const CodeBlock: React.FC<CodeProps> = (props) => {
+  const isInsidePre = useContext(PreContext);
+  if (isInsidePre) {
+    return <BlockCode {...props} />;
+  }
+  return <InlineCode {...props} />;
 };
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(
@@ -251,6 +349,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
         h4: createHeadingRenderer('h4'),
         h5: createHeadingRenderer('h5'),
         h6: createHeadingRenderer('h6'),
+        pre: PreRenderer,
         code: CodeBlock,
         a: ({ href, children, ...props }) => {
           const isAnchor = href?.startsWith('#');
