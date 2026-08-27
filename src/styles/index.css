@@ -1,0 +1,97 @@
+@import './markdown.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+    width: 100%;
+    margin: 0;
+    padding: 0;
+  }
+}
+
+/* Custom subtle scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(148, 163, 184, 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(148, 163, 184, 0.7);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(71, 85, 105, 0.4);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(71, 85, 105, 0.7);
+}
+
+/* Utility to hide scrollbar while keeping scrollability */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* CodeMirror custom theme overrides */
+.cm-editor {
+  height: 100% !important;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace !important;
+  font-size: 13.5px !important;
+}
+
+.cm-scroller {
+  font-family: inherit !important;
+  line-height: 1.65 !important;
+}
+
+.cm-content {
+  padding: 16px 20px !important;
+}
+
+.cm-lineNumbers {
+  padding-left: 8px !important;
+  padding-right: 12px !important;
+  opacity: 0.6;
+}
+
+/* Dark mode styling for codemirror background */
+.dark .cm-editor {
+  background-color: #0f172a !important;
+}
+.dark .cm-gutters {
+  background-color: #0f172a !important;
+  border-right: 1px solid #1e293b !important;
+}
+
+/* Light mode styling for codemirror background */
+.cm-editor:not(.cm-focused) {
+  outline: none !important;
+}
+
+.cm-gutters {
+  background-color: #f8fafc !important;
+  border-right: 1px solid #e2e8f0 !important;
+}
