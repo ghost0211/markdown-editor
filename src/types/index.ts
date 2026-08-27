@@ -1,5 +1,19 @@
 export type ViewMode = 'edit' | 'split' | 'read';
 export type ThemeMode = 'light' | 'dark' | 'system';
+export type StartupViewMode = 'remember-last' | ViewMode;
+export type TabSizeOption = 2 | 4 | 8;
+
+export interface EditorSettings {
+  version: 1;
+  theme: ThemeMode;
+  fontSize: number;
+  lineHeight: number;
+  tabSize: TabSizeOption;
+  wordWrap: boolean;
+  lineNumbers: boolean;
+  restoreSession: boolean;
+  startupView: StartupViewMode;
+}
 
 export interface DocumentTab {
   id: string;

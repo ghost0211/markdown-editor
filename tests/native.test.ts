@@ -5,6 +5,9 @@ import {
   exportFileDialog,
   writeBinaryFile,
   exportPdfFromHtml,
+  drainPendingOpenFiles,
+  subscribeOpenFiles,
+  openWindowsDefaultAppsSettings,
 } from '../src/lib/native';
 
 describe('External URL Security (native.ts)', () => {
@@ -223,6 +226,28 @@ describe('Native Export Wrappers (native.ts)', () => {
       expect(mockOpen).toHaveBeenCalledWith('', '_blank');
       expect(mockDocWrite).toHaveBeenCalledWith('<html><body>Test PDF</body></html>');
       expect(mockDocClose).toHaveBeenCalled();
+    });
+  });
+
+  describe('File Association & Startup Event Wrappers (native.ts)', () => {
+    it('drainPendingOpenFiles should return empty array in browser mode', async () => {
+      const result = await drainPendingOpenFiles();
+      expect(Array.isArray(result)).toBe(true);
+      expect(result).toEqual([]);
+    });
+
+    it('subscribeOpenFiles should return a no-op unlisten function in browser mode without error', async () => {
+      const callback = vi.fn();
+      const unlisten = await subscribeOpenFiles(callback);
+      expect(typeof unlisten).toBe('function');
+      expect(() => unlisten()).not.toThrow();
+      expect(callback).not.toHaveBeenCalled();
+    });
+
+    it('openWindowsDefaultAppsSettings should throw friendly error in browser mode', async () => {
+      await expect(openWindowsDefaultAppsSettings()).rejects.toThrow(
+        /Web 浏览器环境.*仅在 Windows 桌面应用中支持/
+      );
     });
   });
 });

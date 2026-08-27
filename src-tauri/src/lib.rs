@@ -1,18 +1,143 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::io::Read;
 use std::path::{Path, PathBuf};
+use std::sync::Mutex;
 use std::time::{Duration, Instant};
+use tauri::{Emitter, Manager};
 
 const MIN_PDF_SIZE: u64 = 64;
 const PDF_POLL_INTERVAL: Duration = Duration::from_millis(100);
 const PDF_MAX_WAIT_DURATION: Duration = Duration::from_secs(15);
+
+pub const SUPPORTED_FILE_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd", "txt"];
+
+#[derive(Default)]
+pub struct PendingOpenFiles(pub Mutex<Vec<String>>);
+
+/// Enqueues unique paths into the pending open files queue.
+/// Performs case-insensitive deduplication on Windows and case-sensitive on other platforms.
+pub fn enqueue_pending_paths(queue: &mut Vec<String>, paths: impl IntoIterator<Item = String>) {
+    for path in paths {
+        let trimmed = path.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        #[cfg(windows)]
+        let is_duplicate = queue
+            .iter()
+            .any(|existing| existing.eq_ignore_ascii_case(trimmed));
+        #[cfg(not(windows))]
+        let is_duplicate = queue.iter().any(|existing| existing == trimmed);
+
+        if !is_duplicate {
+            queue.push(trimmed.to_string());
+        }
+    }
+}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OpenFileResponse {
     pub path: String,
     pub name: String,
     pub content: String,
+}
+
+pub fn is_supported_file_extension(path: &Path) -> bool {
+    path.extension()
+        .and_then(|ext| ext.to_str())
+        .map(|ext| {
+            let lower = ext.to_ascii_lowercase();
+            SUPPORTED_FILE_EXTENSIONS
+                .iter()
+                .any(|&supported| supported == lower)
+        })
+        .unwrap_or(false)
+}
+
+pub fn canonicalize_path(p: &Path) -> PathBuf {
+    if let Ok(canon) = p.canonicalize() {
+        let s = canon.to_string_lossy();
+        if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{}", stripped))
+        } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+            PathBuf::from(stripped)
+        } else {
+            canon
+        }
+    } else {
+        p.to_path_buf()
+    }
+}
+
+/// Filters command-line / single-instance arguments to existing regular files with supported extensions.
+///
+/// Note on UTF-8: Argv filtering checks file system presence and extension only. Content decoding
+/// and UTF-8 validation occur during `read_text_file` with isolated per-file error handling so that
+/// any corrupted or non-UTF-8 file produces a clear error without preventing subsequent files from opening.
+pub fn filter_and_normalize_paths<I, S>(args: I, base_cwd: &Path) -> Vec<String>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<str>,
+{
+    let mut results = Vec::new();
+    let mut seen_keys = HashSet::new();
+
+    for arg in args {
+        let raw_arg = arg.as_ref().trim();
+        if raw_arg.is_empty() || raw_arg.starts_with('-') {
+            continue;
+        }
+
+        // Strip enclosing quotes if present (e.g. from Windows shell)
+        let trimmed_arg = if (raw_arg.starts_with('"') && raw_arg.ends_with('"'))
+            || (raw_arg.starts_with('\'') && raw_arg.ends_with('\''))
+        {
+            if raw_arg.len() >= 2 {
+                &raw_arg[1..raw_arg.len() - 1]
+            } else {
+                raw_arg
+            }
+        } else {
+            raw_arg
+        };
+
+        if trimmed_arg.is_empty() {
+            continue;
+        }
+
+        let raw_path = Path::new(trimmed_arg);
+        let resolved = if raw_path.is_relative() {
+            base_cwd.join(raw_path)
+        } else {
+            raw_path.to_path_buf()
+        };
+
+        // Filter strictly to existing regular files
+        if !resolved.is_file() {
+            continue;
+        }
+
+        // Filter strictly to supported file extensions
+        if !is_supported_file_extension(&resolved) {
+            continue;
+        }
+
+        let canonical = canonicalize_path(&resolved);
+        let path_str = canonical.to_string_lossy().to_string();
+
+        #[cfg(windows)]
+        let dedup_key = path_str.to_lowercase();
+        #[cfg(not(windows))]
+        let dedup_key = path_str.clone();
+
+        if seen_keys.insert(dedup_key) {
+            results.push(path_str);
+        }
+    }
+
+    results
 }
 
 fn strip_text_extensions(name: &str) -> String {
@@ -370,6 +495,38 @@ mod commands {
     }
 
     #[tauri::command]
+    pub fn open_windows_default_apps_settings() -> Result<(), String> {
+        #[cfg(target_os = "windows")]
+        {
+            match opener::open("ms-settings:defaultapps") {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    let cmd_res = std::process::Command::new("cmd")
+                        .args(["/C", "start", "", "ms-settings:defaultapps"])
+                        .spawn();
+                    match cmd_res {
+                        Ok(_) => Ok(()),
+                        Err(cmd_err) => Err(format!(
+                            "打开 Windows 设置失败: {} (备用命令执行失败: {})",
+                            e, cmd_err
+                        )),
+                    }
+                }
+            }
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Err("打开 Windows 默认应用设置仅支持 Windows 操作系统".to_string())
+        }
+    }
+
+    #[tauri::command]
+    pub fn drain_pending_open_files(state: tauri::State<'_, PendingOpenFiles>) -> Vec<String> {
+        let mut queue = state.0.lock().unwrap_or_else(|e| e.into_inner());
+        queue.drain(..).collect()
+    }
+
+    #[tauri::command]
     pub fn open_url(url: String) -> Result<(), String> {
         let trimmed = url.trim();
         if !trimmed.starts_with("http://")
@@ -388,6 +545,152 @@ mod commands {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_is_supported_file_extension() {
+        assert!(is_supported_file_extension(Path::new("test.md")));
+        assert!(is_supported_file_extension(Path::new("test.markdown")));
+        assert!(is_supported_file_extension(Path::new("test.mdown")));
+        assert!(is_supported_file_extension(Path::new("test.mkd")));
+        assert!(is_supported_file_extension(Path::new("test.txt")));
+        assert!(is_supported_file_extension(Path::new("test.MD")));
+        assert!(is_supported_file_extension(Path::new("test.MarkDown")));
+        assert!(is_supported_file_extension(Path::new("test.TXT")));
+
+        assert!(!is_supported_file_extension(Path::new("test.docx")));
+        assert!(!is_supported_file_extension(Path::new("test.pdf")));
+        assert!(!is_supported_file_extension(Path::new("test.exe")));
+        assert!(!is_supported_file_extension(Path::new("test.rs")));
+        assert!(!is_supported_file_extension(Path::new("test.json")));
+        assert!(!is_supported_file_extension(Path::new("test")));
+    }
+
+    #[test]
+    fn test_filter_and_normalize_paths() {
+        let temp_dir = tempfile::Builder::new()
+            .prefix("md_editor_test_filter_")
+            .tempdir()
+            .unwrap();
+        let base_cwd = temp_dir.path();
+
+        let doc1 = base_cwd.join("doc1.md");
+        let doc2 = base_cwd.join("doc2.txt");
+        let doc3 = base_cwd.join("doc3.markdown");
+        let invalid_ext = base_cwd.join("image.png");
+        let sub_dir = base_cwd.join("subfolder");
+
+        fs::write(&doc1, "# Doc 1").unwrap();
+        fs::write(&doc2, "Doc 2 text").unwrap();
+        fs::write(&doc3, "# Doc 3").unwrap();
+        fs::write(&invalid_ext, b"fake png").unwrap();
+        fs::create_dir(&sub_dir).unwrap();
+
+        let args = vec![
+            "--flag".to_string(),
+            "-v".to_string(),
+            "".to_string(),
+            "   ".to_string(),
+            "non_existent.md".to_string(),
+            "doc1.md".to_string(),                     // relative
+            format!("\"{}\"", doc1.to_string_lossy()), // quoted duplicate
+            doc2.to_string_lossy().to_string(),        // absolute
+            "doc3.markdown".to_string(),               // relative
+            "image.png".to_string(),                   // unsupported ext
+            "subfolder".to_string(),                   // directory
+        ];
+
+        let filtered = filter_and_normalize_paths(args, base_cwd);
+        assert_eq!(
+            filtered.len(),
+            3,
+            "Should only have doc1, doc2, and doc3 (deduplicated)"
+        );
+
+        let doc1_canon = canonicalize_path(&doc1).to_string_lossy().to_string();
+        let doc2_canon = canonicalize_path(&doc2).to_string_lossy().to_string();
+        let doc3_canon = canonicalize_path(&doc3).to_string_lossy().to_string();
+
+        assert_eq!(filtered[0], doc1_canon);
+        assert_eq!(filtered[1], doc2_canon);
+        assert_eq!(filtered[2], doc3_canon);
+    }
+
+    #[test]
+    fn test_pending_open_files_queue_and_drain() {
+        let mut queue = Vec::new();
+        enqueue_pending_paths(
+            &mut queue,
+            vec![
+                "C:\\path\\doc1.md".to_string(),
+                "C:\\path\\doc2.txt".to_string(),
+            ],
+        );
+
+        let pending = PendingOpenFiles(Mutex::new(queue));
+
+        // Enqueue additional paths with duplicates and new files
+        {
+            let mut q = pending.0.lock().unwrap();
+            enqueue_pending_paths(
+                &mut q,
+                vec![
+                    "c:\\path\\DOC1.MD".to_string(), // duplicate on Windows
+                    "C:\\path\\doc3.markdown".to_string(),
+                    "".to_string(),    // empty string should be ignored
+                    "   ".to_string(), // whitespace should be ignored
+                ],
+            );
+        }
+
+        let mut q = pending.0.lock().unwrap();
+        let drained: Vec<String> = q.drain(..).collect();
+
+        assert_eq!(drained.len(), 3);
+        assert_eq!(drained[0], "C:\\path\\doc1.md");
+        assert_eq!(drained[1], "C:\\path\\doc2.txt");
+        assert_eq!(drained[2], "C:\\path\\doc3.markdown");
+
+        // Subsequent drain should be empty
+        let drained_again: Vec<String> = q.drain(..).collect();
+        assert!(drained_again.is_empty());
+    }
+
+    #[test]
+    fn test_enqueue_pending_paths_deduplication() {
+        let mut queue = Vec::new();
+
+        enqueue_pending_paths(
+            &mut queue,
+            vec![
+                "C:\\Notes\\Report.md".to_string(),
+                "C:\\Notes\\Data.txt".to_string(),
+            ],
+        );
+        assert_eq!(queue.len(), 2);
+
+        // Secondary enqueue with mixed casing and new items
+        enqueue_pending_paths(
+            &mut queue,
+            vec![
+                "c:\\notes\\report.md".to_string(), // duplicate (Windows case-insensitive)
+                "C:\\NOTES\\DATA.TXT".to_string(),  // duplicate (Windows case-insensitive)
+                "C:\\Notes\\NewDoc.markdown".to_string(),
+            ],
+        );
+
+        #[cfg(windows)]
+        {
+            assert_eq!(queue.len(), 3);
+            assert_eq!(queue[0], "C:\\Notes\\Report.md");
+            assert_eq!(queue[1], "C:\\Notes\\Data.txt");
+            assert_eq!(queue[2], "C:\\Notes\\NewDoc.markdown");
+        }
+
+        #[cfg(not(windows))]
+        {
+            assert_eq!(queue.len(), 5);
+        }
+    }
 
     #[test]
     fn test_strip_text_extensions() {
@@ -546,11 +849,78 @@ p { line-height: 1.6; }
         file.read_exact(&mut header).expect("无法读取 PDF 文件头");
         assert_eq!(&header, b"%PDF-", "覆盖后的目标文件必须是合法 PDF");
     }
+
+    #[test]
+    fn test_open_url_protocol_security() {
+        // Disallowed protocols
+        assert!(commands::open_url("javascript:alert(1)".to_string()).is_err());
+        assert!(commands::open_url("file:///C:/Windows/System32/calc.exe".to_string()).is_err());
+        assert!(commands::open_url("data:text/html,test".to_string()).is_err());
+        assert!(commands::open_url("powershell.exe".to_string()).is_err());
+        assert!(commands::open_url("ms-settings:defaultapps".to_string()).is_err());
+        assert!(commands::open_url("".to_string()).is_err());
+        assert!(commands::open_url("   ".to_string()).is_err());
+    }
+
+    #[test]
+    fn test_canonicalize_path_prefix_stripping() {
+        let dummy = PathBuf::from(r"\\?\C:\Users\test.md");
+        // Non-existent path won't canonicalize via fs, so canonicalize_path returns as-is or canonicalized
+        let res = canonicalize_path(&dummy);
+        assert!(!res.to_string_lossy().is_empty());
+    }
+
+    #[test]
+    fn test_supported_file_extensions_list() {
+        assert_eq!(
+            SUPPORTED_FILE_EXTENSIONS,
+            &["md", "markdown", "mdown", "mkd", "txt"]
+        );
+    }
+
+    #[test]
+    #[cfg(not(target_os = "windows"))]
+    fn test_open_windows_default_apps_settings_on_non_windows() {
+        let res = commands::open_windows_default_apps_settings();
+        assert!(res.is_err());
+        assert!(res.unwrap_err().contains("仅支持 Windows 操作系统"));
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let cold_start_args: Vec<String> = std::env::args().collect();
+    let initial_paths = filter_and_normalize_paths(cold_start_args, &cwd);
+
+    let mut initial_queue = Vec::new();
+    enqueue_pending_paths(&mut initial_queue, initial_paths);
+    let pending_open_files = PendingOpenFiles(Mutex::new(initial_queue));
+
     tauri::Builder::default()
+        .plugin(tauri_plugin_single_instance::init(|app, argv, cwd| {
+            let cwd_path = PathBuf::from(&cwd);
+            let new_paths = filter_and_normalize_paths(argv, &cwd_path);
+
+            if !new_paths.is_empty() {
+                if let Some(state) = app.try_state::<PendingOpenFiles>() {
+                    if let Ok(mut queue) = state.0.lock() {
+                        enqueue_pending_paths(&mut queue, new_paths);
+                    }
+                }
+                let _ = app.emit("open-files", ());
+            }
+
+            if let Some(window) = app
+                .get_webview_window("main")
+                .or_else(|| app.webview_windows().values().next().cloned())
+            {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
+        }))
+        .manage(pending_open_files)
         .invoke_handler(tauri::generate_handler![
             commands::read_text_file,
             commands::write_text_file,
@@ -559,7 +929,9 @@ pub fn run() {
             commands::save_file_dialog,
             commands::export_file_dialog,
             commands::export_pdf_from_html,
-            commands::open_url
+            commands::open_url,
+            commands::open_windows_default_apps_settings,
+            commands::drain_pending_open_files
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

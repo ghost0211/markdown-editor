@@ -1,16 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { ThemeMode } from '@/types';
+import { loadSettings, saveSettings, LEGACY_THEME_KEY } from '@/lib/settings';
 
-const THEME_STORAGE_KEY = 'markdown_editor_theme';
-
-export function useTheme() {
-  const [theme, setThemeState] = useState<ThemeMode>(() => {
-    const saved = localStorage.getItem(THEME_STORAGE_KEY) as ThemeMode | null;
-    if (saved === 'light' || saved === 'dark' || saved === 'system') {
-      return saved;
-    }
-    return 'system';
+export function useTheme(
+  externalTheme?: ThemeMode,
+  onExternalThemeChange?: (newTheme: ThemeMode) => void
+) {
+  const [internalTheme, setInternalTheme] = useState<ThemeMode>(() => {
+    if (externalTheme) return externalTheme;
+    return loadSettings().theme;
   });
+
+  const theme = externalTheme !== undefined ? externalTheme : internalTheme;
 
   const [resolvedDark, setResolvedDark] = useState<boolean>(() => {
     if (typeof window === 'undefined') return false;
@@ -26,29 +27,44 @@ export function useTheme() {
     } else if (currentTheme === 'light') {
       isDark = false;
     } else {
-      isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+      isDark =
+        typeof window !== 'undefined' &&
+        window.matchMedia('(prefers-color-scheme: dark)').matches;
     }
 
     setResolvedDark(isDark);
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    if (typeof document !== 'undefined') {
+      if (isDark) {
+        document.documentElement.classList.add('dark');
+      } else {
+        document.documentElement.classList.remove('dark');
+      }
     }
   }, []);
 
   const setTheme = useCallback(
     (newTheme: ThemeMode) => {
-      setThemeState(newTheme);
-      localStorage.setItem(THEME_STORAGE_KEY, newTheme);
+      if (onExternalThemeChange) {
+        onExternalThemeChange(newTheme);
+      } else {
+        setInternalTheme(newTheme);
+        const current = loadSettings();
+        saveSettings({ ...current, theme: newTheme });
+      }
+      try {
+        localStorage.setItem(LEGACY_THEME_KEY, newTheme);
+      } catch {
+        // ignore
+      }
       applyTheme(newTheme);
     },
-    [applyTheme]
+    [onExternalThemeChange, applyTheme]
   );
 
   useEffect(() => {
     applyTheme(theme);
 
+    if (typeof window === 'undefined') return;
     const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
     const handleChange = () => {
       if (theme === 'system') {

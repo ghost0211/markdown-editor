@@ -10,6 +10,7 @@ interface KeyboardShortcutsOptions {
   onSetViewMode: (mode: ViewMode) => void;
   onToggleSidebar: () => void;
   onToggleShortcutsModal: () => void;
+  onToggleSettingsModal?: () => void;
 }
 
 export function useKeyboardShortcuts({
@@ -21,6 +22,7 @@ export function useKeyboardShortcuts({
   onSetViewMode,
   onToggleSidebar,
   onToggleShortcutsModal,
+  onToggleSettingsModal,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -89,6 +91,13 @@ export function useKeyboardShortcuts({
         return;
       }
 
+      // Ctrl + ,: Settings Modal
+      if (isCtrlOrMeta && e.key === ',') {
+        e.preventDefault();
+        onToggleSettingsModal?.();
+        return;
+      }
+
       // Ctrl + / or F1: Shortcuts Modal
       if ((isCtrlOrMeta && e.key === '/') || e.key === 'F1') {
         e.preventDefault();
@@ -108,5 +117,6 @@ export function useKeyboardShortcuts({
     onSetViewMode,
     onToggleSidebar,
     onToggleShortcutsModal,
+    onToggleSettingsModal,
   ]);
 }

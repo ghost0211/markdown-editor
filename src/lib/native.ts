@@ -1,9 +1,28 @@
 import { invoke } from '@tauri-apps/api/core';
+import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { OpenFileResult } from '@/types';
 
 export const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
 export type ExportFormat = 'docx' | 'pdf';
+
+/**
+ * Opens Windows Default Apps settings page (ms-settings:defaultapps).
+ * Dedicated fixed command that does not accept arbitrary schemes.
+ * Gracefully returns/throws friendly error on non-Windows / Web environment.
+ */
+export async function openWindowsDefaultAppsSettings(): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke('open_windows_default_apps_settings');
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || '打开 Windows 设置失败';
+      throw new Error(msg);
+    }
+  } else {
+    throw new Error('当前为 Web 浏览器环境，仅在 Windows 桌面应用中支持打开系统默认应用设置');
+  }
+}
 
 /**
  * Checks if the current environment is running inside Tauri.
@@ -39,6 +58,45 @@ export function isValidExternalUrl(urlStr?: string | null): boolean {
   } catch {
     return false;
   }
+}
+
+/**
+ * Drains pending file paths from native backend (e.g. from cold start CLI args).
+ * Gracefully returns an empty array in Web mode or on error.
+ */
+export async function drainPendingOpenFiles(): Promise<string[]> {
+  if (isTauri()) {
+    try {
+      const paths = await invoke<string[]>('drain_pending_open_files');
+      return Array.isArray(paths) ? paths : [];
+    } catch (err: unknown) {
+      console.warn('获取待打开文件列表失败:', err);
+      return [];
+    }
+  }
+  return [];
+}
+
+/**
+ * Subscribes to the single-instance 'open-files' event emitted when a file or secondary instance launches.
+ * The event acts as a wake-up signal for the frontend to atomically drain the backend pending file queue.
+ * Gracefully returns a no-op cleanup function in Web mode.
+ */
+export async function subscribeOpenFiles(
+  callback: () => void
+): Promise<() => void> {
+  if (isTauri()) {
+    try {
+      const unlisten: UnlistenFn = await listen('open-files', () => {
+        callback();
+      });
+      return unlisten;
+    } catch (err: unknown) {
+      console.warn('订阅 open-files 事件失败:', err);
+      return () => {};
+    }
+  }
+  return () => {};
 }
 
 /**

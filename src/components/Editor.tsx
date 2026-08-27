@@ -10,6 +10,8 @@ import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView } from '@codemirror/view';
+import { EditorState } from '@codemirror/state';
+import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
 
 export interface EditorHandle {
@@ -27,17 +29,47 @@ interface EditorProps {
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
   isDark: boolean;
   className?: string;
+  fontSize?: number;
+  lineHeight?: number;
+  tabSize?: number;
+  wordWrap?: boolean;
+  lineNumbers?: boolean;
 }
 
 export const Editor = forwardRef<EditorHandle, EditorProps>(
-  ({ value, onChange, onCursorChange, onScroll, isDark, className }, ref) => {
+  (
+    {
+      value,
+      onChange,
+      onCursorChange,
+      onScroll,
+      isDark,
+      className,
+      fontSize = 14,
+      lineHeight = 1.6,
+      tabSize = 2,
+      wordWrap = true,
+      lineNumbers = true,
+    },
+    ref
+  ) => {
     const cmRef = useRef<ReactCodeMirrorRef>(null);
 
     // CodeMirror extensions
     const extensions = useMemo(() => {
       const ext = [
         markdown({ base: markdownLanguage, codeLanguages: languages }),
-        EditorView.lineWrapping,
+        EditorState.tabSize.of(tabSize),
+        indentUnit.of(' '.repeat(tabSize)),
+        EditorView.theme({
+          '&': {
+            fontSize: `${fontSize}px`,
+          },
+          '.cm-scroller': {
+            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+            lineHeight: `${lineHeight}`,
+          },
+        }),
         EditorView.domEventHandlers({
           scroll: (event) => {
             const target = event.target as HTMLElement;
@@ -47,12 +79,22 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           },
         }),
       ];
+
+      if (wordWrap) {
+        ext.push(EditorView.lineWrapping);
+      }
+
       return ext;
-    }, [onScroll]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, onScroll]);
 
     // Handle cursor position updates
     const handleUpdate = useCallback(
-      (viewUpdate: { state: { selection: { main: { head: number } }; doc: { lineAt: (pos: number) => { number: number; from: number } } } }) => {
+      (viewUpdate: {
+        state: {
+          selection: { main: { head: number } };
+          doc: { lineAt: (pos: number) => { number: number; from: number } };
+        };
+      }) => {
         if (!onCursorChange) return;
         const pos = viewUpdate.state.selection.main.head;
         const line = viewUpdate.state.doc.lineAt(pos);
@@ -107,7 +149,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     );
 
     return (
-      <div className={`h-full w-full overflow-hidden text-sm ${className || ''}`}>
+      <div className={`h-full w-full overflow-hidden ${className || ''}`}>
         <CodeMirror
           ref={cmRef}
           value={value}
@@ -117,7 +159,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           onChange={onChange}
           onUpdate={handleUpdate}
           basicSetup={{
-            lineNumbers: true,
+            lineNumbers,
             highlightActiveLineGutter: true,
             highlightSpecialChars: true,
             history: true,
@@ -142,7 +184,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             completionKeymap: true,
             lintKeymap: true,
           }}
-          className="h-full font-mono text-[13px] leading-relaxed"
+          className="h-full font-mono"
         />
       </div>
     );

@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "MarkdownEditor",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.markdowneditor.desktop",
   "build": {
     "beforeDevCommand": "npm run dev",
@@ -34,6 +34,24 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["md", "markdown", "mdown", "mkd"],
+        "name": "Markdown Document",
+        "description": "Markdown Document",
+        "mimeType": "text/markdown",
+        "role": "Editor",
+        "rank": "Default"
+      },
+      {
+        "ext": ["txt"],
+        "name": "Plain Text Document",
+        "description": "Plain Text Document",
+        "mimeType": "text/plain",
+        "role": "Editor",
+        "rank": "Alternate"
+      }
     ]
   }
 }

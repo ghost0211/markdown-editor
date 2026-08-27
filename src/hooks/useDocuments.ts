@@ -1,32 +1,36 @@
 import { useState, useCallback, useRef } from 'react';
 import { DocumentTab, ConfirmDialogState } from '@/types';
 import { WELCOME_DOCUMENT } from '@/lib/defaultDocument';
-import { openFileDialog, saveFileDialog, writeTextFile } from '@/lib/native';
+import { openFileDialog, saveFileDialog, writeTextFile, readTextFile } from '@/lib/native';
 import {
-  generateDocId,
   getFileNameFromPath,
   normalizePathKey,
   computeSavedTabState,
   createDefaultTab,
+  openOrFocusDocumentState,
+  OpenOrFocusResult,
 } from '@/lib/documentUtils';
 
 const STORAGE_SESSION_KEY = 'markdown_editor_tabs_v1';
 
 export function useDocuments(
-  showToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void
+  showToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void,
+  restoreSession = true
 ) {
   // Initialize tabs from localStorage or default welcome document
   const [tabs, setTabs] = useState<DocumentTab[]>(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_SESSION_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+    if (restoreSession) {
+      try {
+        const saved = localStorage.getItem(STORAGE_SESSION_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
         }
+      } catch {
+        // ignore JSON parse error
       }
-    } catch {
-      // ignore JSON parse error
     }
 
     return [
@@ -72,13 +76,11 @@ export function useDocuments(
   const createNewTab = useCallback(
     (title?: string, content = '') => {
       const newTab = createDefaultTab(title, content);
-
-      setTabs((prev) => {
-        const next = [...prev, newTab];
-        saveSession(next);
-        return next;
-      });
+      const next = [...tabsRef.current, newTab];
+      tabsRef.current = next;
+      setTabs(next);
       setActiveTabId(newTab.id);
+      saveSession(next);
     },
     [saveSession]
   );
@@ -86,79 +88,115 @@ export function useDocuments(
   // Update content of a tab
   const updateContent = useCallback(
     (tabId: string, newContent: string) => {
-      setTabs((prev) => {
-        const next = prev.map((tab) => {
-          if (tab.id === tabId) {
-            const isDirty = newContent !== tab.savedContent;
-            return {
-              ...tab,
-              content: newContent,
-              isDirty,
-            };
-          }
-          return tab;
-        });
-        saveSession(next);
-        return next;
+      const next = tabsRef.current.map((tab) => {
+        if (tab.id === tabId) {
+          const isDirty = newContent !== tab.savedContent;
+          return {
+            ...tab,
+            content: newContent,
+            isDirty,
+          };
+        }
+        return tab;
       });
+      tabsRef.current = next;
+      setTabs(next);
+      saveSession(next);
     },
     [saveSession]
   );
 
   // Update cursor position of a tab
   const updateCursor = useCallback((tabId: string, line: number, col: number) => {
-    setTabs((prev) =>
-      prev.map((tab) => {
-        if (tab.id === tabId) {
-          return { ...tab, cursorLine: line, cursorCol: col };
-        }
-        return tab;
-      })
-    );
+    const next = tabsRef.current.map((tab) => {
+      if (tab.id === tabId) {
+        return { ...tab, cursorLine: line, cursorCol: col };
+      }
+      return tab;
+    });
+    tabsRef.current = next;
+    setTabs(next);
   }, []);
 
-  // Open a file
+  // Shared deterministic logic to open a document or focus it if already open.
+  // Uses pure helper `openOrFocusDocumentState` and maintains `tabsRef.current`
+  // synchronously so batch and async opens never encounter race conditions or updater timing delays.
+  const openOrFocusDocument = useCallback(
+    (filePath: string, content: string, title?: string): OpenOrFocusResult => {
+      const result = openOrFocusDocumentState(tabsRef.current, filePath, content, title);
+
+      tabsRef.current = result.tabs;
+      setTabs(result.tabs);
+      setActiveTabId(result.activeTabId);
+      saveSession(result.tabs);
+
+      if (result.action === 'focused') {
+        showToast(`已切换至已打开的文档: ${result.tab.title}`, 'info');
+      } else {
+        showToast(`已打开: ${result.tab.title}`, 'success');
+      }
+
+      return result;
+    },
+    [showToast, saveSession]
+  );
+
+  // Open single document by file path
+  const openFileByPath = useCallback(
+    async (filePath: string): Promise<boolean> => {
+      const trimmed = filePath ? filePath.trim() : '';
+      if (!trimmed) return false;
+
+      try {
+        const content = await readTextFile(trimmed);
+        const fileName = getFileNameFromPath(trimmed);
+        openOrFocusDocument(trimmed, content, fileName);
+        return true;
+      } catch (err: unknown) {
+        const msg = (err as Error)?.message || String(err);
+        const fileName = getFileNameFromPath(trimmed);
+        showToast(`打开文件失败 (${fileName}): ${msg}`, 'error');
+        return false;
+      }
+    },
+    [openOrFocusDocument, showToast]
+  );
+
+  // Open multiple documents by an array of file paths
+  const openFilesByPaths = useCallback(
+    async (filePaths: string[]): Promise<void> => {
+      if (!Array.isArray(filePaths) || filePaths.length === 0) return;
+
+      const seen = new Set<string>();
+      const uniquePaths: string[] = [];
+      for (const p of filePaths) {
+        if (!p || typeof p !== 'string') continue;
+        const key = normalizePathKey(p);
+        if (key && !seen.has(key)) {
+          seen.add(key);
+          uniquePaths.push(p.trim());
+        }
+      }
+
+      for (const filePath of uniquePaths) {
+        await openFileByPath(filePath);
+      }
+    },
+    [openFileByPath]
+  );
+
+  // Open a file via dialog
   const openDocument = useCallback(async () => {
     try {
       const fileRes = await openFileDialog();
       if (!fileRes) {
         return; // User cancelled
       }
-
-      setTabs((prev) => {
-        // Check if file is already open using path normalization
-        const targetPathKey = normalizePathKey(fileRes.path);
-        const existing = prev.find(
-          (t) => t.filePath && normalizePathKey(t.filePath) === targetPathKey
-        );
-        if (existing) {
-          setActiveTabId(existing.id);
-          showToast(`已切换至已打开的文档: ${existing.title}`, 'info');
-          return prev;
-        }
-
-        const id = generateDocId();
-        const newTab: DocumentTab = {
-          id,
-          title: fileRes.name || getFileNameFromPath(fileRes.path),
-          filePath: fileRes.path,
-          content: fileRes.content,
-          savedContent: fileRes.content,
-          isDirty: false,
-          cursorLine: 1,
-          cursorCol: 1,
-        };
-
-        const next = [...prev, newTab];
-        setActiveTabId(id);
-        saveSession(next);
-        showToast(`已打开: ${newTab.title}`, 'success');
-        return next;
-      });
+      openOrFocusDocument(fileRes.path, fileRes.content, fileRes.name);
     } catch (err: unknown) {
       showToast((err as Error).message || '打开文件失败', 'error');
     }
-  }, [showToast, saveSession]);
+  }, [openOrFocusDocument, showToast]);
 
   // Save active document (or Save As)
   const saveActiveDocument = useCallback(
@@ -190,16 +228,15 @@ export function useDocuments(
         await writeTextFile(targetPath, contentSnapshot);
         const fileName = getFileNameFromPath(targetPath);
 
-        setTabs((prev) => {
-          const next = prev.map((t) => {
-            if (t.id === tab.id) {
-              return computeSavedTabState(t, targetPath, contentSnapshot);
-            }
-            return t;
-          });
-          saveSession(next);
-          return next;
+        const next = tabsRef.current.map((t) => {
+          if (t.id === tab.id) {
+            return computeSavedTabState(t, targetPath, contentSnapshot);
+          }
+          return t;
         });
+        tabsRef.current = next;
+        setTabs(next);
+        saveSession(next);
 
         showToast(`已成功保存: ${fileName}`, 'success');
         return true;
@@ -214,27 +251,30 @@ export function useDocuments(
   // Directly close a tab without prompt
   const forceCloseTab = useCallback(
     (tabId: string) => {
-      setTabs((prev) => {
-        if (prev.length <= 1) {
-          // If closing the only tab, create a new fresh tab
-          const newTab = createDefaultTab('未命名文档.md', '');
-          setActiveTabId(newTab.id);
-          saveSession([newTab]);
-          return [newTab];
-        }
-
-        const closeIdx = prev.findIndex((t) => t.id === tabId);
-        const next = prev.filter((t) => t.id !== tabId);
-
-        if (activeTabId === tabId) {
-          // Switch to adjacent tab
-          const nextIdx = Math.min(closeIdx, next.length - 1);
-          setActiveTabId(next[nextIdx].id);
-        }
-
+      const prev = tabsRef.current;
+      if (prev.length <= 1) {
+        // If closing the only tab, create a new fresh tab
+        const newTab = createDefaultTab('未命名文档.md', '');
+        const next = [newTab];
+        tabsRef.current = next;
+        setTabs(next);
+        setActiveTabId(newTab.id);
         saveSession(next);
-        return next;
-      });
+        return;
+      }
+
+      const closeIdx = prev.findIndex((t) => t.id === tabId);
+      const next = prev.filter((t) => t.id !== tabId);
+      tabsRef.current = next;
+      setTabs(next);
+
+      if (activeTabId === tabId) {
+        // Switch to adjacent tab
+        const nextIdx = Math.min(closeIdx, next.length - 1);
+        setActiveTabId(next[nextIdx].id);
+      }
+
+      saveSession(next);
     },
     [activeTabId, saveSession]
   );
@@ -282,12 +322,11 @@ export function useDocuments(
           cancelLabel: '取消',
           variant: 'danger',
           onConfirm: () => {
-            setTabs((prev) => {
-              const current = prev.find((t) => t.id === tabId);
-              const next = current ? [current] : [];
-              saveSession(next);
-              return next;
-            });
+            const current = tabsRef.current.find((t) => t.id === tabId);
+            const next = current ? [current] : [];
+            tabsRef.current = next;
+            setTabs(next);
+            saveSession(next);
             setActiveTabId(tabId);
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
           },
@@ -298,12 +337,11 @@ export function useDocuments(
         return;
       }
 
-      setTabs((prev) => {
-        const current = prev.find((t) => t.id === tabId);
-        const next = current ? [current] : [];
-        saveSession(next);
-        return next;
-      });
+      const current = tabsRef.current.find((t) => t.id === tabId);
+      const next = current ? [current] : [];
+      tabsRef.current = next;
+      setTabs(next);
+      saveSession(next);
       setActiveTabId(tabId);
     },
     [tabs, saveSession]
@@ -318,6 +356,8 @@ export function useDocuments(
     updateContent,
     updateCursor,
     openDocument,
+    openFileByPath,
+    openFilesByPaths,
     saveActiveDocument,
     requestCloseTab,
     forceCloseTab,

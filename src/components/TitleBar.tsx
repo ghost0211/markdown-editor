@@ -16,6 +16,7 @@ import {
   LoaderCircle,
   ChevronDown,
   FileType,
+  Settings,
 } from 'lucide-react';
 import { ThemeMode, ViewMode, DocumentTab } from '@/types';
 import clsx from 'clsx';
@@ -37,6 +38,7 @@ interface TitleBarProps {
   isExporting?: boolean;
   exportingType?: 'docx' | 'pdf' | null;
   onOpenShortcuts: () => void;
+  onOpenSettings: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -56,6 +58,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   isExporting = false,
   exportingType = null,
   onOpenShortcuts,
+  onOpenSettings,
 }) => {
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
@@ -307,10 +310,21 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </button>
         </div>
 
+        {/* Settings */}
+        <button
+          onClick={onOpenSettings}
+          title="偏好设置 (Ctrl+,)"
+          aria-label="偏好设置"
+          className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
+        >
+          <Settings className="w-3.5 h-3.5" />
+        </button>
+
         {/* Shortcuts Help */}
         <button
           onClick={onOpenShortcuts}
           title="快捷键列表 (F1 或 Ctrl+/)"
+          aria-label="快捷键列表"
           className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
         >
           <HelpCircle className="w-3.5 h-3.5" />

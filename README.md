@@ -34,9 +34,15 @@
      - 浏览器纯 Web 预览环境下，Word 自动降级为标准 Blob 文件下载，PDF 自动打开浏览器打印友好页面，体验无缝一致。
      - 导出操作完全独立，**绝对不会篡改** 当前打开文档的路径、标题、保存快照或未保存脏状态。
 
-5. **多标签页文档管理**：
+5. **多标签页文档管理与 Windows 文件关联**：
    - 支持新建空白标签、独立打开多个本地文件、快速切换与关闭标签。
-   - **智能路径去重**：Windows 路径忽略大小写并统一斜杠规范化，避免重复打开同一物理文件（自动定位并切换至已打开的标签）。
+   - **Windows 原生文件关联（Open With）与单实例架构**：
+     - 打包（NSIS）阶段通过 `bundle.fileAssociations` 注册关联 `.md`、`.markdown`、`.mdown`, `.mkd` 及 `.txt` 文档，作为 Windows 标准「打开方式」候选应用。
+     - 集成 `tauri-plugin-single-instance`（单实例通信）：冷启动通过命令行参数直开目标文件；应用已在运行时双击或选择「打开方式」唤起，会自动激活已打开窗口、解除最小化并将新文件追加为新标签或切换至对应标签。
+     - 前端与后端采用「先订阅事件后原子清空队列」机制，杜绝冷启动与运行时多重唤起的时序竞态问题。
+   - **智能路径去重与安全隔离**：
+     - Windows 路径忽略大小写并统一斜杠与规范化，避免重复打开同一物理文件（自动定位并切换至已打开的标签）。
+     - 启动与唤起参数严格过滤为已存在的支持扩展名文件；文件读取阶段由 `read_text_file` 进行 UTF-8 编码校验并实现单文件错误隔离，单个损坏或非 UTF-8 文件失败时给出友好中文提示，绝不影响后续有效文件的批量打开。
    - 采用碰撞免疫的文档 ID 生成策略（优先 `crypto.randomUUID`），安全还原持久化会话。
    - 未保存修改实时展示脏状态标记（未保存圆点）。
    - 标签栏支持横向平滑滚动与鼠标中键一键关闭。
@@ -58,6 +64,25 @@
    - 浅色模式 / 深色模式 / 跟随系统主题，全 UI 与代码编辑器深度适配。
    - 本地持久化记忆用户偏好（主题设置、视图模式、侧边栏开关、打开的标签页会话）。
 
+9. **全功能精致偏好设置中心（Settings Modal）**：
+   - **顶部快速唤出**：TitleBar 帮助按钮旁专属齿轮图标，支持全局快捷键 `Ctrl + ,` 随时唤起，无任何 Emoji，全 Lucide 矢量图标适配。
+   - **键盘与无障碍支持**：支持 `Escape` / 遮罩点击快速关闭，具备完整的 ARIA 模态角色与辅助属性标注。
+   - **外观主题**：浅色模式、深色模式、跟随系统实时无缝切换，与全局主题状态双向绑定。
+   - **编辑器偏好实时生效**：
+     - 编辑器字号（11px ~ 28px 滑块与步进按钮调节，即时更新 CodeMirror）。
+     - 行高比例（1.2 ~ 2.4 步进调节，舒适排版）。
+     - 制表符宽度（2 空格 / 4 空格 / 8 空格切换与代码缩进对齐）。
+     - 自动折行开关（Word Wrapping）与行号显示开关（Line Numbers）。
+     - 全面解除 CodeMirror 硬编码 CSS 冲突，字体与行距修改实时热重载。
+   - **启动与会话偏好**：
+     - 启动时恢复会话：开启时自动恢复上次关闭时的所有标签页；关闭时启动干净的默认文档，且不会破坏性清除持久化会话数据。
+     - 默认启动视图模式：支持选择「记忆上次视图」、「双栏分屏」、「纯编辑」或「纯阅读」，启动时严格遵从偏好配置。
+   - **系统文件关联管理**：
+     - 直观列出应用支持的关联扩展名（`.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`）。
+     - 桌面端一键直达 Windows 系统「默认应用」设置（通过固定专用无参 Rust 命令调起 `ms-settings:defaultapps`，坚决杜绝任意命令与危险协议注入），非 Windows 或 Web 环境优雅提示。
+   - **一键恢复默认设置**：支持将所有偏好重置为系统出厂最佳预设。
+   - **版本化防御性持久化**：采用版本化存储（`markdown_editor_settings_v1`），支持损坏 JSON 拦截、范围越界与枚举安全回退，并平滑兼容和迁移旧版 localStorage 配置。
+
 ---
 
 ## 🛠️ 技术栈
@@ -65,7 +90,7 @@
 | 模块 | 技术选型 | 说明 |
 | :--- | :--- | :--- |
 | **底层桌面框架** | Tauri 2.x + Rust 2021 | 跨平台轻量桌面运行时，极低资源占用 |
-| **原生能力集成** | `rfd`, `opener`, `tempfile`, `std::fs` | 原生文件对话框、系统浏览器/邮件调用、临时工作区与安全二进制读写 |
+| **原生能力集成** | `tauri-plugin-single-instance`, `rfd`, `opener`, `tempfile`, `std::fs` | 单实例通信唤醒、原生文件对话框、系统浏览器/邮件调用、临时工作区与安全二进制读写 |
 | **Word (.docx) 生成** | `docx`, `unified`, `remark-parse`, `remark-gfm` | 纯 OOXML 二进制构建，内置 Heading / 表格 / 列表编号系统 |
 | **PDF 导出与排版** | Headless Microsoft Edge, `remark-rehype`, `rehype-sanitize` | 矢量级 A4 打印排版、XSS 严格过滤与纯净字体渲染 |
 | **前端框架** | React 18 + TypeScript + Vite | 现代化组件开发与极速热重载 |
@@ -89,6 +114,7 @@
 | `Ctrl + 2` | 切换至 **双栏分屏模式** |
 | `Ctrl + 3` | 切换至 **纯阅读模式** |
 | `Ctrl + Shift + O` | 展开 / 收起左侧大纲侧边栏 |
+| `Ctrl + ,` | 打开偏好设置面板 |
 | `F1` 或 `Ctrl + /` | 打开快捷键帮助窗口 |
 | `Ctrl + B` | 选中文本加粗 |
 | `Ctrl + I` | 选中文本斜体 |
@@ -125,8 +151,9 @@ npm run tauri dev
 
 ---
 
-## 📦 Windows 桌面打包构建
+## 📦 Windows 桌面打包构建与文件关联
 
+### 1. 打包生成安装包
 打包生成独立的 Windows 可执行程序 (`.exe`) 及安装包 (`.msi` / `.nsis`)：
 
 ```bash
@@ -140,6 +167,11 @@ npm run tauri build
 
 打包完成后，安装包将生成在：
 `src-tauri/target/release/bundle/nsis/` 或 `src-tauri/target/release/` 目录下。
+
+### 2. Windows 文件关联与「默认应用」行为说明
+- **注册机制**：在 NSIS 安装包中，已配置 `bundle.fileAssociations` 自动将 MarkdownEditor 注册为 `.md`、`.markdown`、`.mdown`、`.mkd`、`.txt` 的打开方式候选程序。
+- **系统限制与规范**：自 Windows 10/11 起，操作系统为保障用户自主选择权与系统安全，严禁任何第三方安装程序直接在注册表强行篡改用户默认打开程序（User Choice Hash 保护机制）。
+- **设为默认程序**：安装完成后，用户在任意 Markdown 文件上右键点击「打开方式」->「选择其他应用」-> 勾选「始终使用此应用打开文件」，或前往 Windows 系统「设置 -> 应用 -> 默认应用」中搜索 `.md` 并指定 MarkdownEditor 即可。
 
 ---
 
@@ -180,14 +212,17 @@ markdown-editor/
 │   │   ├── StatusBar.tsx     # 底部统计与光标状态栏
 │   │   ├── ConfirmModal.tsx  # 未保存提示确认对话框
 │   │   ├── ShortcutsModal.tsx# 快捷键速查面板
+│   │   ├── SettingsModal.tsx # 偏好设置中心面板
 │   │   └── ToastContainer.tsx# 消息 Toast 浮窗
 │   ├── hooks/                # React Hooks
+│   │   ├── useSettings.ts    # 偏好设置响应式管理
 │   │   ├── useTheme.ts       # 明暗主题管理
 │   │   ├── useDocuments.ts   # 文档多标签与读写核心状态
 │   │   ├── useExportDocument.ts # Word / PDF 导出交互与状态管理
 │   │   ├── useKeyboardShortcuts.ts # 全局键盘快捷键响应
 │   │   └── useToast.ts       # 通知状态管理
 │   ├── lib/                  # 业务算法与工具函数
+│   │   ├── settings.ts       # 偏好设置数据结构、防御校验与版本持久化
 │   │   ├── export/           # 文档导出模块
 │   │   │   ├── docxExporter.ts # Markdown 转 OOXML .docx 算法
 │   │   │   └── pdfExporter.ts  # Markdown 转安全打印 HTML 与 PDF 导出
@@ -204,6 +239,9 @@ markdown-editor/
 │   ├── App.tsx               # 根应用布局容器
 │   └── main.tsx              # React DOM 渲染入口
 ├── tests/                    # Vitest 单元测试
+│   ├── settings.test.ts      # 偏好设置校验、持久化与迁移测试
+│   ├── settingsUI.test.tsx   # 偏好设置组件与无障碍交互测试
+│   ├── sessionRestore.test.ts# 启动视图偏好与会话恢复测试
 │   ├── export.test.ts        # Word / PDF 导出算法与安全过滤测试
 │   ├── documentUtils.test.ts # 路径规范化、ID 生成与保存快照测试
 │   ├── native.test.ts        # 外部链接与原生导出封装测试

@@ -85,6 +85,71 @@ export function getExportFilename(
   return `${cleanTitle || '未命名'}.${format}`;
 }
 
+export interface OpenOrFocusResult {
+  tabs: DocumentTab[];
+  activeTabId: string;
+  action: 'opened' | 'focused';
+  tab: DocumentTab;
+}
+
+/**
+ * Pure helper to compute the next DocumentTab list and active tab state
+ * when opening a file or focusing an already opened tab.
+ *
+ * Deterministic guarantees:
+ * - If the file path is already open (case-insensitive / normalized), focuses that tab without duplicating it.
+ * - If the only existing tab is an untouched/pristine welcome tab, replaces it with the newly opened file.
+ * - Otherwise appends the newly opened file as a new tab and activates it.
+ */
+export function openOrFocusDocumentState(
+  currentTabs: DocumentTab[],
+  filePath: string,
+  content: string,
+  title?: string
+): OpenOrFocusResult {
+  const targetPathKey = normalizePathKey(filePath);
+  const existing = currentTabs.find(
+    (t) => t.filePath && normalizePathKey(t.filePath) === targetPathKey
+  );
+
+  if (existing) {
+    return {
+      tabs: currentTabs,
+      activeTabId: existing.id,
+      action: 'focused',
+      tab: existing,
+    };
+  }
+
+  const id = generateDocId();
+  const newTitle = title || getFileNameFromPath(filePath);
+  const newTab: DocumentTab = {
+    id,
+    title: newTitle,
+    filePath,
+    content,
+    savedContent: content,
+    isDirty: false,
+    cursorLine: 1,
+    cursorCol: 1,
+  };
+
+  const isPristineWelcome =
+    currentTabs.length === 1 &&
+    currentTabs[0].id === 'doc-welcome' &&
+    !currentTabs[0].isDirty &&
+    currentTabs[0].filePath === null;
+
+  const nextTabs = isPristineWelcome ? [newTab] : [...currentTabs, newTab];
+
+  return {
+    tabs: nextTabs,
+    activeTabId: id,
+    action: 'opened',
+    tab: newTab,
+  };
+}
+
 /**
  * Pure function to compute the new DocumentTab state after a successful save operation.
  * Ensures the savedContent matches the snapshot written to disk, and recalculates

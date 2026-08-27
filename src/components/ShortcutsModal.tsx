@@ -24,6 +24,7 @@ const SHORTCUT_GROUPS = [
       { key: 'Ctrl + 2', desc: '切换到 双栏分屏模式' },
       { key: 'Ctrl + 3', desc: '切换到 纯阅读模式' },
       { key: 'Ctrl + Shift + O', desc: '展开 / 收起左侧大纲' },
+      { key: 'Ctrl + ,', desc: '打开偏好设置' },
       { key: 'F1 或 Ctrl + /', desc: '打开快捷键帮助指南' },
     ],
   },

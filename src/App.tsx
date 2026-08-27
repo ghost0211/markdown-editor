@@ -8,8 +8,10 @@ import { Preview, PreviewHandle } from '@/components/Preview';
 import { StatusBar } from '@/components/StatusBar';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { ShortcutsModal } from '@/components/ShortcutsModal';
+import { SettingsModal } from '@/components/SettingsModal';
 import { ToastContainer } from '@/components/ToastContainer';
 
+import { useSettings } from '@/hooks/useSettings';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 import { useDocuments } from '@/hooks/useDocuments';
@@ -18,15 +20,27 @@ import { useExportDocument } from '@/hooks/useExportDocument';
 
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
-import { ViewMode, HeadingItem } from '@/types';
+import { ViewMode, HeadingItem, ThemeMode } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
+import { subscribeOpenFiles, drainPendingOpenFiles } from '@/lib/native';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
 
 export const App: React.FC = () => {
+  // Settings hook
+  const { settings, updateSetting, resetSettings } = useSettings();
+
+  // Stable callback for theme bridge to prevent unnecessary listener/effect churn
+  const handleThemeChange = useCallback(
+    (newTheme: ThemeMode) => {
+      updateSetting('theme', newTheme);
+    },
+    [updateSetting]
+  );
+
   // Theme hook
-  const { theme, setTheme, isDark } = useTheme();
+  const { theme, setTheme, isDark } = useTheme(settings.theme, handleThemeChange);
 
   // Toast hook
   const { toasts, showToast, removeToast } = useToast();
@@ -41,11 +55,12 @@ export const App: React.FC = () => {
     updateContent,
     updateCursor,
     openDocument,
+    openFilesByPaths,
     saveActiveDocument,
     requestCloseTab,
     confirmDialog,
     setConfirmDialog,
-  } = useDocuments(showToast);
+  } = useDocuments(showToast, settings.restoreSession);
 
   // Document export hook
   const {
@@ -57,6 +72,9 @@ export const App: React.FC = () => {
 
   // View mode state
   const [viewMode, setViewModeState] = useState<ViewMode>(() => {
+    if (settings.startupView !== 'remember-last') {
+      return settings.startupView;
+    }
     const saved = localStorage.getItem(STORAGE_VIEW_MODE_KEY) as ViewMode | null;
     return saved === 'edit' || saved === 'split' || saved === 'read' ? saved : 'split';
   });
@@ -80,8 +98,61 @@ export const App: React.FC = () => {
     });
   }, []);
 
-  // Shortcuts modal state
+  const handleCloseSidebar = useCallback(() => {
+    setIsSidebarOpen(false);
+  }, []);
+
+  // Modals state & stable handlers
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+
+  const handleOpenSettings = useCallback(() => {
+    setIsSettingsModalOpen(true);
+  }, []);
+
+  const handleCloseSettings = useCallback(() => {
+    setIsSettingsModalOpen(false);
+  }, []);
+
+  const handleToggleSettings = useCallback(() => {
+    setIsSettingsModalOpen((prev) => !prev);
+  }, []);
+
+  const handleOpenShortcuts = useCallback(() => {
+    setIsShortcutsModalOpen(true);
+  }, []);
+
+  const handleCloseShortcuts = useCallback(() => {
+    setIsShortcutsModalOpen(false);
+  }, []);
+
+  const handleToggleShortcuts = useCallback(() => {
+    setIsShortcutsModalOpen((prev) => !prev);
+  }, []);
+
+  // Stable document action handlers
+  const handleNewTab = useCallback(() => {
+    createNewTab();
+  }, [createNewTab]);
+
+  const handleSave = useCallback(() => {
+    saveActiveDocument(false);
+  }, [saveActiveDocument]);
+
+  const handleSaveAs = useCallback(() => {
+    saveActiveDocument(true);
+  }, [saveActiveDocument]);
+
+  const handleCloseActiveTab = useCallback(() => {
+    if (activeTabId) {
+      requestCloseTab(activeTabId);
+    }
+  }, [activeTabId, requestCloseTab]);
+
+  const handleCancelConfirm = useCallback(() => {
+    confirmDialog.onCancel?.();
+    setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+  }, [confirmDialog.onCancel, setConfirmDialog]);
 
   // Editor and Preview refs
   const editorRef = useRef<EditorHandle>(null);
@@ -101,6 +172,53 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [isSidebarOpen]);
 
+  // Handle cold-start and runtime (single-instance) file association opens
+  useEffect(() => {
+    let unlisten: (() => void) | undefined;
+    let isMounted = true;
+
+    const drainAndOpen = async () => {
+      try {
+        const pending = await drainPendingOpenFiles();
+        if (isMounted && Array.isArray(pending) && pending.length > 0) {
+          await openFilesByPaths(pending);
+        }
+      } catch (err) {
+        console.warn('获取待打开文件失败:', err);
+      }
+    };
+
+    const initializeOpenWith = async () => {
+      // 1. Subscribe to wake-up event first to prevent any race condition
+      try {
+        const cleanup = await subscribeOpenFiles(() => {
+          if (isMounted) {
+            drainAndOpen();
+          }
+        });
+        if (isMounted) {
+          unlisten = cleanup;
+        } else {
+          cleanup();
+        }
+      } catch (err) {
+        console.warn('注册文件打开事件监听失败:', err);
+      }
+
+      // 2. Initial atomic drain of any pending paths (cold start CLI arguments or pre-queued files)
+      await drainAndOpen();
+    };
+
+    initializeOpenWith();
+
+    return () => {
+      isMounted = false;
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, [openFilesByPaths]);
+
   // Extract headings outline from active document content
   const headings = useMemo(() => {
     if (!activeTab) return [];
@@ -117,16 +235,15 @@ export const App: React.FC = () => {
 
   // Keyboard shortcuts integration
   useKeyboardShortcuts({
-    onNew: () => createNewTab(),
-    onOpen: () => openDocument(),
-    onSave: () => saveActiveDocument(false),
-    onSaveAs: () => saveActiveDocument(true),
-    onCloseTab: () => {
-      if (activeTabId) requestCloseTab(activeTabId);
-    },
+    onNew: handleNewTab,
+    onOpen: openDocument,
+    onSave: handleSave,
+    onSaveAs: handleSaveAs,
+    onCloseTab: handleCloseActiveTab,
     onSetViewMode: setViewMode,
     onToggleSidebar: toggleSidebar,
-    onToggleShortcutsModal: () => setIsShortcutsModalOpen((prev) => !prev),
+    onToggleShortcutsModal: handleToggleShortcuts,
+    onToggleSettingsModal: handleToggleSettings,
   });
 
   // Handle heading selection from outline
@@ -190,15 +307,16 @@ export const App: React.FC = () => {
         onSetTheme={setTheme}
         isSidebarOpen={isSidebarOpen}
         onToggleSidebar={toggleSidebar}
-        onNew={() => createNewTab()}
+        onNew={handleNewTab}
         onOpen={openDocument}
-        onSave={() => saveActiveDocument(false)}
-        onSaveAs={() => saveActiveDocument(true)}
+        onSave={handleSave}
+        onSaveAs={handleSaveAs}
         onExportWord={exportWord}
         onExportPdf={exportPdf}
         isExporting={isExporting}
         exportingType={exportingType}
-        onOpenShortcuts={() => setIsShortcutsModalOpen(true)}
+        onOpenShortcuts={handleOpenShortcuts}
+        onOpenSettings={handleOpenSettings}
       />
 
       {/* 2. TabBar (Multi-document tabs) */}
@@ -207,7 +325,7 @@ export const App: React.FC = () => {
         activeTabId={activeTabId}
         onSelectTab={setActiveTabId}
         onCloseTab={requestCloseTab}
-        onNewTab={() => createNewTab()}
+        onNewTab={handleNewTab}
       />
 
       {/* 3. Toolbar (Markdown insertion ribbon) */}
@@ -221,7 +339,7 @@ export const App: React.FC = () => {
         <Sidebar
           headings={headings}
           isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
+          onClose={handleCloseSidebar}
           onSelectHeading={handleSelectHeading}
           currentLine={activeTab?.cursorLine || 1}
         />
@@ -248,6 +366,11 @@ export const App: React.FC = () => {
                 onCursorChange={handleCursorChange}
                 onScroll={handleEditorScroll}
                 isDark={isDark}
+                fontSize={settings.fontSize}
+                lineHeight={settings.lineHeight}
+                tabSize={settings.tabSize}
+                wordWrap={settings.wordWrap}
+                lineNumbers={settings.lineNumbers}
               />
             </div>
           )}
@@ -286,15 +409,21 @@ export const App: React.FC = () => {
         cancelLabel={confirmDialog.cancelLabel}
         variant={confirmDialog.variant}
         onConfirm={confirmDialog.onConfirm}
-        onCancel={() => {
-          confirmDialog.onCancel?.();
-          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-        }}
+        onCancel={handleCancelConfirm}
       />
 
       <ShortcutsModal
         isOpen={isShortcutsModalOpen}
-        onClose={() => setIsShortcutsModalOpen(false)}
+        onClose={handleCloseShortcuts}
+      />
+
+      <SettingsModal
+        isOpen={isSettingsModalOpen}
+        onClose={handleCloseSettings}
+        settings={settings}
+        onUpdateSetting={updateSetting}
+        onResetSettings={resetSettings}
+        showToast={showToast}
       />
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
