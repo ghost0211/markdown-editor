@@ -18,6 +18,7 @@ import {
   Minus,
 } from 'lucide-react';
 import { MarkdownAction } from '@/lib/markdownCommands';
+import { useI18n } from '@/i18n';
 
 interface ToolbarProps {
   onAction: (action: MarkdownAction) => void;
@@ -25,6 +26,7 @@ interface ToolbarProps {
 }
 
 export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) => {
+  const { t } = useI18n();
   const btnClass =
     'p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-40 disabled:pointer-events-none';
 
@@ -35,7 +37,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('h1')}
           disabled={disabled}
-          title="一级标题 (# )"
+          title={t('toolbar.h1')}
           className={btnClass}
         >
           <Heading1 className="w-3.5 h-3.5" />
@@ -43,7 +45,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('h2')}
           disabled={disabled}
-          title="二级标题 (## )"
+          title={t('toolbar.h2')}
           className={btnClass}
         >
           <Heading2 className="w-3.5 h-3.5" />
@@ -51,7 +53,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('h3')}
           disabled={disabled}
-          title="三级标题 (### )"
+          title={t('toolbar.h3')}
           className={btnClass}
         >
           <Heading3 className="w-3.5 h-3.5" />
@@ -65,7 +67,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('bold')}
           disabled={disabled}
-          title="粗体 (**文本**)"
+          title={t('toolbar.bold')}
           className={btnClass}
         >
           <Bold className="w-3.5 h-3.5" />
@@ -73,7 +75,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('italic')}
           disabled={disabled}
-          title="斜体 (*文本*)"
+          title={t('toolbar.italic')}
           className={btnClass}
         >
           <Italic className="w-3.5 h-3.5" />
@@ -81,7 +83,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('strike')}
           disabled={disabled}
-          title="删除线 (~~文本~~)"
+          title={t('toolbar.strike')}
           className={btnClass}
         >
           <Strikethrough className="w-3.5 h-3.5" />
@@ -89,7 +91,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('quote')}
           disabled={disabled}
-          title="引用块 (> 文本)"
+          title={t('toolbar.quote')}
           className={btnClass}
         >
           <Quote className="w-3.5 h-3.5" />
@@ -103,7 +105,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('inline-code')}
           disabled={disabled}
-          title="行内代码 (`code`)"
+          title={t('toolbar.inlineCode')}
           className={btnClass}
         >
           <Code className="w-3.5 h-3.5" />
@@ -111,7 +113,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('code-block')}
           disabled={disabled}
-          title="多行代码块 (```lang ... ```)"
+          title={t('toolbar.codeBlock')}
           className={btnClass}
         >
           <FileCode className="w-3.5 h-3.5" />
@@ -125,7 +127,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('ul')}
           disabled={disabled}
-          title="无序列表 (- 列表项)"
+          title={t('toolbar.ul')}
           className={btnClass}
         >
           <List className="w-3.5 h-3.5" />
@@ -133,7 +135,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('ol')}
           disabled={disabled}
-          title="有序列表 (1. 列表项)"
+          title={t('toolbar.ol')}
           className={btnClass}
         >
           <ListOrdered className="w-3.5 h-3.5" />
@@ -141,7 +143,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('task')}
           disabled={disabled}
-          title="任务清单 (- [ ] 任务)"
+          title={t('toolbar.task')}
           className={btnClass}
         >
           <ListTodo className="w-3.5 h-3.5" />
@@ -155,7 +157,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('link')}
           disabled={disabled}
-          title="插入链接 ([标题](url))"
+          title={t('toolbar.link')}
           className={btnClass}
         >
           <Link2 className="w-3.5 h-3.5" />
@@ -163,7 +165,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('image')}
           disabled={disabled}
-          title="插入图片 (![描述](url))"
+          title={t('toolbar.image')}
           className={btnClass}
         >
           <ImageIcon className="w-3.5 h-3.5" />
@@ -171,7 +173,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('table')}
           disabled={disabled}
-          title="插入表格"
+          title={t('toolbar.table')}
           className={btnClass}
         >
           <TableIcon className="w-3.5 h-3.5" />
@@ -179,7 +181,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
         <button
           onClick={() => onAction('hr')}
           disabled={disabled}
-          title="插入分割线 (---)"
+          title={t('toolbar.hr')}
           className={btnClass}
         >
           <Minus className="w-3.5 h-3.5" />

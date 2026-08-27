@@ -12,6 +12,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { Check, Copy } from 'lucide-react';
+import { useI18n } from '@/i18n';
 import 'highlight.js/styles/github-dark.css';
 
 export interface PreviewHandle {
@@ -108,8 +109,79 @@ function findElementInContainer(
 
 const TOP_SCROLL_OFFSET = 16;
 
+interface CodeProps extends React.ComponentPropsWithoutRef<'code'> {
+  className?: string;
+  children?: React.ReactNode;
+}
+
+const CodeBlock: React.FC<CodeProps> = ({ className: codeClassName, children, ...props }) => {
+  const { t } = useI18n();
+  const [copied, setCopied] = useState(false);
+  const match = /language-(\w+)/.exec(codeClassName || '');
+  const language = match ? match[1] : '';
+  const rawCode = String(children).replace(/\n$/, '');
+
+  const handleCopy = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(rawCode);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // ignore
+    }
+  }, [rawCode]);
+
+  const isInline = !match && !String(children).includes('\n');
+
+  if (isInline) {
+    return (
+      <code
+        className="bg-slate-200/80 dark:bg-slate-800 text-pink-600 dark:text-pink-400 font-mono text-xs px-1.5 py-0.5 rounded"
+        {...props}
+      >
+        {children}
+      </code>
+    );
+  }
+
+  return (
+    <div className="relative group my-4 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-[#0d1117]">
+      <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-slate-800 text-xs text-slate-400 font-mono select-none">
+        <span className="text-[11px] uppercase tracking-wider">{language || 'text'}</span>
+        <button
+          type="button"
+          onClick={handleCopy}
+          title={t('common.copyCode')}
+          aria-label={t('common.copyCode')}
+          className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors text-[11px]"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3 h-3 text-emerald-400" />
+              <span className="text-emerald-400">{t('common.copied')}</span>
+            </>
+          ) : (
+            <>
+              <Copy className="w-3 h-3" />
+              <span>{t('common.copy')}</span>
+            </>
+          )}
+        </button>
+      </div>
+      <div className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed">
+        <pre className="!bg-transparent !p-0 !m-0">
+          <code className={codeClassName} {...props}>
+            {children}
+          </code>
+        </pre>
+      </div>
+    </div>
+  );
+};
+
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(
   ({ content, onScroll, className }, ref) => {
+    const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
     const scrollToElement = useCallback((container: HTMLElement, targetElement: HTMLElement) => {
@@ -179,67 +251,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
         h4: createHeadingRenderer('h4'),
         h5: createHeadingRenderer('h5'),
         h6: createHeadingRenderer('h6'),
-        code: ({ className: codeClassName, children, ...props }) => {
-          const [copied, setCopied] = useState(false);
-          const match = /language-(\w+)/.exec(codeClassName || '');
-          const language = match ? match[1] : '';
-          const rawCode = String(children).replace(/\n$/, '');
-
-          const handleCopy = useCallback(async () => {
-            try {
-              await navigator.clipboard.writeText(rawCode);
-              setCopied(true);
-              setTimeout(() => setCopied(false), 2000);
-            } catch {
-              // ignore
-            }
-          }, [rawCode]);
-
-          const isInline = !match && !String(children).includes('\n');
-
-          if (isInline) {
-            return (
-              <code
-                className="bg-slate-200/80 dark:bg-slate-800 text-pink-600 dark:text-pink-400 font-mono text-xs px-1.5 py-0.5 rounded"
-                {...props}
-              >
-                {children}
-              </code>
-            );
-          }
-
-          return (
-            <div className="relative group my-4 rounded-lg overflow-hidden border border-slate-200 dark:border-slate-800 bg-[#0d1117]">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-[#161b22] border-b border-slate-800 text-xs text-slate-400 font-mono select-none">
-                <span className="text-[11px] uppercase tracking-wider">{language || 'text'}</span>
-                <button
-                  onClick={handleCopy}
-                  title="复制代码"
-                  className="flex items-center space-x-1 px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors text-[11px]"
-                >
-                  {copied ? (
-                    <>
-                      <Check className="w-3 h-3 text-emerald-400" />
-                      <span className="text-emerald-400">已复制</span>
-                    </>
-                  ) : (
-                    <>
-                      <Copy className="w-3 h-3" />
-                      <span>复制</span>
-                    </>
-                  )}
-                </button>
-              </div>
-              <div className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed">
-                <pre className="!bg-transparent !p-0 !m-0">
-                  <code className={codeClassName} {...props}>
-                    {children}
-                  </code>
-                </pre>
-              </div>
-            </div>
-          );
-        },
+        code: CodeBlock,
         a: ({ href, children, ...props }) => {
           const isAnchor = href?.startsWith('#');
 
@@ -270,7 +282,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget]
+      [scrollToTarget, t]
     );
 
     return (

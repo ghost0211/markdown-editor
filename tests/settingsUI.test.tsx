@@ -43,6 +43,24 @@ describe('Settings UI Components (SettingsModal & TitleBar)', () => {
       expect(html).toContain('偏好设置');
     });
 
+    it('should render language selection section with Simplified Chinese and English options', () => {
+      const html = renderToStaticMarkup(
+        <SettingsModal
+          isOpen={true}
+          onClose={mockOnClose}
+          settings={{ ...DEFAULT_SETTINGS, language: 'zh-CN' }}
+          onUpdateSetting={mockOnUpdateSetting}
+          onResetSettings={mockOnResetSettings}
+          showToast={mockShowToast}
+        />
+      );
+
+      expect(html).toContain('界面语言');
+      expect(html).toContain('简体中文');
+      expect(html).toContain('English');
+      expect(html).toContain('aria-label="界面语言选择"');
+    });
+
     it('should render appearance theme section with all 3 theme options', () => {
       const html = renderToStaticMarkup(
         <SettingsModal

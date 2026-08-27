@@ -13,6 +13,7 @@ import { EditorView } from '@codemirror/view';
 import { EditorState } from '@codemirror/state';
 import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
+import { useI18n } from '@/i18n';
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
@@ -54,6 +55,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     ref
   ) => {
     const cmRef = useRef<ReactCodeMirrorRef>(null);
+    const { t, language } = useI18n();
 
     // CodeMirror extensions
     const extensions = useMemo(() => {
@@ -126,7 +128,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         applyAction: (action: MarkdownAction) => {
           const view = cmRef.current?.view;
           if (!view) return;
-          executeCodeMirrorAction(view, action);
+          executeCodeMirrorAction(view, action, { t, language });
         },
 
         focus: () => {
@@ -145,7 +147,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           }
         },
       }),
-      []
+      [t, language]
     );
 
     return (

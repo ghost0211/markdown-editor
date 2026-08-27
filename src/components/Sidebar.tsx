@@ -8,6 +8,7 @@ import {
   FileQuestion,
   X,
 } from 'lucide-react';
+import { useI18n } from '@/i18n';
 import clsx from 'clsx';
 
 interface SidebarProps {
@@ -25,6 +26,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onSelectHeading,
   currentLine = 1,
 }) => {
+  const { t } = useI18n();
   const [search, setSearch] = useState('');
 
   const filteredHeadings = useMemo(() => {
@@ -41,11 +43,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className="h-9 px-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between font-medium text-slate-700 dark:text-slate-200">
         <div className="flex items-center space-x-1.5">
           <ListTree className="w-4 h-4 text-blue-500" />
-          <span>文档大纲 ({headings.length})</span>
+          <span>{t('sidebar.outlineTitle', { count: headings.length })}</span>
         </div>
         <button
+          type="button"
           onClick={onClose}
-          title="收起大纲"
+          title={t('sidebar.collapse')}
+          aria-label={t('sidebar.collapse')}
           className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
         >
           <X className="w-3.5 h-3.5" />
@@ -59,14 +63,18 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <Search className="w-3.5 h-3.5 absolute left-2.5 text-slate-400 pointer-events-none" />
             <input
               type="text"
-              placeholder="搜索标题..."
+              placeholder={t('sidebar.searchPlaceholder')}
+              aria-label={t('sidebar.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               className="w-full bg-white dark:bg-[#182234] border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {search && (
               <button
+                type="button"
                 onClick={() => setSearch('')}
+                title={t('sidebar.clearSearch')}
+                aria-label={t('sidebar.clearSearch')}
                 className="absolute right-2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
               >
                 <X className="w-3 h-3" />
@@ -77,17 +85,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
       )}
 
       {/* Headings Tree List */}
-      <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+      <div
+        className="flex-1 overflow-y-auto p-1.5 space-y-0.5"
+        role="navigation"
+        aria-label={t('sidebar.outlineTitle', { count: headings.length })}
+      >
         {filteredHeadings.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-48 text-center px-4 text-slate-400 dark:text-slate-500">
             <FileQuestion className="w-8 h-8 mb-2 opacity-50 stroke-[1.5]" />
             <p className="font-medium text-xs text-slate-500 dark:text-slate-400">
-              {search ? '未找到匹配的标题' : '暂无文档大纲'}
+              {search ? t('sidebar.noMatchingHeadings') : t('sidebar.noOutline')}
             </p>
             <p className="text-[11px] mt-1 leading-relaxed">
               {search
-                ? '请尝试更换搜索关键字'
-                : '在文档中使用 # 一级标题 即可生成结构化大纲'}
+                ? t('sidebar.noMatchingHelp')
+                : t('sidebar.noOutlineHelp')}
             </p>
           </div>
         ) : (
@@ -113,7 +125,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
                     : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                 )}
-                title={`第 ${heading.line} 行 - H${heading.level}: ${heading.text}`}
+                title={t('sidebar.headingItemTooltip', {
+                  line: heading.line,
+                  level: heading.level,
+                  text: heading.text,
+                })}
               >
                 {/* Level indicator */}
                 <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-blue-500 mr-1.5 shrink-0 flex items-center">

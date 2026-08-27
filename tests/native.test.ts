@@ -2,13 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import {
   isValidExternalUrl,
   openExternalUrl,
+  saveFileDialog,
   exportFileDialog,
   writeBinaryFile,
+  readTextFile,
   exportPdfFromHtml,
   drainPendingOpenFiles,
   subscribeOpenFiles,
   openWindowsDefaultAppsSettings,
 } from '../src/lib/native';
+import { SETTINGS_STORAGE_KEY } from '../src/lib/settings';
 
 describe('External URL Security (native.ts)', () => {
   describe('isValidExternalUrl', () => {
@@ -247,6 +250,96 @@ describe('Native Export Wrappers (native.ts)', () => {
     it('openWindowsDefaultAppsSettings should throw friendly error in browser mode', async () => {
       await expect(openWindowsDefaultAppsSettings()).rejects.toThrow(
         /Web 浏览器环境.*仅在 Windows 桌面应用中支持/
+      );
+    });
+  });
+
+  describe('Localized Fallback Prompts & Error Messages (zh-CN & en-US)', () => {
+    let mockPrompt: ReturnType<typeof vi.fn>;
+    let storageMock: Record<string, string> = {};
+
+    beforeEach(() => {
+      mockPrompt = vi.fn();
+      (globalThis as unknown as { window?: unknown }).window = {
+        prompt: mockPrompt,
+      };
+
+      storageMock = {};
+      const mockStorage = {
+        getItem: vi.fn((key: string) => storageMock[key] ?? null),
+        setItem: vi.fn((key: string, value: string) => {
+          storageMock[key] = String(value);
+        }),
+        removeItem: vi.fn((key: string) => {
+          delete storageMock[key];
+        }),
+        clear: vi.fn(() => {
+          storageMock = {};
+        }),
+      };
+
+      Object.defineProperty(globalThis, 'localStorage', {
+        value: mockStorage,
+        writable: true,
+        configurable: true,
+      });
+    });
+
+    afterEach(() => {
+      delete (globalThis as unknown as { window?: unknown }).window;
+      delete (globalThis as unknown as { localStorage?: unknown }).localStorage;
+      vi.restoreAllMocks();
+    });
+
+    it('should localize prompts in English when language is en-US', async () => {
+      storageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({ language: 'en-US' });
+
+      mockPrompt.mockReturnValue('MyDocument.md');
+      await saveFileDialog();
+      expect(mockPrompt).toHaveBeenCalledWith(
+        'Please enter a file name to save',
+        'Untitled.md'
+      );
+
+      mockPrompt.mockReturnValue('MyExport');
+      await exportFileDialog('pdf');
+      expect(mockPrompt).toHaveBeenCalledWith(
+        'Please enter a file name for PDF export',
+        'Untitled.pdf'
+      );
+    });
+
+    it('should localize prompts in Chinese when language is zh-CN', async () => {
+      storageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({ language: 'zh-CN' });
+
+      mockPrompt.mockReturnValue('我的文档.md');
+      await saveFileDialog();
+      expect(mockPrompt).toHaveBeenCalledWith(
+        '请输入保存的文件名',
+        '未命名文档.md'
+      );
+
+      mockPrompt.mockReturnValue('导出文件');
+      await exportFileDialog('docx');
+      expect(mockPrompt).toHaveBeenCalledWith(
+        '请输入导出的 DOCX 文件名',
+        '未命名.docx'
+      );
+    });
+
+    it('should localize read and settings errors in English when language is en-US', async () => {
+      storageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({ language: 'en-US' });
+
+      await expect(readTextFile('C:/test.md')).rejects.toThrow(
+        /Web browser environment does not support reading local files directly by path/
+      );
+
+      await expect(openWindowsDefaultAppsSettings()).rejects.toThrow(
+        /Currently in Web browser environment/
+      );
+
+      await expect(openExternalUrl('ftp://example.com')).rejects.toThrow(
+        /Unsupported or unsafe link protocol/
       );
     });
   });

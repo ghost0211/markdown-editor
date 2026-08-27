@@ -1,4 +1,6 @@
-export const WELCOME_DOCUMENT = `# 欢迎使用 Markdown Editor 🚀
+import { Language } from '@/i18n';
+
+export const WELCOME_DOCUMENT_ZH = `# 欢迎使用 Markdown Editor 🚀
 
 一款精致、现代、高性能的 Windows 桌面级 Markdown 编辑与阅读器。基于 **Tauri 2 + React + TypeScript + CodeMirror 6** 构建。
 
@@ -40,9 +42,9 @@ import { useState, useEffect } from 'react';
 
 export function useTheme() {
   const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
-  
+
   useEffect(() => {
-    const isDark = theme === 'dark' || 
+    const isDark = theme === 'dark' ||
       (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
     document.documentElement.classList.toggle('dark', isDark);
   }, [theme]);
@@ -73,7 +75,7 @@ export function useTheme() {
 - [x] 集成 CodeMirror 6 语法高亮与行号显示
 - [x] 实现 H1-H6 智能文档大纲与双向锚点跳转
 - [x] 支持中英文精准统计与底部状态栏
-- [ ] 导出 PDF 与 HTML 格式（后续规划）
+- [x] 支持导出 Word (.docx) 与 PDF (.pdf) 格式
 
 ---
 
@@ -91,3 +93,115 @@ export function useTheme() {
 
 *祝您编写愉快！*
 `;
+
+export const WELCOME_DOCUMENT_EN = `# Welcome to Markdown Editor 🚀
+
+A modern, elegant, and high-performance Windows desktop Markdown editor and reader built with **Tauri 2 + React + TypeScript + CodeMirror 6**.
+
+---
+
+## 📑 Key Features
+
+- ⚡ **Native Performance**: Powered by a Rust backend for instant startup and minimal memory footprint.
+- 📝 **Professional Editing**: Built on CodeMirror 6 with syntax highlighting, line numbers, word wrap, and cursor tracking.
+- 📑 **Multi-Tab Workspace**: Open and manage multiple documents simultaneously with real-time dirty status indicators.
+- 🌲 **Smart Outline**: Automatically extracts H1-H6 headings with two-way anchor navigation.
+- 🌓 **Dark & Light Themes**: Full support for Light, Dark, and System appearance themes.
+- 📊 **Three View Modes**: Seamlessly switch between Editor Only, Split View, and Preview Only modes.
+- 🧮 **Accurate Statistics**: Precise character, word, and line count with estimated reading time.
+
+---
+
+## 💻 Code Highlighting Example
+
+### Rust Fast File Reader
+
+\`\`\`rust
+use std::fs;
+use std::path::Path;
+
+pub fn read_text_file(path: &str) -> Result<String, String> {
+    let p = Path::new(path);
+    if !p.exists() {
+        return Err(format!("File not found: {}", path));
+    }
+    fs::read_to_string(p).map_err(|e| format!("Failed to read: {}", e))
+}
+\`\`\`
+
+### TypeScript / React Hook Example
+
+\`\`\`typescript
+import { useState, useEffect } from 'react';
+
+export function useTheme() {
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>('system');
+
+  useEffect(() => {
+    const isDark = theme === 'dark' ||
+      (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+    document.documentElement.classList.toggle('dark', isDark);
+  }, [theme]);
+
+  return { theme, setTheme };
+}
+\`\`\`
+
+---
+
+## 📊 GFM Table Support
+
+| Shortcut | Description | Scope |
+| :--- | :--- | :---: |
+| \`Ctrl + N\` | New blank document tab | Global |
+| \`Ctrl + O\` | Open local Markdown file | Global |
+| \`Ctrl + S\` | Save current document | Global |
+| \`Ctrl + Shift + S\` | Save As new file | Global |
+| \`Ctrl + W\` | Close current document tab | Global |
+| \`Ctrl + 1 / 2 / 3\` | Switch Edit / Split / Preview View | Global |
+| \`Ctrl + Shift + O\` | Toggle Outline sidebar | Global |
+
+---
+
+## ✅ GFM Task List
+
+- [x] Complete Tauri 2 and React architecture setup
+- [x] Integrate CodeMirror 6 syntax highlighting and line numbers
+- [x] Implement H1-H6 document outline with anchor navigation
+- [x] Multi-language support (English & Chinese)
+- [x] Export to Word (.docx) and PDF (.pdf) formats
+
+---
+
+## 💬 Blockquote & Tips
+
+> **💡 Writing Tip**
+> You can use the top toolbar buttons to quickly insert bold, italic, lists, tables, and code blocks, or use keyboard shortcuts for rapid editing.
+> Click headings in the left outline to instantly jump to sections!
+
+---
+
+## 🔗 External Links
+
+Visit [Markdown Guide](https://www.markdownguide.org) or [Tauri Official Website](https://tauri.app). Links open safely in your system default browser.
+
+*Happy writing!*
+`;
+
+export const WELCOME_DOCUMENT = WELCOME_DOCUMENT_ZH;
+
+/**
+ * Returns localized welcome document title and content for fresh startup sessions.
+ */
+export function getWelcomeDocument(language: Language): { title: string; content: string } {
+  if (language === 'en-US') {
+    return {
+      title: 'Welcome.md',
+      content: WELCOME_DOCUMENT_EN,
+    };
+  }
+  return {
+    title: '欢迎使用.md',
+    content: WELCOME_DOCUMENT_ZH,
+  };
+}

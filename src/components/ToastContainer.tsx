@@ -12,7 +12,11 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
   if (toasts.length === 0) return null;
 
   return (
-    <div className="fixed bottom-8 right-6 z-50 flex flex-col space-y-2 pointer-events-none max-w-sm w-full select-none">
+    <div
+      role="status"
+      aria-live="polite"
+      className="fixed bottom-8 right-6 z-50 flex flex-col space-y-2 pointer-events-none max-w-sm w-full select-none"
+    >
       {toasts.map((toast) => {
         const icon = {
           success: <CheckCircle className="w-4 h-4 text-emerald-500 shrink-0" />,
@@ -39,7 +43,9 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
             <div className="pt-0.5">{icon}</div>
             <div className="flex-1 font-medium leading-relaxed break-words">{toast.message}</div>
             <button
+              type="button"
               onClick={() => onDismiss(toast.id)}
+              aria-label="Dismiss"
               className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-0.5 rounded transition-colors shrink-0"
             >
               <X className="w-3.5 h-3.5" />

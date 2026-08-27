@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { FileText, Plus, X, Sparkles } from 'lucide-react';
 import { DocumentTab } from '@/types';
+import { useI18n } from '@/i18n';
 import clsx from 'clsx';
 
 interface TabBarProps {
@@ -19,6 +20,7 @@ export const TabBar: React.FC<TabBarProps> = ({
   onCloseTab,
   onNewTab,
 }) => {
+  const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
@@ -31,6 +33,8 @@ export const TabBar: React.FC<TabBarProps> = ({
     <div
       className="h-9 bg-slate-200/80 dark:bg-[#131b2a] border-b border-slate-300 dark:border-slate-800 flex items-center px-1 select-none shrink-0 overflow-hidden"
       onWheel={handleWheel}
+      role="tablist"
+      aria-label="Document tabs"
     >
       <div
         ref={scrollRef}
@@ -43,7 +47,16 @@ export const TabBar: React.FC<TabBarProps> = ({
           return (
             <div
               key={tab.id}
+              role="tab"
+              aria-selected={isActive}
+              tabIndex={0}
               onClick={() => onSelectTab(tab.id)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault();
+                  onSelectTab(tab.id);
+                }
+              }}
               onMouseDown={(e) => {
                 // Middle click to close tab
                 if (e.button === 1) {
@@ -72,24 +85,28 @@ export const TabBar: React.FC<TabBarProps> = ({
               {/* Dirty status dot or close button */}
               <div className="ml-1.5 flex items-center shrink-0">
                 {tab.isDirty ? (
-                  <div
+                  <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onCloseTab(tab.id);
                     }}
-                    title="未保存（点击关闭）"
+                    title={t('tabBar.unsavedCloseTooltip')}
+                    aria-label={t('tabBar.unsavedCloseTooltip')}
                     className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700"
                   >
                     <span className="w-2 h-2 rounded-full bg-amber-500 group-hover:hidden" />
                     <X className="w-3 h-3 hidden group-hover:block text-slate-600 dark:text-slate-300" />
-                  </div>
+                  </button>
                 ) : (
                   <button
+                    type="button"
                     onClick={(e) => {
                       e.stopPropagation();
                       onCloseTab(tab.id);
                     }}
-                    title="关闭标签页 (Ctrl+W)"
+                    title={t('tabBar.closeTabTooltip')}
+                    aria-label={t('tabBar.closeTabTooltip')}
                     className={clsx(
                       'p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-opacity',
                       isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
@@ -105,8 +122,10 @@ export const TabBar: React.FC<TabBarProps> = ({
 
         {/* New Tab Button */}
         <button
+          type="button"
           onClick={onNewTab}
-          title="新建文档 (Ctrl+N)"
+          title={t('tabBar.newTabTooltip')}
+          aria-label={t('tabBar.newTabTooltip')}
           className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-300/70 dark:hover:bg-slate-800 rounded transition-colors ml-0.5 shrink-0"
         >
           <Plus className="w-4 h-4" />

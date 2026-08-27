@@ -48,17 +48,27 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
 
     it('should validate and preserve valid settings object', () => {
       const valid = {
-        version: 1,
-        theme: 'dark',
+        version: 1 as const,
+        language: 'en-US' as const,
+        theme: 'dark' as const,
         fontSize: 16,
         lineHeight: 1.8,
-        tabSize: 4,
+        tabSize: 4 as const,
         wordWrap: false,
         lineNumbers: false,
         restoreSession: false,
-        startupView: 'edit',
+        startupView: 'edit' as const,
       };
       expect(validateSettings(valid)).toEqual(valid);
+    });
+
+    it('should validate language to allowed options (zh-CN, en-US) and default to zh-CN', () => {
+      expect(validateSettings({ language: 'zh-CN' }).language).toBe('zh-CN');
+      expect(validateSettings({ language: 'en-US' }).language).toBe('en-US');
+      expect(validateSettings({ language: 'fr-FR' as unknown as 'zh-CN' }).language).toBe('zh-CN');
+      expect(validateSettings({ language: 123 as unknown as 'zh-CN' }).language).toBe('zh-CN');
+      expect(validateSettings({ language: null as unknown as 'zh-CN' }).language).toBe('zh-CN');
+      expect(validateSettings({}).language).toBe('zh-CN');
     });
 
     it('should clamp out-of-bounds fontSize to [11, 28]', () => {
@@ -117,12 +127,32 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
     it('should load default settings when localStorage is empty', () => {
       const loaded = loadSettings();
       expect(loaded).toEqual(DEFAULT_SETTINGS);
+      expect(loaded.language).toBe('zh-CN');
+    });
+
+    it('should migrate legacy settings without language field to default language zh-CN', () => {
+      localStorageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({
+        version: 1,
+        theme: 'dark',
+        fontSize: 16,
+        lineHeight: 1.8,
+        tabSize: 4,
+        wordWrap: false,
+        lineNumbers: false,
+        restoreSession: false,
+        startupView: 'edit',
+      });
+      const loaded = loadSettings();
+      expect(loaded.language).toBe('zh-CN');
+      expect(loaded.theme).toBe('dark');
+      expect(loaded.fontSize).toBe(16);
     });
 
     it('should migrate legacy theme key when versioned settings key does not exist', () => {
       localStorageMock[LEGACY_THEME_KEY] = 'dark';
       const loaded = loadSettings();
       expect(loaded.theme).toBe('dark');
+      expect(loaded.language).toBe('zh-CN');
       expect(loaded.fontSize).toBe(DEFAULT_SETTINGS.fontSize);
     });
 
@@ -130,6 +160,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
       localStorageMock[LEGACY_THEME_KEY] = 'light';
       localStorageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({
         version: 1,
+        language: 'en-US',
         theme: 'dark',
         fontSize: 18,
         lineHeight: 1.8,
@@ -141,6 +172,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
       });
 
       const loaded = loadSettings();
+      expect(loaded.language).toBe('en-US');
       expect(loaded.theme).toBe('dark');
       expect(loaded.fontSize).toBe(18);
       expect(loaded.startupView).toBe('read');
@@ -155,6 +187,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
     it('should save settings and synchronize legacy theme key', () => {
       const newSettings = {
         ...DEFAULT_SETTINGS,
+        language: 'en-US' as const,
         theme: 'dark' as const,
         fontSize: 20,
         tabSize: 4 as const,
@@ -164,6 +197,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
 
       expect(localStorageMock[SETTINGS_STORAGE_KEY]).toBeDefined();
       const parsed = JSON.parse(localStorageMock[SETTINGS_STORAGE_KEY]);
+      expect(parsed.language).toBe('en-US');
       expect(parsed.fontSize).toBe(20);
       expect(parsed.theme).toBe('dark');
       expect(localStorageMock[LEGACY_THEME_KEY]).toBe('dark');

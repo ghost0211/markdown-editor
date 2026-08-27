@@ -19,6 +19,7 @@ import {
   Settings,
 } from 'lucide-react';
 import { ThemeMode, ViewMode, DocumentTab } from '@/types';
+import { useI18n } from '@/i18n';
 import clsx from 'clsx';
 
 interface TitleBarProps {
@@ -60,6 +61,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onOpenShortcuts,
   onOpenSettings,
 }) => {
+  const { t } = useI18n();
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
   const exportDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -96,13 +98,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   const hasActiveTab = Boolean(activeTab);
   const isButtonDisabled = !hasActiveTab || isExporting;
 
+  const themeLabel =
+    theme === 'light'
+      ? t('titleBar.themeLight')
+      : theme === 'dark'
+      ? t('titleBar.themeDark')
+      : t('titleBar.themeSystem');
+
   return (
     <header className="h-10 bg-slate-100 dark:bg-[#182234] border-b border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-xs text-slate-600 dark:text-slate-300 shrink-0">
       {/* Left: App Logo & Quick File Actions */}
       <div className="flex items-center space-x-1.5">
         <button
+          type="button"
           onClick={onToggleSidebar}
-          title={isSidebarOpen ? '收起大纲 (Ctrl+Shift+O)' : '展开大纲 (Ctrl+Shift+O)'}
+          aria-label={
+            isSidebarOpen
+              ? t('titleBar.collapseOutline')
+              : t('titleBar.expandOutline')
+          }
+          aria-expanded={isSidebarOpen}
+          title={
+            isSidebarOpen
+              ? t('titleBar.collapseOutline')
+              : t('titleBar.expandOutline')
+          }
           className={clsx(
             'p-1.5 rounded transition-colors',
             isSidebarOpen
@@ -123,56 +143,68 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <div className="h-3.5 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
         <button
+          type="button"
           onClick={onNew}
-          title="新建文档 (Ctrl+N)"
+          title={t('titleBar.newDocTooltip')}
+          aria-label={t('titleBar.newDocTooltip')}
           className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
         >
           <FilePlus className="w-3.5 h-3.5 text-blue-500" />
-          <span className="hidden md:inline">新建</span>
+          <span className="hidden md:inline">{t('titleBar.newDoc')}</span>
         </button>
 
         <button
+          type="button"
           onClick={onOpen}
-          title="打开文件 (Ctrl+O)"
+          title={t('titleBar.openDocTooltip')}
+          aria-label={t('titleBar.openDocTooltip')}
           className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
         >
           <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-          <span className="hidden md:inline">打开</span>
+          <span className="hidden md:inline">{t('titleBar.openDoc')}</span>
         </button>
 
         <button
+          type="button"
           onClick={onSave}
-          title="保存文档 (Ctrl+S)"
+          title={t('titleBar.saveDocTooltip')}
+          aria-label={t('titleBar.saveDocTooltip')}
           className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
         >
           <Save className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="hidden md:inline">保存</span>
+          <span className="hidden md:inline">{t('titleBar.saveDoc')}</span>
         </button>
 
         <button
+          type="button"
           onClick={onSaveAs}
-          title="另存为... (Ctrl+Shift+S)"
+          title={t('titleBar.saveAsTooltip')}
+          aria-label={t('titleBar.saveAsTooltip')}
           className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
         >
           <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>另存为</span>
+          <span>{t('titleBar.saveAs')}</span>
         </button>
 
         {/* Export Dropdown Menu Button */}
         <div className="relative" ref={exportDropdownRef}>
           <button
+            type="button"
             onClick={() => {
               if (!isButtonDisabled) {
                 setIsExportMenuOpen((prev) => !prev);
               }
             }}
             disabled={isButtonDisabled}
+            aria-label={t('titleBar.exportWordOrPdfTooltip')}
+            aria-expanded={isExportMenuOpen}
+            aria-haspopup="menu"
             title={
               !hasActiveTab
-                ? '暂无打开的文档'
+                ? t('titleBar.noOpenDocTooltip')
                 : isExporting
-                ? `正在导出 ${exportingType?.toUpperCase() || ''}...`
-                : '导出为 Word 或 PDF 文档'
+                ? t('titleBar.exportingTypeTooltip', { type: exportingType?.toUpperCase() || '' })
+                : t('titleBar.exportWordOrPdfTooltip')
             }
             className={clsx(
               'flex items-center space-x-1 px-2 py-1 rounded transition-colors',
@@ -189,7 +221,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
               <Download className="w-3.5 h-3.5 text-indigo-500" />
             )}
             <span className="hidden md:inline">
-              {isExporting ? '导出中...' : '导出'}
+              {isExporting ? t('titleBar.exporting') : t('titleBar.export')}
             </span>
             <ChevronDown
               className={clsx(
@@ -213,8 +245,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   <FileText className="w-3.5 h-3.5" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xs">导出 Word 文档</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">.docx 格式</span>
+                  <span className="text-xs">{t('titleBar.exportWord')}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportWordDesc')}</span>
                 </div>
               </button>
 
@@ -231,8 +263,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   <FileType className="w-3.5 h-3.5" />
                 </div>
                 <div className="flex flex-col">
-                  <span className="text-xs">导出 PDF 文档</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">.pdf 格式</span>
+                  <span className="text-xs">{t('titleBar.exportPdf')}</span>
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportPdfDesc')}</span>
                 </div>
               </button>
             </div>
@@ -243,10 +275,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       {/* Center: Current Document Title / Path */}
       <div className="flex-1 max-w-md mx-2 truncate text-center font-medium text-slate-700 dark:text-slate-200 text-xs flex items-center justify-center space-x-1.5">
         <span className="truncate">
-          {activeTab ? activeTab.title : '未打开文档'}
+          {activeTab ? activeTab.title : t('titleBar.noDocOpen')}
         </span>
         {activeTab?.isDirty && (
-          <span className="w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse" title="有未保存的修改" />
+          <span
+            className="w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse"
+            title={t('titleBar.unsavedChanges')}
+          />
         )}
       </div>
 
@@ -256,7 +291,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <div className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md text-xs">
           <button
             onClick={() => onSetViewMode('edit')}
-            title="纯编辑模式 (Ctrl+1)"
+            title={t('titleBar.editModeTooltip')}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'edit'
@@ -265,11 +300,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             )}
           >
             <Edit3 className="w-3 h-3" />
-            <span className="hidden lg:inline">编辑</span>
+            <span className="hidden lg:inline">{t('titleBar.editMode')}</span>
           </button>
           <button
             onClick={() => onSetViewMode('split')}
-            title="双栏分屏模式 (Ctrl+2)"
+            title={t('titleBar.splitModeTooltip')}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'split'
@@ -278,11 +313,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             )}
           >
             <Columns2 className="w-3 h-3" />
-            <span className="hidden lg:inline">分屏</span>
+            <span className="hidden lg:inline">{t('titleBar.splitMode')}</span>
           </button>
           <button
             onClick={() => onSetViewMode('read')}
-            title="纯阅读模式 (Ctrl+3)"
+            title={t('titleBar.readModeTooltip')}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'read'
@@ -291,7 +326,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             )}
           >
             <BookOpen className="w-3 h-3" />
-            <span className="hidden lg:inline">阅读</span>
+            <span className="hidden lg:inline">{t('titleBar.readMode')}</span>
           </button>
         </div>
 
@@ -300,8 +335,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Theme Mode Switcher */}
         <div className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md">
           <button
+            type="button"
             onClick={() => onSetTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
-            title={`当前主题: ${theme === 'light' ? '浅色' : theme === 'dark' ? '深色' : '跟随系统'} (点击切换)`}
+            title={t('titleBar.themeTooltip', { theme: themeLabel })}
+            aria-label={t('titleBar.themeTooltip', { theme: themeLabel })}
             className="p-1 rounded text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
           >
             {theme === 'light' && <Sun className="w-3.5 h-3.5 text-amber-500" />}
@@ -313,8 +350,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Settings */}
         <button
           onClick={onOpenSettings}
-          title="偏好设置 (Ctrl+,)"
-          aria-label="偏好设置"
+          title={t('titleBar.settingsTooltip')}
+          aria-label={t('titleBar.settings')}
           className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
         >
           <Settings className="w-3.5 h-3.5" />
@@ -323,8 +360,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         {/* Shortcuts Help */}
         <button
           onClick={onOpenShortcuts}
-          title="快捷键列表 (F1 或 Ctrl+/)"
-          aria-label="快捷键列表"
+          title={t('titleBar.shortcutsTooltip')}
+          aria-label={t('titleBar.shortcuts')}
           className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
         >
           <HelpCircle className="w-3.5 h-3.5" />

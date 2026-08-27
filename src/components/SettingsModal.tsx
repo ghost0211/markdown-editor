@@ -2,6 +2,7 @@ import React, { useEffect, useCallback, useState, useRef } from 'react';
 import {
   X,
   Settings,
+  Languages,
   Sun,
   Moon,
   Monitor,
@@ -16,9 +17,10 @@ import {
   LoaderCircle,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption } from '@/types';
+import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption, Language } from '@/types';
 import { SETTINGS_BOUNDS } from '@/lib/settings';
 import { openWindowsDefaultAppsSettings, isTauri } from '@/lib/native';
+import { useI18n } from '@/i18n';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -37,6 +39,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onResetSettings,
   showToast,
 }) => {
+  const { t } = useI18n();
   const [isOpeningSettings, setIsOpeningSettings] = useState(false);
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -122,14 +125,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setIsOpeningSettings(true);
     try {
       await openWindowsDefaultAppsSettings();
-      showToast('已打开 Windows 默认应用设置页面', 'info');
+      showToast(t('toasts.openedWindowsSettings'), 'info');
     } catch (err: unknown) {
       const msg = (err as Error)?.message || String(err);
       showToast(msg, 'warning');
     } finally {
       setIsOpeningSettings(false);
     }
-  }, [showToast]);
+  }, [showToast, t]);
 
   if (!isOpen) return null;
 
@@ -159,14 +162,14 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <Settings className="w-3.5 h-3.5" />
             </div>
             <h3 id="settings-modal-title" className="font-semibold text-sm">
-              偏好设置
+              {t('settings.modalTitle')}
             </h3>
           </div>
           <button
             ref={closeButtonRef}
             onClick={onClose}
-            aria-label="关闭设置"
-            title="关闭 (Esc)"
+            aria-label={t('settings.closeAria')}
+            title={t('settings.closeTooltip')}
             className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1 rounded-md hover:bg-slate-200/60 dark:hover:bg-slate-700/60 transition-colors"
           >
             <X className="w-4 h-4" />
@@ -175,22 +178,61 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Modal Content / Sections */}
         <div className="p-5 overflow-y-auto space-y-5 text-xs">
-          {/* Section 1: Appearance Theme */}
+          {/* Section 1: Language */}
           <div className="space-y-2.5">
             <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
-              <Sun className="w-3.5 h-3.5 text-amber-500" />
-              <span>外观主题</span>
+              <Languages className="w-3.5 h-3.5 text-blue-500" />
+              <span>{t('settings.languageSection')}</span>
             </div>
             <div
               role="group"
-              aria-label="外观主题选择"
+              aria-label={t('settings.languageSelectorAria')}
+              className="grid grid-cols-2 gap-2 bg-slate-50 dark:bg-[#111927] p-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800"
+            >
+              {(
+                [
+                  { value: 'zh-CN', label: '简体中文' },
+                  { value: 'en-US', label: 'English' },
+                ] as const
+              ).map((opt) => {
+                const isSelected = settings.language === opt.value;
+                return (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => onUpdateSetting('language', opt.value as Language)}
+                    aria-pressed={isSelected}
+                    aria-label={opt.label}
+                    className={clsx(
+                      'flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-md font-medium transition-all text-xs',
+                      isSelected
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs border border-slate-200/70 dark:border-slate-600'
+                        : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/60'
+                    )}
+                  >
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 2: Appearance Theme */}
+          <div className="space-y-2.5">
+            <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
+              <Sun className="w-3.5 h-3.5 text-amber-500" />
+              <span>{t('settings.themeSection')}</span>
+            </div>
+            <div
+              role="group"
+              aria-label={t('settings.themeGroupAria')}
               className="grid grid-cols-3 gap-2 bg-slate-50 dark:bg-[#111927] p-1.5 rounded-lg border border-slate-200/80 dark:border-slate-800"
             >
               {(
                 [
-                  { value: 'system', label: '跟随系统', icon: Monitor },
-                  { value: 'light', label: '浅色模式', icon: Sun },
-                  { value: 'dark', label: '深色模式', icon: Moon },
+                  { value: 'system', label: t('settings.themeSystem'), icon: Monitor },
+                  { value: 'light', label: t('settings.themeLight'), icon: Sun },
+                  { value: 'dark', label: t('settings.themeDark'), icon: Moon },
                 ] as const
               ).map((opt) => {
                 const IconComponent = opt.icon;
@@ -217,11 +259,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Section 2: Editor Preferences */}
+          {/* Section 3: Editor Preferences */}
           <div className="space-y-3">
             <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
               <Sliders className="w-3.5 h-3.5 text-blue-500" />
-              <span>编辑器偏好</span>
+              <span>{t('settings.editorSection')}</span>
             </div>
 
             <div className="bg-slate-50 dark:bg-[#111927] rounded-lg p-3 border border-slate-200/80 dark:border-slate-800 space-y-3.5">
@@ -229,10 +271,13 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <label htmlFor="settings-font-size" className="font-medium text-slate-700 dark:text-slate-200 block">
-                    编辑器字号
+                    {t('settings.fontSize')}
                   </label>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    范围: {SETTINGS_BOUNDS.fontSize.min} ~ {SETTINGS_BOUNDS.fontSize.max} 像素
+                    {t('settings.fontSizeDesc', {
+                      min: SETTINGS_BOUNDS.fontSize.min,
+                      max: SETTINGS_BOUNDS.fontSize.max,
+                    })}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -245,7 +290,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Math.max(SETTINGS_BOUNDS.fontSize.min, settings.fontSize - 1)
                       )
                     }
-                    aria-label="缩小字号"
+                    aria-label={t('settings.decreaseFontSize')}
                     className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Minus className="w-3 h-3 text-slate-600 dark:text-slate-300" />
@@ -253,7 +298,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <input
                     id="settings-font-size"
                     type="range"
-                    aria-label="编辑器字号"
+                    aria-label={t('settings.fontSizeAria')}
                     min={SETTINGS_BOUNDS.fontSize.min}
                     max={SETTINGS_BOUNDS.fontSize.max}
                     step={SETTINGS_BOUNDS.fontSize.step}
@@ -270,7 +315,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Math.min(SETTINGS_BOUNDS.fontSize.max, settings.fontSize + 1)
                       )
                     }
-                    aria-label="放大字号"
+                    aria-label={t('settings.increaseFontSize')}
                     className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Plus className="w-3 h-3 text-slate-600 dark:text-slate-300" />
@@ -285,10 +330,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <label htmlFor="settings-line-height" className="font-medium text-slate-700 dark:text-slate-200 block">
-                    行高比例
+                    {t('settings.lineHeight')}
                   </label>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    文本行间距 (默认 1.6)
+                    {t('settings.lineHeightDesc')}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -301,7 +346,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Math.round((settings.lineHeight - 0.1) * 10) / 10
                       )
                     }
-                    aria-label="减小行高"
+                    aria-label={t('settings.decreaseLineHeight')}
                     className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Minus className="w-3 h-3 text-slate-600 dark:text-slate-300" />
@@ -309,7 +354,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <input
                     id="settings-line-height"
                     type="range"
-                    aria-label="行高比例"
+                    aria-label={t('settings.lineHeightAria')}
                     min={SETTINGS_BOUNDS.lineHeight.min}
                     max={SETTINGS_BOUNDS.lineHeight.max}
                     step={SETTINGS_BOUNDS.lineHeight.step}
@@ -326,7 +371,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                         Math.round((settings.lineHeight + 0.1) * 10) / 10
                       )
                     }
-                    aria-label="增加行高"
+                    aria-label={t('settings.increaseLineHeight')}
                     className="w-6 h-6 rounded bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 flex items-center justify-center hover:bg-slate-100 dark:hover:bg-slate-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                   >
                     <Plus className="w-3 h-3 text-slate-600 dark:text-slate-300" />
@@ -341,15 +386,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
                   <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                    制表符缩进
+                    {t('settings.tabSize')}
                   </span>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    Tab 键所占空格数量
+                    {t('settings.tabSizeDesc')}
                   </span>
                 </div>
                 <div
                   role="radiogroup"
-                  aria-label="制表符缩进空格数"
+                  aria-label={t('settings.tabSizeGroupAria')}
                   className="flex items-center space-x-1 bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700"
                 >
                   {([2, 4, 8] as const).map((size) => (
@@ -358,7 +403,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       type="button"
                       role="radio"
                       aria-checked={settings.tabSize === size}
-                      aria-label={`制表符 ${size} 空格`}
+                      aria-label={t('settings.tabSizeAria', { size })}
                       onClick={() => onUpdateSetting('tabSize', size as TabSizeOption)}
                       className={clsx(
                         'px-2 py-0.5 rounded font-mono font-medium text-[11px] transition-colors',
@@ -367,7 +412,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
                       )}
                     >
-                      {size} 空格
+                      {t('settings.tabSizeOption', { size })}
                     </button>
                   ))}
                 </div>
@@ -377,16 +422,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
                   <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                    自动折行
+                    {t('settings.wordWrap')}
                   </span>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    长行文本超出视口宽度时自动换行
+                    {t('settings.wordWrapDesc')}
                   </span>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-label="自动折行"
+                  aria-label={t('settings.wordWrapAria')}
                   aria-checked={settings.wordWrap}
                   onClick={() => onUpdateSetting('wordWrap', !settings.wordWrap)}
                   className={clsx(
@@ -407,16 +452,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
                   <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                    显示行号
+                    {t('settings.lineNumbers')}
                   </span>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    在编辑器左侧显示行号栏
+                    {t('settings.lineNumbersDesc')}
                   </span>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-label="显示行号"
+                  aria-label={t('settings.lineNumbersAria')}
                   aria-checked={settings.lineNumbers}
                   onClick={() => onUpdateSetting('lineNumbers', !settings.lineNumbers)}
                   className={clsx(
@@ -435,11 +480,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
-          {/* Section 3: Startup & Session */}
+          {/* Section 4: Startup & Session */}
           <div className="space-y-3">
             <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
               <Sparkles className="w-3.5 h-3.5 text-indigo-500" />
-              <span>启动与会话</span>
+              <span>{t('settings.startupSection')}</span>
             </div>
 
             <div className="bg-slate-50 dark:bg-[#111927] rounded-lg p-3 border border-slate-200/80 dark:border-slate-800 space-y-3.5">
@@ -447,16 +492,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between">
                 <div>
                   <span className="font-medium text-slate-700 dark:text-slate-200 block">
-                    恢复上次打开的文档
+                    {t('settings.restoreSession')}
                   </span>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    应用启动时自动加载上一次关闭时的标签页
+                    {t('settings.restoreSessionDesc')}
                   </span>
                 </div>
                 <button
                   type="button"
                   role="switch"
-                  aria-label="恢复上次打开的文档"
+                  aria-label={t('settings.restoreSessionAria')}
                   aria-checked={settings.restoreSession}
                   onClick={() => onUpdateSetting('restoreSession', !settings.restoreSession)}
                   className={clsx(
@@ -477,41 +522,41 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
                   <label htmlFor="settings-startup-view" className="font-medium text-slate-700 dark:text-slate-200 block">
-                    默认启动视图
+                    {t('settings.startupView')}
                   </label>
                   <span className="text-[11px] text-slate-400 dark:text-slate-500">
-                    配置启动应用时的初始视图模式
+                    {t('settings.startupViewDesc')}
                   </span>
                 </div>
                 <select
                   id="settings-startup-view"
-                  aria-label="默认启动视图"
+                  aria-label={t('settings.startupViewAria')}
                   value={settings.startupView}
                   onChange={(e) =>
                     onUpdateSetting('startupView', e.target.value as StartupViewMode)
                   }
                   className="bg-white dark:bg-slate-800 border border-slate-300 dark:border-slate-700 rounded px-2.5 py-1 text-slate-700 dark:text-slate-200 focus:outline-hidden focus:ring-1 focus:ring-blue-500 text-xs cursor-pointer"
                 >
-                  <option value="remember-last">记忆上次视图</option>
-                  <option value="split">双栏分屏模式</option>
-                  <option value="edit">纯编辑模式</option>
-                  <option value="read">纯阅读模式</option>
+                  <option value="remember-last">{t('settings.viewRememberLast')}</option>
+                  <option value="split">{t('settings.viewSplit')}</option>
+                  <option value="edit">{t('settings.viewEdit')}</option>
+                  <option value="read">{t('settings.viewRead')}</option>
                 </select>
               </div>
             </div>
           </div>
 
-          {/* Section 4: File Associations & Windows Defaults */}
+          {/* Section 5: File Associations & Windows Defaults */}
           <div className="space-y-3">
             <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
               <FileCheck className="w-3.5 h-3.5 text-emerald-500" />
-              <span>系统文件关联</span>
+              <span>{t('settings.associationSection')}</span>
             </div>
 
             <div className="bg-slate-50 dark:bg-[#111927] rounded-lg p-3 border border-slate-200/80 dark:border-slate-800 space-y-2.5">
               <div className="flex flex-wrap items-center gap-1.5">
                 <span className="text-[11px] text-slate-500 dark:text-slate-400 mr-1">
-                  已支持格式:
+                  {t('settings.supportedFormats')}
                 </span>
                 {SETTINGS_BOUNDS.supportedExtensions.map((ext) => (
                   <span
@@ -524,7 +569,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
 
               <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                在 Windows 10 / 11 中，可通过系统设置将本应用设为 Markdown 与文本文件的默认打开程序。
+                {t('settings.associationDesc')}
               </p>
 
               <div className="pt-1">
@@ -533,11 +578,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   onClick={handleOpenWindowsSettings}
                   disabled={!isDesktop || isOpeningSettings}
                   aria-disabled={!isDesktop || isOpeningSettings}
-                  aria-label="打开 Windows 默认应用设置"
+                  aria-label={t('settings.openWindowsSettingsAria')}
                   title={
                     isDesktop
-                      ? '在 Windows 系统设置中配置文件默认打开程序'
-                      : '当前为 Web 浏览器环境，仅在 Windows 桌面应用中支持打开系统默认应用设置'
+                      ? t('settings.openWindowsSettingsTooltip')
+                      : t('settings.openWindowsSettingsWebTooltip')
                   }
                   className={clsx(
                     'w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-md font-medium transition-colors shadow-xs',
@@ -552,7 +597,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     <ExternalLink className="w-3.5 h-3.5 text-blue-500" />
                   )}
                   <span>
-                    {isDesktop ? '打开 Windows 默认应用设置' : '打开默认应用设置 (仅桌面端)'}
+                    {isDesktop ? t('settings.openWindowsSettings') : t('settings.openWindowsSettingsWeb')}
                   </span>
                 </button>
               </div>
@@ -565,22 +610,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           <button
             type="button"
             onClick={onResetSettings}
-            aria-label="恢复默认设置"
-            title="恢复全部设置项为系统初始默认值"
+            aria-label={t('settings.resetDefaultsAria')}
+            title={t('settings.resetDefaultsTooltip')}
             className="flex items-center space-x-1.5 px-3 py-1.5 rounded text-xs font-medium text-slate-600 dark:text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-950/30 transition-colors"
           >
             <RotateCcw className="w-3.5 h-3.5" />
-            <span>恢复默认设置</span>
+            <span>{t('settings.resetDefaults')}</span>
           </button>
 
           <button
             type="button"
             onClick={onClose}
-            aria-label="完成偏好设置"
+            aria-label={t('settings.doneAria')}
             className="flex items-center space-x-1 px-4 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
           >
             <Check className="w-3.5 h-3.5" />
-            <span>完成</span>
+            <span>{t('settings.done')}</span>
           </button>
         </div>
       </div>

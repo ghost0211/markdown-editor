@@ -1,4 +1,5 @@
 import { EditorView } from '@codemirror/view';
+import { Language, TranslationKey } from '@/i18n';
 
 export type MarkdownAction =
   | 'bold'
@@ -25,15 +26,154 @@ export interface FormatResult {
   selectionEnd: number;
 }
 
+export interface MarkdownPlaceholders {
+  codeSnippet: string;
+  quoteText: string;
+  heading: string;
+  listItem: string;
+  orderedItem: string;
+  taskItem: string;
+  linkText: string;
+  imageAlt: string;
+  tableCol1: string;
+  tableCol2: string;
+  tableCol3: string;
+  tableCell1: string;
+  tableCell2: string;
+  tableCell3: string;
+  tableCell4: string;
+  tableCell5: string;
+  tableCell6: string;
+}
+
+export const DEFAULT_ZH_PLACEHOLDERS: MarkdownPlaceholders = {
+  codeSnippet: '代码片段',
+  quoteText: '引用文本',
+  heading: '标题内容',
+  listItem: '列表项',
+  orderedItem: '有序列表项',
+  taskItem: '待办任务',
+  linkText: '链接文本',
+  imageAlt: '图片描述',
+  tableCol1: '列 1',
+  tableCol2: '列 2',
+  tableCol3: '列 3',
+  tableCell1: '单元格 1',
+  tableCell2: '单元格 2',
+  tableCell3: '单元格 3',
+  tableCell4: '单元格 4',
+  tableCell5: '单元格 5',
+  tableCell6: '单元格 6',
+};
+
+export const DEFAULT_EN_PLACEHOLDERS: MarkdownPlaceholders = {
+  codeSnippet: 'Code Snippet',
+  quoteText: 'Quote text',
+  heading: 'Heading',
+  listItem: 'List item',
+  orderedItem: 'Ordered item',
+  taskItem: 'Task item',
+  linkText: 'Link text',
+  imageAlt: 'Image description',
+  tableCol1: 'Column 1',
+  tableCol2: 'Column 2',
+  tableCol3: 'Column 3',
+  tableCell1: 'Cell 1',
+  tableCell2: 'Cell 2',
+  tableCell3: 'Cell 3',
+  tableCell4: 'Cell 4',
+  tableCell5: 'Cell 5',
+  tableCell6: 'Cell 6',
+};
+
+export type MarkdownTranslator = (key: TranslationKey) => string;
+
+export type MarkdownLocaleInput =
+  | Language
+  | MarkdownTranslator
+  | Partial<MarkdownPlaceholders>
+  | { t?: MarkdownTranslator; language?: Language };
+
 /**
- * Pure string transformation for markdown formatting actions
+ * Resolves Markdown placeholder strings from locale, translator function, or explicit overrides.
+ */
+export function resolveMarkdownPlaceholders(
+  localeInput?: MarkdownLocaleInput
+): MarkdownPlaceholders {
+  if (!localeInput) {
+    return DEFAULT_ZH_PLACEHOLDERS;
+  }
+  if (typeof localeInput === 'string') {
+    return localeInput === 'en-US' ? DEFAULT_EN_PLACEHOLDERS : DEFAULT_ZH_PLACEHOLDERS;
+  }
+  if (typeof localeInput === 'function') {
+    const t = localeInput;
+    return {
+      codeSnippet: t('markdown.codeSnippet'),
+      quoteText: t('markdown.quoteText'),
+      heading: t('markdown.heading'),
+      listItem: t('markdown.listItem'),
+      orderedItem: t('markdown.orderedItem'),
+      taskItem: t('markdown.taskItem'),
+      linkText: t('markdown.linkText'),
+      imageAlt: t('markdown.imageAlt'),
+      tableCol1: t('markdown.tableCol1'),
+      tableCol2: t('markdown.tableCol2'),
+      tableCol3: t('markdown.tableCol3'),
+      tableCell1: t('markdown.tableCell1'),
+      tableCell2: t('markdown.tableCell2'),
+      tableCell3: t('markdown.tableCell3'),
+      tableCell4: t('markdown.tableCell4'),
+      tableCell5: t('markdown.tableCell5'),
+      tableCell6: t('markdown.tableCell6'),
+    };
+  }
+  if (typeof localeInput === 'object') {
+    if ('t' in localeInput && typeof localeInput.t === 'function') {
+      const t = localeInput.t;
+      return {
+        codeSnippet: t('markdown.codeSnippet'),
+        quoteText: t('markdown.quoteText'),
+        heading: t('markdown.heading'),
+        listItem: t('markdown.listItem'),
+        orderedItem: t('markdown.orderedItem'),
+        taskItem: t('markdown.taskItem'),
+        linkText: t('markdown.linkText'),
+        imageAlt: t('markdown.imageAlt'),
+        tableCol1: t('markdown.tableCol1'),
+        tableCol2: t('markdown.tableCol2'),
+        tableCol3: t('markdown.tableCol3'),
+        tableCell1: t('markdown.tableCell1'),
+        tableCell2: t('markdown.tableCell2'),
+        tableCell3: t('markdown.tableCell3'),
+        tableCell4: t('markdown.tableCell4'),
+        tableCell5: t('markdown.tableCell5'),
+        tableCell6: t('markdown.tableCell6'),
+      };
+    }
+    if ('language' in localeInput && typeof localeInput.language === 'string') {
+      return localeInput.language === 'en-US' ? DEFAULT_EN_PLACEHOLDERS : DEFAULT_ZH_PLACEHOLDERS;
+    }
+    return {
+      ...DEFAULT_ZH_PLACEHOLDERS,
+      ...(localeInput as Partial<MarkdownPlaceholders>),
+    };
+  }
+  return DEFAULT_ZH_PLACEHOLDERS;
+}
+
+/**
+ * Pure string transformation for markdown formatting actions.
+ * Localizes placeholders for empty selections while preserving explicitly selected user text without alteration.
  */
 export function formatMarkdownString(
   fullText: string,
   start: number,
   end: number,
-  action: MarkdownAction
+  action: MarkdownAction,
+  localeInput?: MarkdownLocaleInput
 ): FormatResult {
+  const placeholders = resolveMarkdownPlaceholders(localeInput);
   const before = fullText.slice(0, start);
   const selected = fullText.slice(start, end);
   const after = fullText.slice(end);
@@ -100,7 +240,7 @@ export function formatMarkdownString(
     }
 
     case 'code-block': {
-      const code = selected || '代码片段';
+      const code = selected || placeholders.codeSnippet;
       const insert = `\`\`\`javascript\n${code}\n\`\`\`\n`;
       return {
         newText: `${before}${insert}${after}`,
@@ -110,7 +250,7 @@ export function formatMarkdownString(
     }
 
     case 'quote': {
-      const content = selected || '引用文本';
+      const content = selected || placeholders.quoteText;
       const quoted = content
         .split('\n')
         .map((line) => `> ${line}`)
@@ -133,7 +273,7 @@ export function formatMarkdownString(
         h4: '#### ',
       };
       const prefix = levelMap[action];
-      const headingText = selected || '标题内容';
+      const headingText = selected || placeholders.heading;
       return {
         newText: `${before}${prefix}${headingText}${after}`,
         selectionStart: start + prefix.length,
@@ -142,7 +282,7 @@ export function formatMarkdownString(
     }
 
     case 'ul': {
-      const content = selected || '列表项';
+      const content = selected || placeholders.listItem;
       const formatted = content
         .split('\n')
         .map((line) => `- ${line}`)
@@ -155,7 +295,7 @@ export function formatMarkdownString(
     }
 
     case 'ol': {
-      const content = selected || '有序列表项';
+      const content = selected || placeholders.orderedItem;
       const formatted = content
         .split('\n')
         .map((line, idx) => `${idx + 1}. ${line}`)
@@ -168,7 +308,7 @@ export function formatMarkdownString(
     }
 
     case 'task': {
-      const content = selected || '待办任务';
+      const content = selected || placeholders.taskItem;
       const formatted = content
         .split('\n')
         .map((line) => `- [ ] ${line}`)
@@ -181,7 +321,7 @@ export function formatMarkdownString(
     }
 
     case 'link': {
-      const text = selected || '链接文本';
+      const text = selected || placeholders.linkText;
       const insert = `[${text}](https://example.com)`;
       return {
         newText: `${before}${insert}${after}`,
@@ -191,7 +331,7 @@ export function formatMarkdownString(
     }
 
     case 'image': {
-      const alt = selected || '图片描述';
+      const alt = selected || placeholders.imageAlt;
       const insert = `![${alt}](https://example.com/image.png)`;
       return {
         newText: `${before}${insert}${after}`,
@@ -201,7 +341,16 @@ export function formatMarkdownString(
     }
 
     case 'table': {
-      const table = `\n| 列 1 | 列 2 | 列 3 |\n| :--- | :---: | ---: |\n| 单元格 1 | 单元格 2 | 单元格 3 |\n| 单元格 4 | 单元格 5 | 单元格 6 |\n`;
+      const c1 = placeholders.tableCol1;
+      const c2 = placeholders.tableCol2;
+      const c3 = placeholders.tableCol3;
+      const r1 = placeholders.tableCell1;
+      const r2 = placeholders.tableCell2;
+      const r3 = placeholders.tableCell3;
+      const r4 = placeholders.tableCell4;
+      const r5 = placeholders.tableCell5;
+      const r6 = placeholders.tableCell6;
+      const table = `\n| ${c1} | ${c2} | ${c3} |\n| :--- | :---: | ---: |\n| ${r1} | ${r2} | ${r3} |\n| ${r4} | ${r5} | ${r6} |\n`;
       return {
         newText: `${before}${table}${after}`,
         selectionStart: start + table.length,
@@ -230,14 +379,18 @@ export function formatMarkdownString(
 /**
  * Executes a formatting action directly on a CodeMirror 6 EditorView instance.
  */
-export function executeCodeMirrorAction(view: EditorView, action: MarkdownAction): void {
+export function executeCodeMirrorAction(
+  view: EditorView,
+  action: MarkdownAction,
+  localeInput?: MarkdownLocaleInput
+): void {
   const state = view.state;
   const mainSelection = state.selection.main;
   const from = mainSelection.from;
   const to = mainSelection.to;
   const fullText = state.doc.toString();
 
-  const res = formatMarkdownString(fullText, from, to, action);
+  const res = formatMarkdownString(fullText, from, to, action, localeInput);
 
   view.dispatch({
     changes: {

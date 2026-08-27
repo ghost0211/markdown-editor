@@ -17,20 +17,29 @@ import { useToast } from '@/hooks/useToast';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExportDocument } from '@/hooks/useExportDocument';
+import { I18nProvider } from '@/i18n';
 
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
-import { ViewMode, HeadingItem, ThemeMode } from '@/types';
+import { ViewMode, HeadingItem, ThemeMode, EditorSettings } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { subscribeOpenFiles, drainPendingOpenFiles } from '@/lib/native';
+import { isTauri, subscribeOpenFiles, drainPendingOpenFiles } from '@/lib/native';
+import { createFileCoordinator } from '@/lib/fileCoordinator';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
 
-export const App: React.FC = () => {
-  // Settings hook
-  const { settings, updateSetting, resetSettings } = useSettings();
+interface AppContentProps {
+  settings: EditorSettings;
+  updateSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
+  resetSettings: () => void;
+}
 
+const AppContent: React.FC<AppContentProps> = ({
+  settings,
+  updateSetting,
+  resetSettings,
+}) => {
   // Stable callback for theme bridge to prevent unnecessary listener/effect churn
   const handleThemeChange = useCallback(
     (newTheme: ThemeMode) => {
@@ -172,52 +181,25 @@ export const App: React.FC = () => {
     return () => window.removeEventListener('resize', handleResize);
   }, [isSidebarOpen]);
 
-  // Handle cold-start and runtime (single-instance) file association opens
+  const openFilesByPathsRef = useRef(openFilesByPaths);
+  openFilesByPathsRef.current = openFilesByPaths;
+
+  // Handle cold-start, runtime file association opens, window restore, and suspension recovery
   useEffect(() => {
-    let unlisten: (() => void) | undefined;
-    let isMounted = true;
+    const coordinator = createFileCoordinator({
+      drainPendingFiles: drainPendingOpenFiles,
+      onFilesReceived: (paths) => openFilesByPathsRef.current(paths),
+      isTauri,
+      subscribeOpenFiles,
+      pollIntervalMs: 2000,
+    });
 
-    const drainAndOpen = async () => {
-      try {
-        const pending = await drainPendingOpenFiles();
-        if (isMounted && Array.isArray(pending) && pending.length > 0) {
-          await openFilesByPaths(pending);
-        }
-      } catch (err) {
-        console.warn('获取待打开文件失败:', err);
-      }
-    };
-
-    const initializeOpenWith = async () => {
-      // 1. Subscribe to wake-up event first to prevent any race condition
-      try {
-        const cleanup = await subscribeOpenFiles(() => {
-          if (isMounted) {
-            drainAndOpen();
-          }
-        });
-        if (isMounted) {
-          unlisten = cleanup;
-        } else {
-          cleanup();
-        }
-      } catch (err) {
-        console.warn('注册文件打开事件监听失败:', err);
-      }
-
-      // 2. Initial atomic drain of any pending paths (cold start CLI arguments or pre-queued files)
-      await drainAndOpen();
-    };
-
-    initializeOpenWith();
+    coordinator.start();
 
     return () => {
-      isMounted = false;
-      if (unlisten) {
-        unlisten();
-      }
+      coordinator.stop();
     };
-  }, [openFilesByPaths]);
+  }, []);
 
   // Extract headings outline from active document content
   const headings = useMemo(() => {
@@ -428,6 +410,20 @@ export const App: React.FC = () => {
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
     </div>
+  );
+};
+
+export const App: React.FC = () => {
+  const { settings, updateSetting, resetSettings } = useSettings();
+
+  return (
+    <I18nProvider language={settings.language}>
+      <AppContent
+        settings={settings}
+        updateSetting={updateSetting}
+        resetSettings={resetSettings}
+      />
+    </I18nProvider>
   );
 };
 

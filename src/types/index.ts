@@ -2,9 +2,11 @@ export type ViewMode = 'edit' | 'split' | 'read';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type StartupViewMode = 'remember-last' | ViewMode;
 export type TabSizeOption = 2 | 4 | 8;
+export type Language = 'zh-CN' | 'en-US';
 
 export interface EditorSettings {
   version: 1;
+  language: Language;
   theme: ThemeMode;
   fontSize: number;
   lineHeight: number;

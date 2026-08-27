@@ -5,7 +5,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
-use tauri::{Emitter, Manager};
+use tauri::{Emitter, Manager, Url};
 
 const MIN_PDF_SIZE: u64 = 64;
 const PDF_POLL_INTERVAL: Duration = Duration::from_millis(100);
@@ -73,6 +73,9 @@ pub fn canonicalize_path(p: &Path) -> PathBuf {
 
 /// Filters command-line / single-instance arguments to existing regular files with supported extensions.
 ///
+/// Accepts standard file paths and `file://` URLs (Windows & POSIX), decoding percent-encoded characters
+/// and Unicode safely. Strictly rejects non-file URL schemes (such as http://, https://, custom://, etc.).
+///
 /// Note on UTF-8: Argv filtering checks file system presence and extension only. Content decoding
 /// and UTF-8 validation occur during `read_text_file` with isolated per-file error handling so that
 /// any corrupted or non-UTF-8 file produces a clear error without preventing subsequent files from opening.
@@ -103,15 +106,34 @@ where
             raw_arg
         };
 
+        let trimmed_arg = trimmed_arg.trim();
         if trimmed_arg.is_empty() {
             continue;
         }
 
-        let raw_path = Path::new(trimmed_arg);
-        let resolved = if raw_path.is_relative() {
-            base_cwd.join(raw_path)
+        // Determine candidate path: parse file:// URLs or fallback to filesystem path
+        let candidate_path: PathBuf = if let Ok(parsed_url) = Url::parse(trimmed_arg) {
+            if parsed_url.scheme().eq_ignore_ascii_case("file") {
+                match parsed_url.to_file_path() {
+                    Ok(p) => p,
+                    Err(_) => continue, // Invalid or unparseable file URL
+                }
+            } else if parsed_url.scheme().len() > 1 {
+                // Non-file URL scheme (http, https, custom, mailto, etc.) - reject
+                continue;
+            } else {
+                // Single-letter scheme parsed by URL parser on Windows drive paths (e.g. C:/path)
+                PathBuf::from(trimmed_arg)
+            }
         } else {
-            raw_path.to_path_buf()
+            // Not a URL string - treat as raw filesystem path
+            PathBuf::from(trimmed_arg)
+        };
+
+        let resolved = if candidate_path.is_relative() {
+            base_cwd.join(candidate_path)
+        } else {
+            candidate_path
         };
 
         // Filter strictly to existing regular files
@@ -616,6 +638,82 @@ mod tests {
     }
 
     #[test]
+    fn test_filter_and_normalize_paths_file_urls_and_security() {
+        let temp_dir = tempfile::Builder::new()
+            .prefix("md_editor_test_urls_")
+            .tempdir()
+            .unwrap();
+        let base_cwd = temp_dir.path();
+
+        let regular_doc = base_cwd.join("regular.md");
+        let spaced_dir = base_cwd.join("folder with spaces");
+        fs::create_dir(&spaced_dir).unwrap();
+        let spaced_doc = spaced_dir.join("spaced file.markdown");
+
+        let unicode_dir = base_cwd.join("中文 目录");
+        fs::create_dir(&unicode_dir).unwrap();
+        let unicode_doc = unicode_dir.join("测试 文档.md");
+
+        fs::write(&regular_doc, "# Regular").unwrap();
+        fs::write(&spaced_doc, "# Spaced").unwrap();
+        fs::write(&unicode_doc, "# Unicode").unwrap();
+
+        // Convert paths to standard file:// URLs
+        let regular_url = Url::from_file_path(&regular_doc).unwrap().to_string();
+        let spaced_url = Url::from_file_path(&spaced_doc).unwrap().to_string();
+        let unicode_url = Url::from_file_path(&unicode_doc).unwrap().to_string();
+
+        // Verify that spaced_url contains percent-encoded space %20
+        assert!(spaced_url.contains("%20"));
+
+        let args = vec![
+            // 1. Raw relative path for regular_doc
+            "regular.md".to_string(),
+            // 2. Duplicate via file:// URL for regular_doc
+            regular_url,
+            // 3. Spaced doc via file:// URL with %20
+            spaced_url,
+            // 4. Unicode doc via file:// URL with percent encoding
+            unicode_url,
+            // 5. Duplicate via raw path for unicode_doc
+            unicode_doc.to_string_lossy().to_string(),
+            // 6. Rejected: https URL
+            "https://example.com/remote.md".to_string(),
+            // 7. Rejected: http URL
+            "http://localhost:8080/notes.txt".to_string(),
+            // 8. Rejected: custom scheme URL
+            "custom-app://open/notes.md".to_string(),
+            // 9. Rejected: mailto URL
+            "mailto:user@example.com".to_string(),
+            // 10. Rejected: file:// URL to non-existent file
+            "file:///C:/non_existent_folder/missing.md".to_string(),
+            // 11. Rejected: file:// URL with unsupported extension
+            "file:///C:/image.png".to_string(),
+        ];
+
+        let filtered = filter_and_normalize_paths(args, base_cwd);
+
+        // Exactly 3 unique valid files should be returned
+        assert_eq!(
+            filtered.len(),
+            3,
+            "Should contain exactly 3 normalized files (regular, spaced, unicode)"
+        );
+
+        let regular_canon = canonicalize_path(&regular_doc)
+            .to_string_lossy()
+            .to_string();
+        let spaced_canon = canonicalize_path(&spaced_doc).to_string_lossy().to_string();
+        let unicode_canon = canonicalize_path(&unicode_doc)
+            .to_string_lossy()
+            .to_string();
+
+        assert_eq!(filtered[0], regular_canon);
+        assert_eq!(filtered[1], spaced_canon);
+        assert_eq!(filtered[2], unicode_canon);
+    }
+
+    #[test]
     fn test_pending_open_files_queue_and_drain() {
         let mut queue = Vec::new();
         enqueue_pending_paths(
@@ -885,6 +983,26 @@ p { line-height: 1.6; }
         assert!(res.is_err());
         assert!(res.unwrap_err().contains("仅支持 Windows 操作系统"));
     }
+
+    #[test]
+    fn test_pending_open_files_poison_recovery() {
+        let pending = PendingOpenFiles(Mutex::new(vec!["C:\\file1.md".to_string()]));
+        // Poison mutex by panicking inside a catch_unwind
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = pending.0.lock().unwrap();
+            panic!("intentional poison for testing");
+        }));
+
+        assert!(pending.0.is_poisoned());
+
+        // Drain using poison recovery unwrap_or_else
+        let mut queue = pending.0.lock().unwrap_or_else(|e| e.into_inner());
+        enqueue_pending_paths(&mut queue, vec!["C:\\file2.md".to_string()]);
+        let drained: Vec<String> = queue.drain(..).collect();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(drained[0], "C:\\file1.md");
+        assert_eq!(drained[1], "C:\\file2.md");
+    }
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -904,13 +1022,13 @@ pub fn run() {
 
             if !new_paths.is_empty() {
                 if let Some(state) = app.try_state::<PendingOpenFiles>() {
-                    if let Ok(mut queue) = state.0.lock() {
-                        enqueue_pending_paths(&mut queue, new_paths);
-                    }
+                    let mut queue = state.0.lock().unwrap_or_else(|e| e.into_inner());
+                    enqueue_pending_paths(&mut queue, new_paths);
                 }
-                let _ = app.emit("open-files", ());
             }
 
+            // Restore window state before emitting wake-up signal so webview resumes from suspension
+            // Emits a single targeted signal to the webview window to avoid duplicate notifications
             if let Some(window) = app
                 .get_webview_window("main")
                 .or_else(|| app.webview_windows().values().next().cloned())
@@ -918,6 +1036,9 @@ pub fn run() {
                 let _ = window.show();
                 let _ = window.unminimize();
                 let _ = window.set_focus();
+                let _ = window.emit("open-files", ());
+            } else {
+                let _ = app.emit("open-files", ());
             }
         }))
         .manage(pending_open_files)

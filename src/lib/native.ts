@@ -1,6 +1,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { OpenFileResult } from '@/types';
+import { t, getCurrentLanguage } from '@/i18n';
 
 export const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
@@ -20,7 +21,7 @@ export async function openWindowsDefaultAppsSettings(): Promise<void> {
       throw new Error(msg);
     }
   } else {
-    throw new Error('当前为 Web 浏览器环境，仅在 Windows 桌面应用中支持打开系统默认应用设置');
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotOpenSettings'));
   }
 }
 
@@ -111,7 +112,7 @@ export async function readTextFile(path: string): Promise<string> {
       throw new Error(msg);
     }
   } else {
-    throw new Error('Web 浏览器环境不支持直接通过路径读取本地文件');
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
   }
 }
 
@@ -195,7 +196,13 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
             content: text,
           });
         } catch (e) {
-          reject(new Error(`无法读取所选文件: ${(e as Error).message}`));
+          reject(
+            new Error(
+              t(getCurrentLanguage(), 'browserFallback.cannotReadFile', {
+                error: (e as Error).message,
+              })
+            )
+          );
         } finally {
           document.body.removeChild(input);
         }
@@ -226,7 +233,9 @@ export async function saveFileDialog(defaultName?: string): Promise<string | nul
   } else {
     // Browser fallback: prompts user for filename
     if (typeof window === 'undefined') return null;
-    const name = window.prompt('请输入保存的文件名', defaultName || '未命名.md');
+    const lang = getCurrentLanguage();
+    const fallbackDefault = defaultName || t(lang, 'common.untitledDoc');
+    const name = window.prompt(t(lang, 'browserFallback.promptSaveFilename'), fallbackDefault);
     if (!name) return null;
     return `browser://${name.endsWith('.md') ? name : `${name}.md`}`;
   }
@@ -252,9 +261,16 @@ export async function exportFileDialog(
   } else {
     // Browser fallback: prompts user for filename
     if (typeof window === 'undefined') return null;
-    const base = (defaultName || '未命名').replace(/\.(md|markdown|mdown|txt|docx|pdf)$/i, '');
+    const lang = getCurrentLanguage();
+    const base = (defaultName || t(lang, 'common.untitled')).replace(
+      /\.(md|markdown|mdown|txt|docx|pdf)$/i,
+      ''
+    );
     const promptName = `${base}.${format}`;
-    const name = window.prompt(`请输入导出的 ${format.toUpperCase()} 文件名`, promptName);
+    const name = window.prompt(
+      t(lang, 'browserFallback.promptExportFilename', { format: format.toUpperCase() }),
+      promptName
+    );
     if (!name) return null;
     const finalName = name.toLowerCase().endsWith(`.${format}`) ? name : `${name}.${format}`;
     return `browser://${finalName}`;
@@ -274,8 +290,9 @@ export async function exportPdfFromHtml(path: string, html: string): Promise<voi
     }
   } else {
     // Browser print fallback
+    const lang = getCurrentLanguage();
     if (typeof window === 'undefined') {
-      throw new Error('当前环境无法打印');
+      throw new Error(t(lang, 'browserFallback.webCannotPrint'));
     }
     const printWin = window.open('', '_blank');
     if (printWin) {
@@ -287,7 +304,7 @@ export async function exportPdfFromHtml(path: string, html: string): Promise<voi
         printWin.print();
       }, 250);
     } else {
-      throw new Error('无法打开浏览器打印窗口，请检查是否拦截了弹窗');
+      throw new Error(t(lang, 'browserFallback.webPrintPopupBlocked'));
     }
   }
 }
@@ -299,7 +316,9 @@ export async function exportPdfFromHtml(path: string, html: string): Promise<voi
 export async function openExternalUrl(url: string): Promise<void> {
   const trimmed = typeof url === 'string' ? url.trim() : '';
   if (!isValidExternalUrl(trimmed)) {
-    throw new Error(`不支持或不安全的链接协议: ${url}`);
+    throw new Error(
+      t(getCurrentLanguage(), 'browserFallback.unsupportedUrlProtocol', { url })
+    );
   }
 
   if (isTauri()) {

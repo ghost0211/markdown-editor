@@ -1,6 +1,6 @@
-import { ThemeMode, StartupViewMode, TabSizeOption, EditorSettings } from '@/types';
+import { ThemeMode, StartupViewMode, TabSizeOption, Language, EditorSettings } from '@/types';
 
-export type { EditorSettings, StartupViewMode, TabSizeOption };
+export type { EditorSettings, StartupViewMode, TabSizeOption, Language };
 
 export const SETTINGS_STORAGE_KEY = 'markdown_editor_settings_v1';
 export const LEGACY_THEME_KEY = 'markdown_editor_theme';
@@ -14,6 +14,7 @@ export const SETTINGS_BOUNDS = {
 
 export const DEFAULT_SETTINGS: EditorSettings = {
   version: 1,
+  language: 'zh-CN',
   theme: 'system',
   fontSize: 14,
   lineHeight: 1.6,
@@ -35,7 +36,13 @@ export function validateSettings(raw: unknown): EditorSettings {
 
   const obj = raw as Partial<EditorSettings>;
 
-  // 1. Theme: 'light' | 'dark' | 'system'
+  // 1. Language: 'zh-CN' | 'en-US' (defaults defensively to 'zh-CN')
+  let language: Language = DEFAULT_SETTINGS.language;
+  if (obj.language === 'zh-CN' || obj.language === 'en-US') {
+    language = obj.language;
+  }
+
+  // 2. Theme: 'light' | 'dark' | 'system'
   let theme: ThemeMode = DEFAULT_SETTINGS.theme;
   if (obj.theme === 'light' || obj.theme === 'dark' || obj.theme === 'system') {
     theme = obj.theme;
@@ -93,6 +100,7 @@ export function validateSettings(raw: unknown): EditorSettings {
 
   return {
     version: 1,
+    language,
     theme,
     fontSize,
     lineHeight,

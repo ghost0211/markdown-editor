@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef } from 'react';
 import { DocumentTab, ConfirmDialogState } from '@/types';
-import { WELCOME_DOCUMENT } from '@/lib/defaultDocument';
+import { getWelcomeDocument } from '@/lib/defaultDocument';
 import { openFileDialog, saveFileDialog, writeTextFile, readTextFile } from '@/lib/native';
 import {
   getFileNameFromPath,
@@ -10,6 +10,7 @@ import {
   openOrFocusDocumentState,
   OpenOrFocusResult,
 } from '@/lib/documentUtils';
+import { useI18n, getCurrentLanguage } from '@/i18n';
 
 const STORAGE_SESSION_KEY = 'markdown_editor_tabs_v1';
 
@@ -17,6 +18,8 @@ export function useDocuments(
   showToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void,
   restoreSession = true
 ) {
+  const { t } = useI18n();
+
   // Initialize tabs from localStorage or default welcome document
   const [tabs, setTabs] = useState<DocumentTab[]>(() => {
     if (restoreSession) {
@@ -33,13 +36,16 @@ export function useDocuments(
       }
     }
 
+    const currentLang = getCurrentLanguage();
+    const welcome = getWelcomeDocument(currentLang);
+
     return [
       {
         id: 'doc-welcome',
-        title: '欢迎使用.md',
+        title: welcome.title,
         filePath: null,
-        content: WELCOME_DOCUMENT,
-        savedContent: WELCOME_DOCUMENT,
+        content: welcome.content,
+        savedContent: welcome.content,
         isDirty: false,
         cursorLine: 1,
         cursorCol: 1,
@@ -75,14 +81,15 @@ export function useDocuments(
   // Create a new blank tab
   const createNewTab = useCallback(
     (title?: string, content = '') => {
-      const newTab = createDefaultTab(title, content);
+      const defaultTitle = title || t('common.untitledDoc');
+      const newTab = createDefaultTab(defaultTitle, content);
       const next = [...tabsRef.current, newTab];
       tabsRef.current = next;
       setTabs(next);
       setActiveTabId(newTab.id);
       saveSession(next);
     },
-    [saveSession]
+    [saveSession, t]
   );
 
   // Update content of a tab
@@ -131,14 +138,14 @@ export function useDocuments(
       saveSession(result.tabs);
 
       if (result.action === 'focused') {
-        showToast(`已切换至已打开的文档: ${result.tab.title}`, 'info');
+        showToast(t('toasts.switchedToOpenDoc', { title: result.tab.title }), 'info');
       } else {
-        showToast(`已打开: ${result.tab.title}`, 'success');
+        showToast(t('toasts.openedDoc', { title: result.tab.title }), 'success');
       }
 
       return result;
     },
-    [showToast, saveSession]
+    [showToast, saveSession, t]
   );
 
   // Open single document by file path
@@ -155,11 +162,11 @@ export function useDocuments(
       } catch (err: unknown) {
         const msg = (err as Error)?.message || String(err);
         const fileName = getFileNameFromPath(trimmed);
-        showToast(`打开文件失败 (${fileName}): ${msg}`, 'error');
+        showToast(t('toasts.openFailed', { name: fileName, error: msg }), 'error');
         return false;
       }
     },
-    [openOrFocusDocument, showToast]
+    [openOrFocusDocument, showToast, t]
   );
 
   // Open multiple documents by an array of file paths
@@ -194,9 +201,9 @@ export function useDocuments(
       }
       openOrFocusDocument(fileRes.path, fileRes.content, fileRes.name);
     } catch (err: unknown) {
-      showToast((err as Error).message || '打开文件失败', 'error');
+      showToast((err as Error).message || t('toasts.openFailedGeneric'), 'error');
     }
-  }, [openOrFocusDocument, showToast]);
+  }, [openOrFocusDocument, showToast, t]);
 
   // Save active document (or Save As)
   const saveActiveDocument = useCallback(
@@ -215,7 +222,7 @@ export function useDocuments(
           }
           targetPath = selected;
         } catch (err: unknown) {
-          showToast((err as Error).message || '获取保存路径失败', 'error');
+          showToast((err as Error).message || t('toasts.getSavePathFailed'), 'error');
           return false;
         }
       }
@@ -238,14 +245,14 @@ export function useDocuments(
         setTabs(next);
         saveSession(next);
 
-        showToast(`已成功保存: ${fileName}`, 'success');
+        showToast(t('toasts.savedSuccess', { name: fileName }), 'success');
         return true;
       } catch (err: unknown) {
-        showToast((err as Error).message || '保存文件失败', 'error');
+        showToast((err as Error).message || t('toasts.saveFailed'), 'error');
         return false;
       }
     },
-    [activeTabId, showToast, saveSession]
+    [activeTabId, showToast, saveSession, t]
   );
 
   // Directly close a tab without prompt
@@ -254,7 +261,7 @@ export function useDocuments(
       const prev = tabsRef.current;
       if (prev.length <= 1) {
         // If closing the only tab, create a new fresh tab
-        const newTab = createDefaultTab('未命名文档.md', '');
+        const newTab = createDefaultTab(t('common.untitledDoc'), '');
         const next = [newTab];
         tabsRef.current = next;
         setTabs(next);
@@ -276,13 +283,13 @@ export function useDocuments(
 
       saveSession(next);
     },
-    [activeTabId, saveSession]
+    [activeTabId, saveSession, t]
   );
 
   // Safe close tab (with confirm if dirty)
   const requestCloseTab = useCallback(
     (tabId: string) => {
-      const tab = tabs.find((t) => t.id === tabId);
+      const tab = tabsRef.current.find((t) => t.id === tabId);
       if (!tab) return;
 
       if (!tab.isDirty) {
@@ -292,10 +299,10 @@ export function useDocuments(
 
       setConfirmDialog({
         isOpen: true,
-        title: '未保存的更改',
-        message: `文档「${tab.title}」有未保存的修改，关闭将丢失这些修改。是否确认关闭？`,
-        confirmLabel: '放弃更改并关闭',
-        cancelLabel: '取消',
+        title: t('confirm.unsavedChangesTitle'),
+        message: t('confirm.unsavedChangesMsg', { title: tab.title }),
+        confirmLabel: t('confirm.discardAndClose'),
+        cancelLabel: t('common.cancel'),
         variant: 'danger',
         onConfirm: () => {
           forceCloseTab(tabId);
@@ -306,20 +313,20 @@ export function useDocuments(
         },
       });
     },
-    [tabs, forceCloseTab]
+    [forceCloseTab, t]
   );
 
   // Close other tabs
   const closeOtherTabs = useCallback(
     (tabId: string) => {
-      const dirtyOthers = tabs.filter((t) => t.id !== tabId && t.isDirty);
+      const dirtyOthers = tabsRef.current.filter((t) => t.id !== tabId && t.isDirty);
       if (dirtyOthers.length > 0) {
         setConfirmDialog({
           isOpen: true,
-          title: '关闭其他标签页',
-          message: `有 ${dirtyOthers.length} 个其他标签页包含未保存的修改，关闭将丢失它们。是否继续？`,
-          confirmLabel: '全部关闭',
-          cancelLabel: '取消',
+          title: t('confirm.closeOtherTabsTitle'),
+          message: t('confirm.closeOtherTabsMsg', { count: dirtyOthers.length }),
+          confirmLabel: t('confirm.closeAll'),
+          cancelLabel: t('common.cancel'),
           variant: 'danger',
           onConfirm: () => {
             const current = tabsRef.current.find((t) => t.id === tabId);
@@ -344,7 +351,7 @@ export function useDocuments(
       saveSession(next);
       setActiveTabId(tabId);
     },
-    [tabs, saveSession]
+    [saveSession, t]
   );
 
   return {
