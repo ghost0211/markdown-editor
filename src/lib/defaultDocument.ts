@@ -75,7 +75,7 @@ export function useTheme() {
 - [x] 集成 CodeMirror 6 语法高亮与行号显示
 - [x] 实现 H1-H6 智能文档大纲与双向锚点跳转
 - [x] 支持中英文精准统计与底部状态栏
-- [x] 支持导出 Word (.docx) 与 PDF (.pdf) 格式
+- [x] 支持导出 Word (.docx)、PDF (.pdf) 与 HTML (.html) 格式
 
 ---
 
@@ -169,7 +169,7 @@ export function useTheme() {
 - [x] Integrate CodeMirror 6 syntax highlighting and line numbers
 - [x] Implement H1-H6 document outline with anchor navigation
 - [x] Multi-language support (English & Chinese)
-- [x] Export to Word (.docx) and PDF (.pdf) formats
+- [x] Export to Word (.docx), PDF (.pdf), and HTML (.html) formats
 
 ---
 

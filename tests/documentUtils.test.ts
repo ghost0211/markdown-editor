@@ -5,6 +5,7 @@ import {
   normalizePathKey,
   computeSavedTabState,
   createDefaultTab,
+  getExportFilename,
 } from '../src/lib/documentUtils';
 import { DocumentTab } from '../src/types';
 
@@ -91,6 +92,32 @@ describe('documentUtils', () => {
       expect(normalizePathKey('   ')).toBe('');
       expect(normalizePathKey(null)).toBe('');
       expect(normalizePathKey(undefined)).toBe('');
+    });
+  });
+
+  describe('getExportFilename', () => {
+    it('should format default names correctly for docx, pdf, and html', () => {
+      expect(getExportFilename('My Document.md', 'html')).toBe('My Document.html');
+      expect(getExportFilename('My Document.md', 'docx')).toBe('My Document.docx');
+      expect(getExportFilename('My Document.md', 'pdf')).toBe('My Document.pdf');
+      expect(getExportFilename('Report.markdown', 'html')).toBe('Report.html');
+      expect(getExportFilename('Report.mdown', 'docx')).toBe('Report.docx');
+      expect(getExportFilename('Report.mkd', 'pdf')).toBe('Report.pdf');
+      expect(getExportFilename('Report.mkd', 'html')).toBe('Report.html');
+      expect(getExportFilename('Report.MKD', 'docx')).toBe('Report.docx');
+      expect(getExportFilename('Report.html', 'html')).toBe('Report.html');
+      expect(getExportFilename('Report.htm', 'html')).toBe('Report.html');
+      expect(getExportFilename('Report.docx', 'html')).toBe('Report.html');
+      expect(getExportFilename('Report.pdf', 'html')).toBe('Report.html');
+      expect(getExportFilename('notes.txt', 'html')).toBe('notes.html');
+      expect(getExportFilename('package.tar.gz', 'html')).toBe('package.tar.gz.html');
+    });
+
+    it('should fallback to 未命名 when title is missing or whitespace', () => {
+      expect(getExportFilename('', 'html')).toBe('未命名.html');
+      expect(getExportFilename(null, 'html')).toBe('未命名.html');
+      expect(getExportFilename('   ', 'html')).toBe('未命名.html');
+      expect(getExportFilename('   .html  ', 'html')).toBe('未命名.html');
     });
   });
 

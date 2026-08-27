@@ -1,5 +1,7 @@
 # Markdown Editor 🚀
 
+[English](README_EN.md) | 简体中文
+
 一款现代、精致、高性能的 Windows 桌面级 Markdown 编辑与阅读器。  
 基于 **Tauri 2 + React + TypeScript + CodeMirror 6** 技术栈从零构建，具备原生级启动速度、极小内存占用与优雅的视觉体验。
 
@@ -8,7 +10,7 @@
 ## ✨ 核心功能与亮点
 
 1. **精美 Windows 桌面布局**：
-   - 顶部标题与快速操作栏（新建/打开/保存/另存为/导出 Word与PDF/视图切换/主题切换/偏好设置/快捷键帮助）。
+   - 顶部标题与快速操作栏（新建/打开/保存/另存为/导出 Word、PDF 与 HTML/视图切换/主题切换/偏好设置/快捷键帮助）。
    - 左侧智能文档大纲（TOC），支持 H1-H6 目录树解析与快速跳转。
    - 中央工作区，支持三种视图切换：**纯编辑模式**、**双栏分屏模式**、**纯阅读模式**。
    - 底部沉浸式状态栏：实时显示字数（中文字符与英文单词智能统计）、字符数、行数、光标行列（Ln/Col）、保存状态及预估阅读时间。
@@ -31,13 +33,18 @@
    - **未保存修改保护**：关闭含有未保存修改的标签页或批量关闭其他标签页时，提供优雅的二次确认对话框；保存操作采用快照比对机制，写盘期间继续输入亦能精确保持脏标记与用户最新内容。
    - **全环境兼容**：在非 Tauri 的纯浏览器开发模式下，自动降级为浏览器文件读取与 Blob 下载，不会崩溃。
 
-5. **专业 Word (.docx) & PDF (.pdf) 文档导出**：
+5. **专业 Word (.docx)、PDF (.pdf) & HTML (.html) 文档导出**：
    - **Word (.docx) 导出**：基于 OOXML 工业标准（`docx` + AST 转换），自动将 Markdown 转换为排版精良的 Word 文档。完整支持内置 Heading 1~6（原生支持 Word 导航窗格与目录生成）、A4 纸张与标准边距、微软雅黑中文字体、列表与嵌套多级列表（原生编号系统）、待办任务复选框、GFM 复杂表格（双重 DXA 列宽与表头底色）、等宽代码块及引用块。
    - **PDF (.pdf) 导出**：基于系统内置 **Microsoft Edge Headless** 引擎生成高质量矢量/文本型 PDF（非 Canvas 模糊截图或简易拼接）。内置 A4 打印样式、智能分页防断裂控制（`break-inside: avoid` / `break-after: avoid`）、代码语法高亮与中文无损字体栈。
-   - **严格环境安全与优雅降级**：
-     - PDF 转换期间严格通过 `rehype-sanitize` 进行 XSS 防护，禁止任意不可信脚本与事件注入。
+   - **HTML (.html) 导出**：一键生成内嵌 CSS 样式的响应式独立单页 HTML（无需外部样式表依赖），完美支持移动端与桌面端自适应排版及 A4 打印样式。
+   - **严格环境安全与 XSS 净化**：
+     - PDF 与 HTML 转换期间严格通过 `rehype-sanitize` 进行 XSS 防护，禁止任意不可信脚本（`<script>`）、`<style>` 注入、`<iframe>`、`<object>`、`<embed>`、`<form>` 与内联事件（`onerror` 等）。
+     - 绝对超链接协议严格白名单限制为 `http`、`https` 与 `mailto`，绝对图片协议严格限制为 `http` 与 `https`；同时安全保留页内锚点跳转（如 `#heading`）与安全相对图片引用（如 `./assets/preview.png`），拦截任意 `javascript:`、`file:`、`data:` 等危险协议。
+   - **UTF-8 编码与 Meta 声明**：导出的 HTML 严格声明 `<meta charset="utf-8">` 与视口 `<meta name="viewport">`，并根据当前界面语言动态适配 `<html lang="zh-CN">` 或 `<html lang="en-US">`。
+   - **本地基准路径与图片引用说明**：自动根据本地 Markdown 源文件目录生成安全规范的 `<base href="file:///...">`，支持 Windows 盘符、Unicode/空格、`#` 与 `?` 特殊字符、POSIX 绝对路径及 UNC 网络共享路径；**图片采用相对或绝对路径/网络链接引用，而非作为二进制文件包打包内嵌（Images are referenced, not embedded）**。
+   - **全环境兼容与优雅降级**：
      - 桌面环境下自动检测 Windows Edge 多路常见安装路径（`Program Files (x86)`、`Program Files`、`LOCALAPPDATA`、`PATH` 等），安全采用隔离临时工作区渲染、落盘稳定性轮询校验与 Rust 原生文件复制机制，完美支持包含中文与空格的任意目标路径。
-     - 浏览器纯 Web 预览环境下，Word 自动降级为标准 Blob 文件下载，PDF 自动打开浏览器打印友好页面，体验无缝一致。
+     - 浏览器纯 Web 预览环境下，Word 与 HTML 自动降级为标准 Blob 文件下载（HTML 采用 `text/html;charset=utf-8` MIME 并保持完整 Unicode 内容），PDF 自动打开浏览器打印友好页面，体验无缝一致。
      - 导出操作完全独立，**绝对不会篡改** 当前打开文档的路径、标题、保存快照或未保存脏状态。
 
 6. **多标签页文档管理与 Windows 文件关联**：
@@ -101,7 +108,8 @@
 | **原生能力集成** | `tauri-plugin-single-instance`, `rfd`, `opener`, `tempfile`, `std::fs` | 单实例通信唤醒、原生文件对话框、系统浏览器/邮件调用、临时工作区与安全二进制读写 |
 | **国际化 (i18n)** | Custom Typed Dictionary & Context (`src/i18n`) | 轻量类型安全 i18n 架构，支持 Simplified Chinese / English 即时切换与回退 |
 | **Word (.docx) 生成** | `docx`, `unified`, `remark-parse`, `remark-gfm` | 纯 OOXML 二进制构建，内置 Heading / 表格 / 列表编号系统 |
-| **PDF 导出与排版** | Headless Microsoft Edge, `remark-rehype`, `rehype-sanitize` | 矢量级 A4 打印排版、XSS 严格过滤与纯净字体渲染 |
+| **PDF (.pdf) 导出与排版** | Headless Microsoft Edge, `remark-rehype`, `rehype-sanitize` | 矢量级 A4 打印排版、XSS 严格过滤与纯净字体渲染 |
+| **HTML (.html) 导出** | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-highlight`, `rehype-sanitize`, `rehype-stringify` | 独立单页 HTML 生成（内嵌 CSS 样式）、响应式排版、代码高亮与严格安全净化 |
 | **前端框架** | React 18 + TypeScript + Vite | 现代化组件开发与极速热重载 |
 | **核心编辑器** | CodeMirror 6 (`@uiw/react-codemirror`) | 现代模块化代码编辑器，Markdown 语法高亮与主题 |
 | **Markdown 渲染** | `react-markdown`, `remark-gfm`, `rehype-slug`, `rehype-highlight` | GFM 解析、标题锚点生成与代码高亮 |
@@ -115,7 +123,7 @@
 | 快捷键 | 功能描述 |
 | :--- | :--- |
 | `Ctrl + N` | 新建空白文档标签 |
-| `Ctrl + O` | 打开本地 Markdown/文本文件 (`.md`, `.markdown`, `.txt`) |
+| `Ctrl + O` | 打开本地 Markdown/文本文件 (`.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`) |
 | `Ctrl + S` | 快速保存当前文档 |
 | `Ctrl + Shift + S` | 当前文档另存为... |
 | `Ctrl + W` | 关闭当前标签页（若有未保存修改将弹出确认） |
@@ -186,7 +194,7 @@ npm run tauri build
 
 ## 🧪 单元测试
 
-项目集成了 Vitest 与 Cargo 单元测试，涵盖国际化字典完备性与插值、偏好设置校验与迁移、文档工具（ID 生成、路径规范化、导出默认文件名计算）、Word OOXML 生成结构、PDF 打印 HTML 与 XSS 安全过滤、外链安全白名单校验、大纲解析、标题 Slug 生成、中英文分词统计等核心模块：
+项目集成了 Vitest 与 Cargo 单元测试，涵盖国际化字典完备性与插值、偏好设置校验与迁移、文档工具（ID 生成、路径规范化、导出默认文件名计算）、Word OOXML 生成结构、PDF 打印 HTML 与 XSS 安全过滤、HTML 独立单页生成与本地 Base URL 强化解析、外链安全白名单校验、大纲解析、标题 Slug 生成、中英文分词统计等核心模块：
 
 ```bash
 # 执行前端测试
@@ -227,7 +235,7 @@ markdown-editor/
 │   │   ├── useSettings.ts    # 偏好设置响应式管理
 │   │   ├── useTheme.ts       # 明暗主题管理
 │   │   ├── useDocuments.ts   # 文档多标签与读写核心状态
-│   │   ├── useExportDocument.ts # Word / PDF 导出交互与状态管理
+│   │   ├── useExportDocument.ts # Word / PDF / HTML 导出交互与状态管理
 │   │   ├── useKeyboardShortcuts.ts # 全局键盘快捷键响应
 │   │   └── useToast.ts       # 通知状态管理
 │   ├── i18n/                 # 国际化架构与语言字典
@@ -240,7 +248,8 @@ markdown-editor/
 │   │   ├── settings.ts       # 偏好设置数据结构、防御校验与版本持久化
 │   │   ├── export/           # 文档导出模块
 │   │   │   ├── docxExporter.ts # Markdown 转 OOXML .docx 算法
-│   │   │   └── pdfExporter.ts  # Markdown 转安全打印 HTML 与 PDF 导出
+│   │   │   ├── pdfExporter.ts  # Markdown 转安全打印 HTML 与 PDF 导出
+│   │   │   └── htmlExporter.ts # Markdown 转独立单页 HTML 算法
 │   │   ├── native.ts         # Tauri 原生命令调用、外链校验与 Web 降级
 │   │   ├── documentUtils.ts  # 文档 ID 生成、路径规范化与保存快照计算
 │   │   ├── outline.ts        # Markdown 标题大纲提取算法
@@ -259,7 +268,7 @@ markdown-editor/
 │   ├── settings.test.ts      # 偏好设置校验、持久化与迁移测试
 │   ├── settingsUI.test.tsx   # 偏好设置组件与无障碍交互测试
 │   ├── sessionRestore.test.ts# 启动视图偏好与会话恢复测试
-│   ├── export.test.ts        # Word / PDF 导出算法与安全过滤测试
+│   ├── export.test.ts        # Word / PDF / HTML 导出算法与安全过滤测试
 │   ├── documentUtils.test.ts # 路径规范化、ID 生成与保存快照测试
 │   ├── native.test.ts        # 外部链接与原生导出封装测试
 │   ├── outline.test.ts       # 大纲提取测试

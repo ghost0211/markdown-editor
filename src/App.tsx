@@ -77,6 +77,7 @@ const AppContent: React.FC<AppContentProps> = ({
     exportingType,
     exportWord,
     exportPdf,
+    exportHtml,
   } = useExportDocument(activeTab, showToast);
 
   // View mode state
@@ -295,6 +296,7 @@ const AppContent: React.FC<AppContentProps> = ({
         onSaveAs={handleSaveAs}
         onExportWord={exportWord}
         onExportPdf={exportPdf}
+        onExportHtml={exportHtml}
         isExporting={isExporting}
         exportingType={exportingType}
         onOpenShortcuts={handleOpenShortcuts}

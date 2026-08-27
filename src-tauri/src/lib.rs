@@ -164,7 +164,17 @@ where
 
 fn strip_text_extensions(name: &str) -> String {
     let lower = name.to_lowercase();
-    for suffix in [".md", ".markdown", ".mdown", ".txt", ".docx", ".pdf"] {
+    for suffix in [
+        ".md",
+        ".markdown",
+        ".mdown",
+        ".mkd",
+        ".txt",
+        ".docx",
+        ".pdf",
+        ".html",
+        ".htm",
+    ] {
         if lower.ends_with(suffix) {
             return name[..name.len() - suffix.len()].to_string();
         }
@@ -419,7 +429,10 @@ mod commands {
     #[tauri::command]
     pub fn open_file_dialog() -> Result<Option<OpenFileResponse>, String> {
         let file = rfd::FileDialog::new()
-            .add_filter("Markdown / Text Files", &["md", "markdown", "mdown", "txt"])
+            .add_filter(
+                "Markdown / Text Files",
+                &["md", "markdown", "mdown", "mkd", "txt"],
+            )
             .add_filter("All Files", &["*"])
             .set_title("打开 Markdown 文档")
             .pick_file();
@@ -477,6 +490,7 @@ mod commands {
         let (filter_name, ext, title) = match lower_format.as_str() {
             "docx" => ("Word 文档 (*.docx)", "docx", "导出 Word 文档"),
             "pdf" => ("PDF 文档 (*.pdf)", "pdf", "导出 PDF 文档"),
+            "html" => ("HTML 网页 (*.html)", "html", "导出 HTML 网页"),
             _ => return Err(format!("不支持的导出格式: {}", format)),
         };
 
@@ -794,11 +808,27 @@ mod tests {
     fn test_strip_text_extensions() {
         assert_eq!(strip_text_extensions("document.md"), "document");
         assert_eq!(strip_text_extensions("document.markdown"), "document");
+        assert_eq!(strip_text_extensions("document.mdown"), "document");
+        assert_eq!(strip_text_extensions("document.mkd"), "document");
+        assert_eq!(strip_text_extensions("document.MKD"), "document");
         assert_eq!(strip_text_extensions("document.txt"), "document");
         assert_eq!(strip_text_extensions("document.docx"), "document");
         assert_eq!(strip_text_extensions("document.pdf"), "document");
+        assert_eq!(strip_text_extensions("document.html"), "document");
+        assert_eq!(strip_text_extensions("document.htm"), "document");
         assert_eq!(strip_text_extensions("archive.tar.gz"), "archive.tar.gz");
         assert_eq!(strip_text_extensions("notes.v1.MD"), "notes.v1");
+        assert_eq!(strip_text_extensions("page.v2.HTML"), "page.v2");
+    }
+
+    #[test]
+    fn test_export_file_dialog_format_validation() {
+        // Formats other than docx, pdf, html must return an Err
+        assert!(commands::export_file_dialog("exe".to_string(), None).is_err());
+        assert!(commands::export_file_dialog("txt".to_string(), None).is_err());
+        assert!(commands::export_file_dialog("md".to_string(), None).is_err());
+        assert!(commands::export_file_dialog("json".to_string(), None).is_err());
+        assert!(commands::export_file_dialog("".to_string(), None).is_err());
     }
 
     #[test]

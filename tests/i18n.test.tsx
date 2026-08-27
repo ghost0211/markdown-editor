@@ -278,6 +278,7 @@ describe('Lightweight Typed i18n Architecture', () => {
         onSaveAs: vi.fn(),
         onExportWord: vi.fn(),
         onExportPdf: vi.fn(),
+        onExportHtml: vi.fn(),
         onOpenShortcuts: vi.fn(),
         onOpenSettings: vi.fn(),
       };

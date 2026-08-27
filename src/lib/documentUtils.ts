@@ -68,19 +68,19 @@ export function normalizePathKey(filePath?: string | null): string {
 
 /**
  * Computes default export filename for a document given its title and target format.
- * Strips existing markdown/document extensions (.md, .markdown, .mdown, .txt, .docx, .pdf)
+ * Strips existing markdown/document extensions (.md, .markdown, .mdown, .mkd, .txt, .docx, .pdf, .html, .htm)
  * and appends the target format extension.
  */
 export function getExportFilename(
   title?: string | null,
-  format: 'docx' | 'pdf' = 'docx'
+  format: 'docx' | 'pdf' | 'html' = 'docx'
 ): string {
   if (!title || !title.trim()) {
     return `未命名.${format}`;
   }
   const cleanTitle = title
     .trim()
-    .replace(/\.(md|markdown|mdown|txt|docx|pdf)$/i, '')
+    .replace(/\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm)$/i, '')
     .trim();
   return `${cleanTitle || '未命名'}.${format}`;
 }

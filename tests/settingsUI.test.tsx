@@ -202,6 +202,7 @@ describe('Settings UI Components (SettingsModal & TitleBar)', () => {
         onSaveAs: vi.fn(),
         onExportWord: vi.fn(),
         onExportPdf: vi.fn(),
+        onExportHtml: vi.fn(),
         onOpenShortcuts: vi.fn(),
         onOpenSettings: vi.fn(),
       };

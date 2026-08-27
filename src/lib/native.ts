@@ -5,7 +5,7 @@ import { t, getCurrentLanguage } from '@/i18n';
 
 export const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
-export type ExportFormat = 'docx' | 'pdf';
+export type ExportFormat = 'docx' | 'pdf' | 'html';
 
 /**
  * Opens Windows Default Apps settings page (ms-settings:defaultapps).
@@ -128,8 +128,28 @@ export async function writeTextFile(path: string, content: string): Promise<void
       throw new Error(msg);
     }
   } else {
-    // Web fallback: Trigger browser file download
-    downloadBlob(content, path || 'document.md', 'text/markdown;charset=utf-8');
+    // Web fallback: Trigger browser file download with appropriate MIME
+    const lower = path.toLowerCase();
+    const mimeType = lower.endsWith('.html') || lower.endsWith('.htm')
+      ? 'text/html;charset=utf-8'
+      : 'text/markdown;charset=utf-8';
+    downloadBlob(content, path || 'document.md', mimeType);
+  }
+}
+
+/**
+ * Writes HTML document content to a file with UTF-8 encoding and text/html MIME type in browser fallback.
+ */
+export async function writeHtmlFile(path: string, content: string): Promise<void> {
+  if (isTauri()) {
+    try {
+      await invoke('write_text_file', { path, content });
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存 HTML 文件失败';
+      throw new Error(msg);
+    }
+  } else {
+    downloadBlob(content, path || 'document.html', 'text/html;charset=utf-8');
   }
 }
 
@@ -178,7 +198,7 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.md,.markdown,.mdown,.txt';
+      input.accept = '.md,.markdown,.mdown,.mkd,.txt';
       input.style.display = 'none';
 
       input.onchange = async () => {
@@ -242,7 +262,7 @@ export async function saveFileDialog(defaultName?: string): Promise<string | nul
 }
 
 /**
- * Opens native export file dialog to select a destination path for docx/pdf.
+ * Opens native export file dialog to select a destination path for docx/pdf/html.
  */
 export async function exportFileDialog(
   format: ExportFormat,
@@ -263,7 +283,7 @@ export async function exportFileDialog(
     if (typeof window === 'undefined') return null;
     const lang = getCurrentLanguage();
     const base = (defaultName || t(lang, 'common.untitled')).replace(
-      /\.(md|markdown|mdown|txt|docx|pdf)$/i,
+      /\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm)$/i,
       ''
     );
     const promptName = `${base}.${format}`;

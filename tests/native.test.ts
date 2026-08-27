@@ -5,6 +5,8 @@ import {
   saveFileDialog,
   exportFileDialog,
   writeBinaryFile,
+  writeTextFile,
+  writeHtmlFile,
   readTextFile,
   exportPdfFromHtml,
   drainPendingOpenFiles,
@@ -112,12 +114,20 @@ describe('Native Export Wrappers (native.ts)', () => {
       const res = await exportFileDialog('docx', 'MyDoc.md');
       expect(mockPrompt).toHaveBeenCalled();
       expect(res).toBe('browser://MyExportDoc.docx');
+
+      mockPrompt.mockReturnValue('WebPage');
+      const htmlRes = await exportFileDialog('html', 'MyDoc.md');
+      expect(htmlRes).toBe('browser://WebPage.html');
     });
 
     it('should keep extension if user entered it', async () => {
       mockPrompt.mockReturnValue('custom-report.pdf');
       const res = await exportFileDialog('pdf', 'custom-report.pdf');
       expect(res).toBe('browser://custom-report.pdf');
+
+      mockPrompt.mockReturnValue('custom-doc.html');
+      const htmlRes = await exportFileDialog('html', 'custom-doc.html');
+      expect(htmlRes).toBe('browser://custom-doc.html');
     });
 
     it('should return null when user cancels prompt', async () => {
@@ -127,7 +137,7 @@ describe('Native Export Wrappers (native.ts)', () => {
     });
   });
 
-  describe('writeBinaryFile (Web fallback mode)', () => {
+  describe('writeBinaryFile and writeHtmlFile (Web fallback mode)', () => {
     let mockCreateObjectURL: ReturnType<typeof vi.fn>;
     let mockRevokeObjectURL: ReturnType<typeof vi.fn>;
     let appendedElement: HTMLAnchorElement | null = null;
@@ -184,6 +194,50 @@ describe('Native Export Wrappers (native.ts)', () => {
       expect(mockCreateObjectURL).toHaveBeenCalled();
       expect(clicked).toBe(true);
       expect(appendedElement?.download).toBe('test.docx');
+      expect(mockRevokeObjectURL).toHaveBeenCalled();
+    });
+
+    it('should trigger browser download for HTML file via writeHtmlFile with correct MIME type and Unicode round-trip', async () => {
+      const unicodeHtml = `<!DOCTYPE html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><title>中文测试 🚀</title></head>
+<body>
+<h1>你好，世界！</h1>
+<p>这是包含特殊字符 &lt;&gt;&amp;&quot;&#39; 和 Unicode 表情 🚀 的 HTML 内容。</p>
+</body>
+</html>`;
+
+      await writeHtmlFile('browser://测试页面.html', unicodeHtml);
+
+      expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+      const passedBlob = mockCreateObjectURL.mock.calls[0][0];
+
+      expect(passedBlob).toBeInstanceOf(Blob);
+      expect(passedBlob.type).toBe('text/html;charset=utf-8');
+
+      const extractedText = await (passedBlob as Blob).text();
+      expect(extractedText).toBe(unicodeHtml);
+
+      expect(clicked).toBe(true);
+      expect(appendedElement?.download).toBe('测试页面.html');
+      expect(mockRevokeObjectURL).toHaveBeenCalledWith('blob:http://localhost:5173/mock-blob-url');
+    });
+
+    it('should trigger browser download with text/html MIME when writeTextFile receives .html path and preserve Unicode content', async () => {
+      const htmlContent = '<!DOCTYPE html><html><body><h1>文档导出 🚀</h1></body></html>';
+      await writeTextFile('browser://export.html', htmlContent);
+
+      expect(mockCreateObjectURL).toHaveBeenCalledTimes(1);
+      const passedBlob = mockCreateObjectURL.mock.calls[0][0];
+
+      expect(passedBlob).toBeInstanceOf(Blob);
+      expect(passedBlob.type).toBe('text/html;charset=utf-8');
+
+      const extractedText = await (passedBlob as Blob).text();
+      expect(extractedText).toBe(htmlContent);
+
+      expect(clicked).toBe(true);
+      expect(appendedElement?.download).toBe('export.html');
       expect(mockRevokeObjectURL).toHaveBeenCalled();
     });
   });
@@ -307,6 +361,13 @@ describe('Native Export Wrappers (native.ts)', () => {
         'Please enter a file name for PDF export',
         'Untitled.pdf'
       );
+
+      mockPrompt.mockReturnValue('MyHtmlExport');
+      await exportFileDialog('html');
+      expect(mockPrompt).toHaveBeenCalledWith(
+        'Please enter a file name for HTML export',
+        'Untitled.html'
+      );
     });
 
     it('should localize prompts in Chinese when language is zh-CN', async () => {
@@ -324,6 +385,13 @@ describe('Native Export Wrappers (native.ts)', () => {
       expect(mockPrompt).toHaveBeenCalledWith(
         '请输入导出的 DOCX 文件名',
         '未命名.docx'
+      );
+
+      mockPrompt.mockReturnValue('导出网页');
+      await exportFileDialog('html');
+      expect(mockPrompt).toHaveBeenCalledWith(
+        '请输入导出的 HTML 文件名',
+        '未命名.html'
       );
     });
 

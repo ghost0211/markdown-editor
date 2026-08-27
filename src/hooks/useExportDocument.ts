@@ -6,18 +6,19 @@ import { useI18n } from '@/i18n';
 
 export interface UseExportDocumentResult {
   isExporting: boolean;
-  exportingType: 'docx' | 'pdf' | null;
+  exportingType: 'docx' | 'pdf' | 'html' | null;
   exportWord: () => Promise<void>;
   exportPdf: () => Promise<void>;
+  exportHtml: () => Promise<void>;
 }
 
 export function useExportDocument(
   activeTab: DocumentTab | undefined,
   showToast: (message: string, type?: ToastType, duration?: number) => string
 ): UseExportDocumentResult {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const [isExporting, setIsExporting] = useState(false);
-  const [exportingType, setExportingType] = useState<'docx' | 'pdf' | null>(null);
+  const [exportingType, setExportingType] = useState<'docx' | 'pdf' | 'html' | null>(null);
 
   const exportWord = useCallback(async () => {
     if (!activeTab || isExporting) return;
@@ -74,7 +75,8 @@ export function useExportDocument(
         activeTab.content,
         activeTab.title,
         targetPath,
-        activeTab.filePath || undefined
+        activeTab.filePath || undefined,
+        language
       );
 
       if (targetPath.startsWith('browser://')) {
@@ -89,12 +91,54 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, isExporting, showToast, t]);
+  }, [activeTab, isExporting, language, showToast, t]);
+
+  const exportHtml = useCallback(async () => {
+    if (!activeTab || isExporting) return;
+
+    try {
+      const defaultName = getExportFilename(activeTab.title, 'html');
+      const targetPath = await exportFileDialog('html', defaultName);
+
+      // User canceled dialog
+      if (!targetPath) {
+        return;
+      }
+
+      setIsExporting(true);
+      setExportingType('html');
+      showToast(t('toasts.exportingHtml'), 'info', 2000);
+
+      const { exportMarkdownToHtml } = await import('@/lib/export/htmlExporter');
+      await exportMarkdownToHtml(
+        activeTab.content,
+        activeTab.title,
+        targetPath,
+        {
+          sourceFilePath: activeTab.filePath || undefined,
+          lang: language,
+        }
+      );
+
+      if (targetPath.startsWith('browser://')) {
+        showToast(t('toasts.htmlDownloadStarted'), 'success', 3000);
+      } else {
+        showToast(t('toasts.htmlExportSuccess', { path: targetPath }), 'success', 4000);
+      }
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || 'Export failed';
+      showToast(t('toasts.htmlExportFailed', { error: msg }), 'error', 5000);
+    } finally {
+      setIsExporting(false);
+      setExportingType(null);
+    }
+  }, [activeTab, isExporting, language, showToast, t]);
 
   return {
     isExporting,
     exportingType,
     exportWord,
     exportPdf,
+    exportHtml,
   };
 }
