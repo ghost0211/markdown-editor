@@ -108,3 +108,45 @@
   overflow-y: auto;
   overflow-x: hidden;
 }
+
+/* IDE-style (GitHub palette) diff highlighting for the compare view.
+   The merge base theme is extremely faint (8% opacity / 2px underlines);
+   these overrides make changed lines and inline changes clearly visible. */
+
+/* Light theme: left/deleted = red, right/inserted = green */
+.cm-merge-a .cm-changedLine,
+.cm-merge-a .cm-deletedChunk {
+  background-color: #ffebe9 !important;
+}
+.cm-merge-a .cm-changedText,
+.cm-merge-a .cm-deletedText {
+  background: #ffd7d5 !important;
+}
+.cm-merge-b .cm-changedLine {
+  background-color: #dafbe1 !important;
+}
+.cm-merge-b .cm-changedText {
+  background: #aceebb !important;
+}
+.cm-merge-b .cm-deletedText {
+  background: #ffd7d5 !important;
+}
+
+/* Dark theme variants */
+.dark .cm-merge-a .cm-changedLine,
+.dark .cm-merge-a .cm-deletedChunk {
+  background-color: rgba(248, 81, 73, 0.15) !important;
+}
+.dark .cm-merge-a .cm-changedText,
+.dark .cm-merge-a .cm-deletedText {
+  background: rgba(248, 81, 73, 0.35) !important;
+}
+.dark .cm-merge-b .cm-changedLine {
+  background-color: rgba(46, 160, 67, 0.15) !important;
+}
+.dark .cm-merge-b .cm-changedText {
+  background: rgba(46, 160, 67, 0.35) !important;
+}
+.dark .cm-merge-b .cm-deletedText {
+  background: rgba(248, 81, 73, 0.35) !important;
+}
