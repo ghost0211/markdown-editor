@@ -1,4 +1,4 @@
-import React, { useRef } from 'react';
+import React, { useRef, useState } from 'react';
 import { FileText, Plus, X, Sparkles } from 'lucide-react';
 import { DocumentTab } from '@/types';
 import { useI18n } from '@/i18n';
@@ -10,7 +10,13 @@ interface TabBarProps {
   onSelectTab: (id: string) => void;
   onCloseTab: (id: string) => void;
   onNewTab: () => void;
+  onMoveTab?: (sourceId: string, targetId: string, position: 'before' | 'after') => void;
   onCloseOthers?: (id: string) => void;
+}
+
+interface DropIndicator {
+  targetId: string;
+  position: 'before' | 'after';
 }
 
 export const TabBar: React.FC<TabBarProps> = ({
@@ -19,14 +25,54 @@ export const TabBar: React.FC<TabBarProps> = ({
   onSelectTab,
   onCloseTab,
   onNewTab,
+  onMoveTab,
 }) => {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const dragTabIdRef = useRef<string | null>(null);
+  const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (scrollRef.current && e.deltaY !== 0) {
       scrollRef.current.scrollLeft += e.deltaY;
     }
+  };
+
+  const clearDragState = () => {
+    dragTabIdRef.current = null;
+    setDropIndicator(null);
+  };
+
+  const handleDragStart = (e: React.DragEvent, tabId: string) => {
+    dragTabIdRef.current = tabId;
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', tabId);
+  };
+
+  const handleDragOverTab = (e: React.DragEvent, tabId: string) => {
+    const sourceId = dragTabIdRef.current;
+    if (!sourceId || sourceId === tabId) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    const rect = e.currentTarget.getBoundingClientRect();
+    const position: 'before' | 'after' =
+      e.clientX < rect.left + rect.width / 2 ? 'before' : 'after';
+    setDropIndicator((prev) =>
+      prev && prev.targetId === tabId && prev.position === position
+        ? prev
+        : { targetId: tabId, position }
+    );
+  };
+
+  const handleDrop = (e: React.DragEvent, targetId: string) => {
+    e.preventDefault();
+    const sourceId = dragTabIdRef.current;
+    const indicator = dropIndicator;
+    clearDragState();
+    if (!sourceId || sourceId === targetId || !onMoveTab) return;
+    const position =
+      indicator && indicator.targetId === targetId ? indicator.position : 'before';
+    onMoveTab(sourceId, targetId, position);
   };
 
   return (
@@ -50,6 +96,11 @@ export const TabBar: React.FC<TabBarProps> = ({
               role="tab"
               aria-selected={isActive}
               tabIndex={0}
+              draggable={!!onMoveTab}
+              onDragStart={(e) => handleDragStart(e, tab.id)}
+              onDragOver={(e) => handleDragOverTab(e, tab.id)}
+              onDrop={(e) => handleDrop(e, tab.id)}
+              onDragEnd={clearDragState}
               onClick={() => onSelectTab(tab.id)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
@@ -72,6 +123,16 @@ export const TabBar: React.FC<TabBarProps> = ({
               )}
               title={tab.filePath || tab.title}
             >
+              {/* Drag insertion indicator */}
+              {dropIndicator?.targetId === tab.id && (
+                <span
+                  className={clsx(
+                    'absolute top-0 bottom-0 w-0.5 bg-blue-500 rounded-full pointer-events-none',
+                    dropIndicator.position === 'before' ? '-left-1' : '-right-1'
+                  )}
+                />
+              )}
+
               {/* Tab Icon */}
               {isWelcome ? (
                 <Sparkles className="w-3.5 h-3.5 text-blue-500 mr-1.5 shrink-0" />

@@ -394,6 +394,25 @@ mod commands {
         }
     }
 
+    /// Returns the file's last-modified time in milliseconds since the Unix epoch.
+    /// Used by the frontend to detect external modifications to open documents.
+    #[tauri::command]
+    pub fn get_file_mtime(path: String) -> Result<u64, String> {
+        let p = Path::new(&path);
+        if !p.exists() {
+            return Err(format!("文件不存在: {}", path));
+        }
+        let metadata = fs::metadata(p).map_err(|e| format!("获取文件信息失败 ({}): {}", path, e))?;
+        let modified = metadata
+            .modified()
+            .map_err(|e| format!("获取文件修改时间失败 ({}): {}", path, e))?;
+        let millis = modified
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|e| format!("文件修改时间异常 ({}): {}", path, e))?
+            .as_millis() as u64;
+        Ok(millis)
+    }
+
     #[tauri::command]
     pub fn write_text_file(path: String, content: String) -> Result<(), String> {
         let p = Path::new(&path);
@@ -757,10 +776,22 @@ mod tests {
         let mut q = pending.0.lock().unwrap();
         let drained: Vec<String> = q.drain(..).collect();
 
-        assert_eq!(drained.len(), 3);
-        assert_eq!(drained[0], "C:\\path\\doc1.md");
-        assert_eq!(drained[1], "C:\\path\\doc2.txt");
-        assert_eq!(drained[2], "C:\\path\\doc3.markdown");
+        // Dedup is case-insensitive on Windows, case-sensitive on other platforms
+        #[cfg(windows)]
+        {
+            assert_eq!(drained.len(), 3);
+            assert_eq!(drained[0], "C:\\path\\doc1.md");
+            assert_eq!(drained[1], "C:\\path\\doc2.txt");
+            assert_eq!(drained[2], "C:\\path\\doc3.markdown");
+        }
+        #[cfg(not(windows))]
+        {
+            assert_eq!(drained.len(), 4);
+            assert_eq!(drained[0], "C:\\path\\doc1.md");
+            assert_eq!(drained[1], "C:\\path\\doc2.txt");
+            assert_eq!(drained[2], "c:\\path\\DOC1.MD");
+            assert_eq!(drained[3], "C:\\path\\doc3.markdown");
+        }
 
         // Subsequent drain should be empty
         let drained_again: Vec<String> = q.drain(..).collect();
@@ -1074,6 +1105,7 @@ pub fn run() {
         .manage(pending_open_files)
         .invoke_handler(tauri::generate_handler![
             commands::read_text_file,
+            commands::get_file_mtime,
             commands::write_text_file,
             commands::write_binary_file,
             commands::open_file_dialog,

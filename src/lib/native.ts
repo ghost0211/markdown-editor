@@ -117,6 +117,23 @@ export async function readTextFile(path: string): Promise<string> {
 }
 
 /**
+ * Returns the file's last-modified time in milliseconds since the Unix epoch.
+ * Returns null in Web mode or on error (e.g. file deleted), allowing callers
+ * to treat it as "unknown" without throwing.
+ */
+export async function getFileMtime(path: string): Promise<number | null> {
+  if (isTauri()) {
+    try {
+      const mtime = await invoke<number>('get_file_mtime', { path });
+      return typeof mtime === 'number' && Number.isFinite(mtime) ? mtime : null;
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
  * Writes UTF-8 content to a file.
  */
 export async function writeTextFile(path: string, content: string): Promise<void> {

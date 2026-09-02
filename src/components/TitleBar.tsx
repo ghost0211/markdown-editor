@@ -11,6 +11,7 @@ import {
   Columns2,
   Edit3,
   BookOpen,
+  GitCompareArrows,
   PanelLeft,
   Download,
   LoaderCircle,
@@ -42,6 +43,7 @@ interface TitleBarProps {
   exportingType?: 'docx' | 'pdf' | 'html' | null;
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
+  onCompare?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -63,6 +65,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   exportingType = null,
   onOpenShortcuts,
   onOpenSettings,
+  onCompare,
 }) => {
   const { t } = useI18n();
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -318,7 +321,20 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Right: View Mode, Theme Switcher & Shortcuts Help */}
       <div className="flex items-center space-x-1.5">
-        {/* View Mode Segmented Controls */}
+        {/* Compare two documents */}
+        {onCompare && (
+          <button
+            onClick={onCompare}
+            title={t('titleBar.compareTooltip')}
+            aria-label={t('titleBar.compareTooltip')}
+            className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+          >
+            <GitCompareArrows className="w-3.5 h-3.5" />
+          </button>
+        )}
+
+        {/* View Mode Segmented Controls (not applicable to diff tabs) */}
+        {activeTab?.kind !== 'diff' && (
         <div className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md text-xs">
           <button
             onClick={() => onSetViewMode('edit')}
@@ -360,6 +376,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <span className="hidden lg:inline">{t('titleBar.readMode')}</span>
           </button>
         </div>
+        )}
 
         <div className="h-3.5 w-[1px] bg-slate-300 dark:bg-slate-700 mx-0.5" />
 

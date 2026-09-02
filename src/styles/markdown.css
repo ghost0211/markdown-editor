@@ -229,3 +229,37 @@
   color: #c9d1d9;
   background-color: transparent;
 }
+
+/* Source line numbers gutter (read / split preview) */
+.markdown-body.md-show-line-numbers {
+  position: relative;
+  padding-left: 2.9rem;
+}
+
+.markdown-body.md-show-line-numbers [data-line]::before {
+  content: attr(data-line);
+  position: absolute;
+  left: 0;
+  width: 2.3rem;
+  text-align: right;
+  font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace;
+  font-size: 0.72em;
+  font-style: normal;
+  font-weight: 400;
+  line-height: inherit;
+  color: #94a3b8;
+  user-select: none;
+  pointer-events: none;
+}
+
+.dark .markdown-body.md-show-line-numbers [data-line]::before {
+  color: #64748b;
+}
+
+/* The code block wrapper is position:relative, so its number would land inside
+   the header bar; push it out into the shared gutter instead. */
+.markdown-body.md-show-line-numbers .md-code-block::before {
+  left: auto;
+  right: calc(100% + 0.45rem);
+  top: 0.85rem;
+}

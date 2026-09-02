@@ -93,3 +93,23 @@
   background-color: #f8fafc !important;
   border-right: 1px solid #e2e8f0 !important;
 }
+
+/* Diff (MergeView) layout */
+.diff-merge-container,
+.diff-merge-container .cm-mergeView,
+.diff-merge-container .cm-mergeViewEditors {
+  height: 100%;
+}
+
+.diff-merge-container .cm-mergeViewEditor {
+  height: 100%;
+  overflow: hidden;
+}
+
+.diff-merge-container .cm-mergeViewEditor .cm-editor {
+  height: 100%;
+}
+
+.diff-merge-container .cm-mergeViewEditor .cm-scroller {
+  overflow: auto;
+}

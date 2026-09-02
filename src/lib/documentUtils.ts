@@ -1,4 +1,6 @@
-import { DocumentTab } from '@/types';
+import { DocumentTab, StartupViewMode, ViewMode } from '@/types';
+
+const VALID_VIEW_MODES: readonly ViewMode[] = ['edit', 'split', 'read'];
 
 /**
  * Generates a unique, collision-resistant document tab ID.
@@ -105,7 +107,8 @@ export function openOrFocusDocumentState(
   currentTabs: DocumentTab[],
   filePath: string,
   content: string,
-  title?: string
+  title?: string,
+  fileMtime?: number
 ): OpenOrFocusResult {
   const targetPathKey = normalizePathKey(filePath);
   const existing = currentTabs.find(
@@ -132,6 +135,7 @@ export function openOrFocusDocumentState(
     isDirty: false,
     cursorLine: 1,
     cursorCol: 1,
+    fileMtime,
   };
 
   const isPristineWelcome =
@@ -158,7 +162,8 @@ export function openOrFocusDocumentState(
 export function computeSavedTabState(
   tab: DocumentTab,
   targetPath: string,
-  savedSnapshot: string
+  savedSnapshot: string,
+  fileMtime?: number
 ): DocumentTab {
   const fileName = getFileNameFromPath(targetPath);
   return {
@@ -167,6 +172,7 @@ export function computeSavedTabState(
     title: fileName,
     savedContent: savedSnapshot,
     isDirty: tab.content !== savedSnapshot,
+    fileMtime: fileMtime !== undefined ? fileMtime : tab.fileMtime,
   };
 }
 
@@ -190,4 +196,99 @@ export function createDefaultTab(
     cursorLine: 1,
     cursorCol: 1,
   };
+}
+
+export type ExternalChangeAction = 'none' | 'baseline' | 'reload' | 'prompt';
+
+/**
+ * Pure decision logic for external file modification handling.
+ *
+ * - 'none': nothing to do (cannot stat file, or mtime unchanged, or content unreadable).
+ * - 'baseline': silently adopt the new mtime as the known baseline
+ *   (first time we learn the mtime, or only mtime/content reverted to saved state).
+ * - 'reload': file changed on disk and the tab has no unsaved edits → safe to auto-reload.
+ * - 'prompt': file changed on disk but the tab has unsaved edits → ask the user.
+ */
+export function decideExternalChangeAction(
+  tab: Pick<DocumentTab, 'fileMtime' | 'savedContent' | 'isDirty'>,
+  currentMtime: number | null,
+  currentContent: string | null
+): ExternalChangeAction {
+  if (currentMtime === null || Number.isNaN(currentMtime)) return 'none';
+  if (tab.fileMtime === undefined) return 'baseline';
+  if (currentMtime === tab.fileMtime) return 'none';
+  if (currentContent === null) return 'none';
+  if (currentContent === tab.savedContent) return 'baseline';
+  return tab.isDirty ? 'prompt' : 'reload';
+}
+
+/**
+ * Pure helper for drag-and-drop tab reordering.
+ * Returns a new array with `sourceId` inserted before/after `targetId`.
+ * Returns the original array reference when the move is a no-op.
+ */
+export function moveTabState(
+  tabs: DocumentTab[],
+  sourceId: string,
+  targetId: string,
+  position: 'before' | 'after'
+): DocumentTab[] {
+  const from = tabs.findIndex((t) => t.id === sourceId);
+  if (from === -1 || sourceId === targetId) return tabs;
+  if (!tabs.some((t) => t.id === targetId)) return tabs;
+
+  const next = [...tabs];
+  const [moved] = next.splice(from, 1);
+  const to = next.findIndex((t) => t.id === targetId);
+  const insertAt = position === 'before' ? to : to + 1;
+  next.splice(insertAt, 0, moved);
+  return next;
+}
+
+/**
+ * Creates a side-by-side diff/compare tab referencing two document tabs.
+ * Content snapshots are captured so the diff remains viewable even if a
+ * source tab is later closed (that side then becomes read-only).
+ */
+export function createDiffTabState(
+  left: DocumentTab,
+  right: DocumentTab,
+  id?: string
+): DocumentTab {
+  return {
+    id: id || generateDocId(),
+    title: `${left.title} ↔ ${right.title}`,
+    filePath: null,
+    content: '',
+    savedContent: '',
+    isDirty: false,
+    cursorLine: 1,
+    cursorCol: 1,
+    kind: 'diff',
+    diffRefs: {
+      left: { tabId: left.id, title: left.title, snapshot: left.content },
+      right: { tabId: right.id, title: right.title, snapshot: right.content },
+    },
+  };
+}
+
+/**
+ * Sanitizes the per-tab view mode of tabs restored from a persisted session.
+ * - Drops corrupted/unknown viewMode values so tabs fall back to the default.
+ * - When startupView is an explicit mode (not 'remember-last'), clears all
+ *   stored per-tab modes so every restored tab starts in the configured
+ *   startup view.
+ */
+export function sanitizeRestoredTabs(
+  tabs: DocumentTab[],
+  startupView: StartupViewMode
+): DocumentTab[] {
+  return tabs.map((tab) => {
+    const stored = tab.viewMode;
+    const valid = VALID_VIEW_MODES.includes(stored as ViewMode) ? stored : undefined;
+    return {
+      ...tab,
+      viewMode: startupView === 'remember-last' ? valid : undefined,
+    };
+  });
 }

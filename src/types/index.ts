@@ -26,7 +26,29 @@ export interface DocumentTab {
   isDirty: boolean;
   cursorLine: number;
   cursorCol: number;
+  /** Last known editor scroll offset (px), used to restore per-tab reading position. */
   scrollPosition?: number;
+  /** Last known preview scroll offset (px), used to restore per-tab reading position. */
+  previewScrollPosition?: number;
+  /** Last known file modification time (ms since epoch) for external-change detection. */
+  fileMtime?: number;
+  /** Per-tab view mode (edit / split / read). Undefined means "use the default view mode". */
+  viewMode?: ViewMode;
+  /** Tab kind. Undefined/'document' = normal document; 'diff' = side-by-side compare tab. */
+  kind?: 'document' | 'diff';
+  /** For diff tabs: the two sides being compared. */
+  diffRefs?: {
+    left: DiffSideRef;
+    right: DiffSideRef;
+  };
+}
+
+export interface DiffSideRef {
+  /** Source document tab id. If that tab gets closed, the snapshot is shown read-only. */
+  tabId: string;
+  title: string;
+  /** Content snapshot captured when the diff tab was created. */
+  snapshot: string;
 }
 
 export interface HeadingItem {

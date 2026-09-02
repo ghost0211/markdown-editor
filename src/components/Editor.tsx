@@ -21,6 +21,10 @@ export interface EditorHandle {
   focus: () => void;
   getScrollTop: () => number;
   setScrollTop: (top: number) => void;
+  /** Scrolls so the given source line sits at the top of the viewport. */
+  scrollToLine: (line: number) => void;
+  /** Returns the first visible source line and the scrolled fraction within it. */
+  getTopVisibleLine: () => { line: number; fraction: number };
 }
 
 interface EditorProps {
@@ -118,9 +122,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           const safeLineNum = Math.max(1, Math.min(lineNum, doc.lines));
           const line = doc.line(safeLineNum);
 
+          // Align the target line to the top of the viewport (matching the
+          // preview's outline-jump behavior) instead of minimal scrolling.
           view.dispatch({
             selection: { anchor: line.from, head: line.from },
-            scrollIntoView: true,
+            effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 16 }),
           });
           view.focus();
         },
@@ -145,6 +151,29 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           if (scroller) {
             scroller.scrollTop = top;
           }
+        },
+
+        scrollToLine: (lineNum: number) => {
+          const view = cmRef.current?.view;
+          if (!view) return;
+          const doc = view.state.doc;
+          const safeLineNum = Math.max(1, Math.min(lineNum, doc.lines));
+          const line = doc.line(safeLineNum);
+          const block = view.lineBlockAt(line.from);
+          view.scrollDOM.scrollTop = block.top;
+        },
+
+        getTopVisibleLine: () => {
+          const view = cmRef.current?.view;
+          if (!view) return { line: 1, fraction: 0 };
+          const scrollTop = Math.max(0, view.scrollDOM.scrollTop);
+          const block = view.lineBlockAtHeight(scrollTop);
+          const line = view.state.doc.lineAt(block.from).number;
+          const fraction =
+            block.height > 0
+              ? Math.min(1, Math.max(0, (scrollTop - block.top) / block.height))
+              : 0;
+          return { line, fraction };
         },
       }),
       [t, language]
