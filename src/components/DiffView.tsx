@@ -71,7 +71,6 @@ export const DiffView: React.FC<DiffViewProps> = ({
         EditorView.theme({
           '&': {
             fontSize: `${fontSize}px`,
-            height: '100%',
           },
           '.cm-scroller': {
             fontFamily:

@@ -94,22 +94,17 @@
   border-right: 1px solid #e2e8f0 !important;
 }
 
-/* Diff (MergeView) layout */
-.diff-merge-container,
-.diff-merge-container .cm-mergeView,
-.diff-merge-container .cm-mergeViewEditors {
-  height: 100%;
+/* Diff (MergeView) layout:
+   @codemirror/merge renders both inner editors at full content height
+   (its base theme forces height:auto/overflow-y:visible with !important).
+   The outer .cm-mergeView is the single shared vertical scroller, which also
+   keeps both panes aligned. Only constrain the container and that scroller. */
+.diff-merge-container {
+  min-height: 0; /* allow the flex child to shrink so the scroller gets a bounded height */
 }
 
-.diff-merge-container .cm-mergeViewEditor {
+.diff-merge-container .cm-mergeView {
   height: 100%;
-  overflow: hidden;
-}
-
-.diff-merge-container .cm-mergeViewEditor .cm-editor {
-  height: 100%;
-}
-
-.diff-merge-container .cm-mergeViewEditor .cm-scroller {
-  overflow: auto;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
