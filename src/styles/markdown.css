@@ -176,46 +176,34 @@
 }
 
 /* Tables */
-/* Wide tables break out of the centered reading column and use the available
-   preview width (up to the scroll container's inner width) instead of being
-   squeezed; on narrow panes (split mode / small windows) they stay in-column
-   and scroll horizontally inside the wrapper. Requires the preview scroll
-   container to be a container-query context (md-preview-scroll). */
 .markdown-body .md-table-wrap {
   overflow-x: auto;
   margin: 1.25em 0;
-  width: max(100%, calc(100cqi - 3rem));
-  margin-left: min(0px, calc((100% - (100cqi - 3rem)) / 2));
-}
-
-/* Leave room for the line-number gutter when it is enabled */
-.markdown-body.md-show-line-numbers .md-table-wrap {
-  width: max(100%, calc(100cqi - 5.9rem));
-  margin-left: min(0px, calc((100% - (100cqi - 5.9rem)) / 2));
+  width: 100%;
 }
 
 .markdown-body table {
-  /* Hug content width: compact tables stay compact, wide tables expand
-     into the page width made available by the breakout wrapper above. */
-  width: auto;
-  max-width: 100%;
+  width: 100%;
   border-collapse: collapse;
   border-spacing: 0;
   margin: 0;
   font-size: 0.9em;
-}
-
-/* Cells must not compress below a readable width; an over-wide table
-   overflows its wrapper (which scrolls) instead of crushing columns. */
-.markdown-body th,
-.markdown-body td {
-  min-width: 4.5em;
+  table-layout: auto;
+  word-break: break-word;
 }
 
 .markdown-body th,
 .markdown-body td {
   padding: 0.6em 1em;
   border: 1px solid #e2e8f0;
+  /* Prevent short header text (like 必填, 默认值) from breaking into 1 character per line */
+  white-space: normal;
+  word-break: break-word;
+}
+
+/* Ensure table headers or specific label cells keep compact keywords together */
+.markdown-body th {
+  white-space: nowrap;
 }
 
 .dark .markdown-body th,
@@ -257,10 +245,6 @@
 }
 
 /* Source line numbers gutter (read / split preview) */
-.md-preview-scroll {
-  container-type: inline-size;
-}
-
 .markdown-body.md-show-line-numbers {
   position: relative;
   padding-left: 2.9rem;

@@ -14,38 +14,38 @@ import { DEFAULT_SETTINGS } from '../src/lib/settings';
 import { openOrFocusDocumentState } from '../src/lib/documentUtils';
 import { DocumentTab } from '../src/types';
 
-describe('Release Acceptance & Quality Assurance (v1.4.4)', () => {
-  describe('Consistent Release Version 1.4.4 across all Project Manifests', () => {
+describe('Release Acceptance & Quality Assurance (v1.4.5)', () => {
+  describe('Consistent Release Version 1.4.5 across all Project Manifests', () => {
     const rootDir = resolve(__dirname, '..');
 
-    it('package.json should have version 1.4.4', () => {
+    it('package.json should have version 1.4.5', () => {
       const pkg = JSON.parse(readFileSync(resolve(rootDir, 'package.json'), 'utf-8'));
-      expect(pkg.version).toBe('1.4.4');
+      expect(pkg.version).toBe('1.4.5');
     });
 
-    it('package-lock.json should have root version 1.4.4', () => {
+    it('package-lock.json should have root version 1.4.5', () => {
       const lock = JSON.parse(readFileSync(resolve(rootDir, 'package-lock.json'), 'utf-8'));
-      expect(lock.version).toBe('1.4.4');
-      expect(lock.packages[''].version).toBe('1.4.4');
+      expect(lock.version).toBe('1.4.5');
+      expect(lock.packages[''].version).toBe('1.4.5');
     });
 
-    it('Cargo.toml should have version 1.4.4', () => {
+    it('Cargo.toml should have version 1.4.5', () => {
       const toml = readFileSync(resolve(rootDir, 'src-tauri/Cargo.toml'), 'utf-8');
       const match = /name\s*=\s*"markdown-editor"\s*\nversion\s*=\s*"([^"]+)"/.exec(toml);
       expect(match).not.toBeNull();
-      expect(match![1]).toBe('1.4.4');
+      expect(match![1]).toBe('1.4.5');
     });
 
-    it('Cargo.lock should have markdown-editor package version 1.4.4', () => {
+    it('Cargo.lock should have markdown-editor package version 1.4.5', () => {
       const lock = readFileSync(resolve(rootDir, 'src-tauri/Cargo.lock'), 'utf-8');
       const match = /\[\[package\]\]\s*\nname\s*=\s*"markdown-editor"\s*\nversion\s*=\s*"([^"]+)"/.exec(lock);
       expect(match).not.toBeNull();
-      expect(match![1]).toBe('1.4.4');
+      expect(match![1]).toBe('1.4.5');
     });
 
-    it('tauri.conf.json should have version 1.4.4', () => {
+    it('tauri.conf.json should have version 1.4.5', () => {
       const conf = JSON.parse(readFileSync(resolve(rootDir, 'src-tauri/tauri.conf.json'), 'utf-8'));
-      expect(conf.version).toBe('1.4.4');
+      expect(conf.version).toBe('1.4.5');
     });
   });
 

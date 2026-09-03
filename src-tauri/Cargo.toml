@@ -1,6 +1,6 @@
 [package]
 name = "markdown-editor"
-version = "1.4.4"
+version = "1.4.5"
 description = "Modern Windows Markdown Editor"
 authors = ["Markdown Editor Team"]
 edition = "2021"
