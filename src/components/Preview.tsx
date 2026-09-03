@@ -576,7 +576,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
       <div
         ref={containerRef}
         onScroll={handleScroll}
-        className={`h-full w-full overflow-y-auto px-6 py-6 select-text ${className || ''}`}
+        className={`h-full w-full overflow-y-auto px-6 py-6 select-text md-preview-scroll ${className || ''}`}
       >
         <div
           className={`max-w-3xl mx-auto markdown-body ${
