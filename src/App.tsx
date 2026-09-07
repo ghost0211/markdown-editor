@@ -103,24 +103,28 @@ const AppContent: React.FC<AppContentProps> = ({
     exportHtml,
   } = useExportDocument(activeTab, showToast);
 
-  // Default view mode resolved once at startup from settings / last-used mode.
-  // Each tab may override it with its own persisted per-tab mode.
-  const [defaultViewMode] = useState<ViewMode>(() => {
-    if (settings.startupView !== 'remember-last') {
-      return settings.startupView;
-    }
+  // Last-used view mode, tracked live so the 'remember-last' default keeps
+  // following the user's most recent explicit switch during the session.
+  const [lastUsedViewMode, setLastUsedViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(STORAGE_VIEW_MODE_KEY) as ViewMode | null;
     return saved === 'edit' || saved === 'split' || saved === 'read' ? saved : 'split';
   });
 
+  // Default open mode for tabs without an explicit per-tab override. A
+  // configured mode (edit / split / read) applies immediately — including to
+  // documents opened later — while 'remember-last' tracks the last-used mode.
+  const defaultViewMode: ViewMode =
+    settings.startupView !== 'remember-last' ? settings.startupView : lastUsedViewMode;
+
   // View mode is independent per tab: tabs that were never switched explicitly
-  // fall back to the default view mode.
+  // fall back to the default open mode.
   const viewMode: ViewMode = activeTab?.viewMode ?? defaultViewMode;
 
   const setViewMode = useCallback(
     (mode: ViewMode) => {
       // Remember as the global last-used mode (default for new tabs on next launch)
       localStorage.setItem(STORAGE_VIEW_MODE_KEY, mode);
+      setLastUsedViewMode(mode);
       // Apply to the active tab only, leaving other tabs' modes untouched
       if (activeTabId) {
         if (mode !== viewMode) {

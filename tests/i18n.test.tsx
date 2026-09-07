@@ -258,7 +258,7 @@ describe('Lightweight Typed i18n Architecture', () => {
       expect(html).toContain('Font Size');
       expect(html).toContain('Line Height');
       expect(html).toContain('Tab Size');
-      expect(html).toContain('Default Startup View');
+      expect(html).toContain('Default Open Mode');
       expect(html).toContain('Remember Last View');
     });
   });

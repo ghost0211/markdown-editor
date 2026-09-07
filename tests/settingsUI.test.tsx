@@ -140,12 +140,12 @@ describe('Settings UI Components (SettingsModal & TitleBar)', () => {
       expect(html).toContain('启动与会话');
       expect(html).toContain('恢复上次打开的文档');
       expect(html).toContain('aria-label="恢复上次打开的文档"');
-      expect(html).toContain('默认启动视图');
-      expect(html).toContain('aria-label="默认启动视图"');
+      expect(html).toContain('默认打开模式');
+      expect(html).toContain('aria-label="默认打开模式"');
       expect(html).toContain('记忆上次视图');
-      expect(html).toContain('双栏分屏模式');
-      expect(html).toContain('纯编辑模式');
-      expect(html).toContain('纯阅读模式');
+      expect(html).toContain('>分屏<');
+      expect(html).toContain('>编辑<');
+      expect(html).toContain('>阅读<');
     });
 
     it('should disable Windows Settings button in browser environment', () => {
