@@ -333,27 +333,32 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
     const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Cache of block-element positions keyed by source line, invalidated on
-    // content change / window resize and rebuilt lazily on first use.
-    const lineAnchorsRef = useRef<LineAnchor[] | null>(null);
+    // Cache of block-element positions keyed by source line. It is validated
+    // against the container's current layout size on every access and rebuilt
+    // lazily when stale, so width changes (read/split switches, sidebar
+    // toggles, window resizes) and async content growth (e.g. image loading)
+    // never reuse outdated measurements — otherwise mode switches would scroll
+    // to positions computed for a different layout and the scrollbar jumps.
+    const lineAnchorsRef = useRef<{
+      width: number;
+      height: number;
+      anchors: LineAnchor[];
+    } | null>(null);
     const totalLines = useMemo(() => content.split(/\r?\n/).length, [content]);
 
     useEffect(() => {
       lineAnchorsRef.current = null;
     }, [content]);
 
-    useEffect(() => {
-      const invalidate = () => {
-        lineAnchorsRef.current = null;
-      };
-      window.addEventListener('resize', invalidate);
-      return () => window.removeEventListener('resize', invalidate);
-    }, []);
-
     const getLineAnchors = useCallback((): LineAnchor[] => {
-      if (lineAnchorsRef.current) return lineAnchorsRef.current;
       const container = containerRef.current;
       if (!container) return [];
+      const width = container.clientWidth;
+      const height = container.scrollHeight;
+      const cached = lineAnchorsRef.current;
+      if (cached && cached.width === width && cached.height === height) {
+        return cached.anchors;
+      }
       const containerRect = container.getBoundingClientRect();
       const elements = container.querySelectorAll<HTMLElement>('[data-line]');
       const anchors: LineAnchor[] = [];
@@ -371,7 +376,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
           deduped.push(anchor);
         }
       }
-      lineAnchorsRef.current = deduped;
+      lineAnchorsRef.current = { width, height, anchors: deduped };
       return deduped;
     }, []);
 

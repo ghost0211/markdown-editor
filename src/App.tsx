@@ -126,8 +126,12 @@ const AppContent: React.FC<AppContentProps> = ({
         if (mode !== viewMode) {
           // Capture the current reading position as a source line so the new
           // view mode continues from exactly the same position (no jumping).
+          // Read from the pane the user is actually looking at: the preview
+          // in read mode (or when heading into read mode from split, where
+          // the preview may have scrolled independently of the editor),
+          // otherwise the editor.
           const pos =
-            viewMode === 'read'
+            viewMode === 'read' || (viewMode === 'split' && mode === 'read')
               ? previewRef.current?.getTopSourceLine()
               : editorRef.current?.getTopVisibleLine();
           pendingLineSyncRef.current = {

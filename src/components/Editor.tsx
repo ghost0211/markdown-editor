@@ -61,6 +61,12 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const { t, language } = useI18n();
 
+    // In-flight programmatic scroll target. CodeMirror measures line heights
+    // lazily, so scrollToLine may take several frames to converge; while it is
+    // settling, getTopVisibleLine reports this logical target instead of the
+    // transient physical position (keeps rapid view-mode switches stable).
+    const scrollSettleRef = useRef<{ from: number; line: number } | null>(null);
+
     // CodeMirror extensions
     const extensions = useMemo(() => {
       const ext = [
@@ -158,14 +164,43 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           if (!view) return;
           const doc = view.state.doc;
           const safeLineNum = Math.max(1, Math.min(lineNum, doc.lines));
-          const line = doc.line(safeLineNum);
-          const block = view.lineBlockAt(line.from);
-          view.scrollDOM.scrollTop = block.top;
+          const from = doc.line(safeLineNum).from;
+          scrollSettleRef.current = { from, line: safeLineNum };
+
+          // Positions of far lines are height *estimates* right after mount or
+          // a width change (e.g. entering split mode re-wraps lines). Re-apply
+          // the target over the next few frames so the scroll converges to the
+          // line's real position as CodeMirror's measurements arrive, instead
+          // of drifting by the accumulated estimation error.
+          let frames = 0;
+          const applyTarget = () => {
+            if (cmRef.current?.view !== view || !view.dom.isConnected) return;
+            if (scrollSettleRef.current?.from !== from) return; // superseded
+            if (from > view.state.doc.length) {
+              scrollSettleRef.current = null;
+              return;
+            }
+            const top = view.lineBlockAt(from).top;
+            if (Math.abs(view.scrollDOM.scrollTop - top) > 1) {
+              view.scrollDOM.scrollTop = top;
+            }
+            if (++frames < 6) {
+              requestAnimationFrame(applyTarget);
+            } else {
+              scrollSettleRef.current = null;
+            }
+          };
+          applyTarget();
         },
 
         getTopVisibleLine: () => {
           const view = cmRef.current?.view;
           if (!view) return { line: 1, fraction: 0 };
+          // While a programmatic scroll is still settling, report its logical
+          // target so rapid view-mode switches don't capture a transient
+          // mid-scroll position (which would compound into visible jumps).
+          const settling = scrollSettleRef.current;
+          if (settling) return { line: settling.line, fraction: 0 };
           const scrollTop = Math.max(0, view.scrollDOM.scrollTop);
           const block = view.lineBlockAtHeight(scrollTop);
           const line = view.state.doc.lineAt(block.from).number;
