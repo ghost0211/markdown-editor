@@ -26,6 +26,8 @@ import { calculateStats } from '@/lib/stats';
 import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
 import { isTauri, subscribeOpenFiles, drainPendingOpenFiles } from '@/lib/native';
+import { resolveDocumentLink } from '@/lib/documentLinks';
+import { openExternalUrl } from '@/lib/native';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
@@ -72,11 +74,25 @@ const AppContent: React.FC<AppContentProps> = ({
     createDiffTab,
     openDocument,
     openFilesByPaths,
+    openFileByPath,
     saveActiveDocument,
     requestCloseTab,
     confirmDialog,
     setConfirmDialog,
   } = useDocuments(showToast, settings.restoreSession, settings.startupView);
+
+  const [linkAnchor, setLinkAnchor] = useState<{ path: string; anchor: string } | null>(null);
+  const handleOpenLink = useCallback(async (href: string) => {
+    try {
+      const target = resolveDocumentLink(href, activeTab?.filePath);
+      if (!target) { await openExternalUrl(href); return; }
+      if (await openFileByPath(target.path)) {
+        setLinkAnchor(target);
+      }
+    } catch (error) {
+      showToast(String(error instanceof Error ? error.message : error), 'error');
+    }
+  }, [activeTab?.filePath, openFileByPath, showToast]);
 
   // Document export hook
   const {
@@ -239,6 +255,18 @@ const AppContent: React.FC<AppContentProps> = ({
   // Editor and Preview refs
   const editorRef = useRef<EditorHandle>(null);
   const previewRef = useRef<PreviewHandle>(null);
+  useEffect(() => {
+    if (!linkAnchor || !activeTab || activeTab.filePath?.replace(/\\/g, '/').toLowerCase() !== linkAnchor.path.toLowerCase()) return;
+    if (viewMode === 'edit') { updateViewMode(activeTab.id, 'read'); return; }
+    let inner = 0;
+    const outer = requestAnimationFrame(() => {
+      inner = requestAnimationFrame(() => {
+        if (linkAnchor.anchor) previewRef.current?.scrollToAnchor(linkAnchor.anchor);
+        setLinkAnchor(null);
+      });
+    });
+    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+  }, [linkAnchor, activeTab, viewMode, updateViewMode]);
 
   // Sync scroll lock to prevent feedback loop
   const isSyncingScroll = useRef(false);
@@ -608,6 +636,7 @@ const AppContent: React.FC<AppContentProps> = ({
               }`}
             >
               <Preview
+                onOpenLink={handleOpenLink}
                 ref={previewRef}
                 content={activeTab?.content || ''}
                 showLineNumbers={settings.lineNumbers}

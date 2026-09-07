@@ -14,6 +14,7 @@ import remarkGfm from 'remark-gfm';
 import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
+import { documentUrlTransform } from '@/lib/documentLinks';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import 'highlight.js/styles/github-dark.css';
@@ -44,6 +45,7 @@ export interface PreviewHandle {
 
 interface PreviewProps {
   content: string;
+  onOpenLink?: (href: string) => Promise<void>;
   /** Whether to show source line numbers in the gutter (like the editor). */
   showLineNumbers?: boolean;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
@@ -327,7 +329,7 @@ interface LineAnchor {
 }
 
 export const Preview = forwardRef<PreviewHandle, PreviewProps>(
-  ({ content, showLineNumbers = false, onScroll, className }, ref) => {
+  ({ content, onOpenLink, showLineNumbers = false, onScroll, className }, ref) => {
     const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -539,7 +541,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
         ),
         pre: PreRenderer,
         code: CodeBlock,
-        a: ({ href, children, ...props }) => {
+        a: ({ href, children, node: _node, ...props }) => {
           const isAnchor = href?.startsWith('#');
 
           const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
@@ -551,7 +553,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
               }
             } else if (href) {
               e.preventDefault();
-              openExternalUrl(href).catch((err) => {
+              (onOpenLink ? onOpenLink(href) : openExternalUrl(href)).catch((err) => {
                 console.warn('无法打开外部链接:', err);
               });
             }
@@ -569,7 +571,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, t]
+      [scrollToTarget, t, onOpenLink]
     );
 
     return (
@@ -584,6 +586,7 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
           }`}
         >
           <Markdown
+            urlTransform={documentUrlTransform}
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeSlug, rehypeHighlight]}
             components={components}
