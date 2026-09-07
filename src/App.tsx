@@ -337,7 +337,7 @@ const AppContent: React.FC<AppContentProps> = ({
       isSyncingScroll.current = true;
       const raf = requestAnimationFrame(() => {
         if (viewMode !== 'read') {
-          editorRef.current?.scrollToLine(pending.line);
+          editorRef.current?.scrollToLine(pending.line, pending.fraction);
         }
         if (viewMode !== 'edit') {
           previewRef.current?.scrollToSourceLine(pending.line, pending.fraction);
@@ -486,9 +486,11 @@ const AppContent: React.FC<AppContentProps> = ({
     }
   }, []);
 
-  // Synchronized scroll from Editor to Preview in split mode.
-  // Anchored on source line numbers so both panes stay aligned even when the
-  // rendered heights differ significantly (images, code blocks, tables...).
+  // Synchronized scroll between the two panes in split mode, anchored on
+  // source line numbers so both stay aligned even when rendered heights
+  // differ significantly (images, code blocks, tables...). The sync lock
+  // prevents the programmatic scroll of the target pane from echoing back
+  // as a reverse sync (feedback loop).
   const handleEditorScroll = useCallback(
     (scrollTop: number) => {
       recordEditorScroll(scrollTop);
@@ -505,12 +507,24 @@ const AppContent: React.FC<AppContentProps> = ({
     [viewMode, recordEditorScroll]
   );
 
-  // Track preview scroll for per-tab reading position memory
+  // Reverse direction: preview scroll drives the editor. The lock window is
+  // longer because the editor's programmatic scroll settles over several
+  // frames (CodeMirror lazy height measurement); late settle events must not
+  // echo back and yank the preview away from the user's position.
   const handlePreviewScroll = useCallback(
     (scrollTop: number) => {
       recordPreviewScroll(scrollTop);
+      if (viewMode !== 'split' || isSyncingScroll.current) return;
+      const pos = previewRef.current?.getTopSourceLine();
+      if (pos) {
+        isSyncingScroll.current = true;
+        editorRef.current?.scrollToLine(pos.line, pos.fraction);
+        setTimeout(() => {
+          isSyncingScroll.current = false;
+        }, 250);
+      }
     },
-    [recordPreviewScroll]
+    [viewMode, recordPreviewScroll]
   );
 
   const handleCursorChange = useCallback(

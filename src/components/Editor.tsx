@@ -22,7 +22,7 @@ export interface EditorHandle {
   getScrollTop: () => number;
   setScrollTop: (top: number) => void;
   /** Scrolls so the given source line sits at the top of the viewport. */
-  scrollToLine: (line: number) => void;
+  scrollToLine: (line: number, fraction?: number) => void;
   /** Returns the first visible source line and the scrolled fraction within it. */
   getTopVisibleLine: () => { line: number; fraction: number };
 }
@@ -159,13 +159,16 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           }
         },
 
-        scrollToLine: (lineNum: number) => {
+        scrollToLine: (lineNum: number, fraction = 0) => {
           const view = cmRef.current?.view;
           if (!view) return;
           const doc = view.state.doc;
           const safeLineNum = Math.max(1, Math.min(lineNum, doc.lines));
           const from = doc.line(safeLineNum).from;
-          scrollSettleRef.current = { from, line: safeLineNum };
+          const frac = Math.min(1, Math.max(0, fraction));
+          // Token identity marks the latest request; older settle loops stop.
+          const token = { from, line: safeLineNum };
+          scrollSettleRef.current = token;
 
           // Positions of far lines are height *estimates* right after mount or
           // a width change (e.g. entering split mode re-wraps lines). Re-apply
@@ -175,12 +178,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           let frames = 0;
           const applyTarget = () => {
             if (cmRef.current?.view !== view || !view.dom.isConnected) return;
-            if (scrollSettleRef.current?.from !== from) return; // superseded
+            if (scrollSettleRef.current !== token) return; // superseded
             if (from > view.state.doc.length) {
               scrollSettleRef.current = null;
               return;
             }
-            const top = view.lineBlockAt(from).top;
+            const block = view.lineBlockAt(from);
+            const top = block.top + frac * block.height;
             if (Math.abs(view.scrollDOM.scrollTop - top) > 1) {
               view.scrollDOM.scrollTop = top;
             }
