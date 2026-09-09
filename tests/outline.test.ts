@@ -49,6 +49,20 @@ Final content`;
     });
   });
 
+  it('should preserve underscores in inline code and intraword underscores', () => {
+    // Inline code content renders verbatim: underscores must survive cleanup
+    const md = '## 5.2.1 例程：`scr.get_duty_name`\n';
+    const outline = extractOutline(md);
+    expect(outline).toHaveLength(1);
+    expect(outline[0].text).toBe('5.2.1 例程：scr.get_duty_name');
+
+    expect(slugify('`foo_bar_baz`')).toBe('foo_bar_baz');
+    // Intraword underscores are not emphasis markers in CommonMark
+    expect(slugify('snake_case_name')).toBe('snake_case_name');
+    // But paired underscore emphasis markers should still be stripped
+    expect(slugify('__bold__ and _italic_')).toBe('bold-and-italic');
+  });
+
   it('should ignore headings inside code blocks', () => {
     const md = `# Real Heading 1
 

@@ -2,25 +2,45 @@ import GithubSlugger, { slug } from 'github-slugger';
 import { HeadingItem } from '@/types';
 
 /**
- * Strips markdown inline formatting (bold, italic, links, images, code, html tags, escaped characters)
+ * Strips markdown inline formatting (bold, italic, links, images, code ticks, html tags, escaped characters)
  * to obtain the visible heading text as rendered by Markdown parsers.
+ *
+ * Notes:
+ * - Inline code content is rendered verbatim, so underscores inside `code` are preserved.
+ * - Underscores inside words (e.g. foo_bar) are not emphasis markers and are preserved.
  */
 export function cleanHeadingText(text: string): string {
   if (!text) return '';
-  return text
+
+  // Protect inline code spans with placeholders: their content renders verbatim,
+  // so characters like underscores must survive the emphasis-marker cleanup below.
+  const codeSpans: string[] = [];
+
+  let result = text
     // Remove HTML tags
     .replace(/<[^>]+>/g, '')
     // Remove image syntax ![alt](url) -> ""
     .replace(/!\[.*?\]\(.*?\)/g, '')
     // Remove link syntax [text](url) -> text
     .replace(/\[([^\]]+)\]\([^)]*\)/g, '$1')
-    // Remove inline code ticks `code` -> code
-    .replace(/`([^`]+)`/g, '$1')
+    // Extract inline code content `code` -> placeholder (restored at the end)
+    .replace(/`([^`]+)`/g, (_match, code: string) => {
+      codeSpans.push(code);
+      return `\uE000${codeSpans.length - 1}\uE001`;
+    })
+    // Remove paired underscore emphasis markers (_italic_, __bold__, ___bold italic___)
+    // while preserving intraword underscores (e.g. foo_bar, snake_case_name)
+    .replace(/(^|[^\w\\])_{1,3}([^_]+)_{1,3}(?!\w)/g, '$1$2')
     // Remove bold/italic/strikethrough markers
-    .replace(/[*_~`]/g, '')
+    .replace(/[*~]/g, '')
     // Remove escaped backslashes (e.g. \* -> *)
     .replace(/\\([\\`*_{}[\]()#+\-.!])/g, '$1')
     .trim();
+
+  // Restore inline code content
+  result = result.replace(/\uE000(\d+)\uE001/g, (_match, index: string) => codeSpans[Number(index)] ?? '');
+
+  return result;
 }
 
 /**
