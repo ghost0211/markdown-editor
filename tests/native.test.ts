@@ -12,6 +12,7 @@ import {
   drainPendingOpenFiles,
   subscribeOpenFiles,
   openWindowsDefaultAppsSettings,
+  showInFolder,
 } from '../src/lib/native';
 import { SETTINGS_STORAGE_KEY } from '../src/lib/settings';
 
@@ -404,6 +405,18 @@ describe('Native Export Wrappers (native.ts)', () => {
 
       await expect(openWindowsDefaultAppsSettings()).rejects.toThrow(
         /Currently in Web browser environment/
+      );
+
+      await expect(showInFolder('C:/test.md')).rejects.toThrow(
+        /Web browser environment does not support revealing files in explorer/
+      );
+
+      await expect(showInFolder('')).rejects.toThrow(
+        /Web browser environment does not support revealing files in explorer/
+      );
+
+      await expect(showInFolder('browser://doc.md')).rejects.toThrow(
+        /Web browser environment does not support revealing files in explorer/
       );
 
       await expect(openExternalUrl('ftp://example.com')).rejects.toThrow(

@@ -273,6 +273,26 @@ export function createDiffTabState(
 }
 
 /**
+ * Pure helper to compute remaining tabs when closing all tabs to the right of `targetTabId`.
+ */
+export function closeTabsToTheRightState(
+  tabs: DocumentTab[],
+  targetTabId: string
+): DocumentTab[] {
+  const idx = tabs.findIndex((t) => t.id === targetTabId);
+  if (idx === -1) return tabs;
+  return tabs.slice(0, idx + 1);
+}
+
+/**
+ * Pure helper to compute remaining tabs when closing all saved/unmodified tabs.
+ * Returns only tabs with unsaved changes (`isDirty: true`).
+ */
+export function closeSavedTabsState(tabs: DocumentTab[]): DocumentTab[] {
+  return tabs.filter((t) => t.isDirty);
+}
+
+/**
  * Sanitizes the per-tab view mode of tabs restored from a persisted session.
  * - Drops corrupted/unknown viewMode values so tabs fall back to the default.
  * - When startupView is an explicit mode (not 'remember-last'), clears all

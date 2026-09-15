@@ -375,6 +375,28 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 /**
+ * Opens the file's containing folder in the system file manager and selects/highlights the file.
+ * Returns a friendly error or falls back gracefully in Web mode.
+ */
+export async function showInFolder(path: string): Promise<void> {
+  const trimmed = typeof path === 'string' ? path.trim() : '';
+  if (!trimmed || trimmed.startsWith('browser://')) {
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotShowInFolder'));
+  }
+
+  if (isTauri()) {
+    try {
+      await invoke('show_in_folder', { path: trimmed });
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || '打开文件位置失败';
+      throw new Error(msg);
+    }
+  } else {
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotShowInFolder'));
+  }
+}
+
+/**
  * Browser file download helper
  */
 function downloadBlob(

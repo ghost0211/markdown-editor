@@ -9,6 +9,8 @@ import {
   sanitizeRestoredTabs,
   decideExternalChangeAction,
   moveTabState,
+  closeTabsToTheRightState,
+  closeSavedTabsState,
   createDiffTabState,
 } from '../src/lib/documentUtils';
 import { DocumentTab } from '../src/types';
@@ -340,6 +342,55 @@ describe('documentUtils', () => {
       expect(
         decideExternalChangeAction({ ...baseTab, isDirty: true }, 2000, '# Externally edited')
       ).toBe('prompt');
+    });
+  });
+
+  describe('closeTabsToTheRightState', () => {
+    const makeTabs = (...ids: string[]) =>
+      ids.map((id) => createDefaultTab(`${id}.md`, '', id));
+
+    it('keeps tabs up to and including targetId, closing tabs to the right', () => {
+      const tabs = makeTabs('a', 'b', 'c', 'd');
+      const result = closeTabsToTheRightState(tabs, 'b');
+      expect(result.map((t) => t.id)).toEqual(['a', 'b']);
+    });
+
+    it('returns all tabs unchanged if targetId is the last tab', () => {
+      const tabs = makeTabs('a', 'b', 'c');
+      const result = closeTabsToTheRightState(tabs, 'c');
+      expect(result.map((t) => t.id)).toEqual(['a', 'b', 'c']);
+    });
+
+    it('returns original tabs if targetId is not found', () => {
+      const tabs = makeTabs('a', 'b');
+      expect(closeTabsToTheRightState(tabs, 'non-existent')).toBe(tabs);
+    });
+  });
+
+  describe('closeSavedTabsState', () => {
+    it('filters out all clean/saved tabs and retains only dirty tabs', () => {
+      const tab1 = { ...createDefaultTab('tab1.md', '', 'tab1'), isDirty: false };
+      const tab2 = { ...createDefaultTab('tab2.md', '', 'tab2'), isDirty: true };
+      const tab3 = { ...createDefaultTab('tab3.md', '', 'tab3'), isDirty: false };
+      const tab4 = { ...createDefaultTab('tab4.md', '', 'tab4'), isDirty: true };
+
+      const result = closeSavedTabsState([tab1, tab2, tab3, tab4]);
+      expect(result.map((t) => t.id)).toEqual(['tab2', 'tab4']);
+    });
+
+    it('returns empty array if all tabs are clean/saved', () => {
+      const tab1 = { ...createDefaultTab('tab1.md', '', 'tab1'), isDirty: false };
+      const tab2 = { ...createDefaultTab('tab2.md', '', 'tab2'), isDirty: false };
+
+      expect(closeSavedTabsState([tab1, tab2])).toEqual([]);
+    });
+
+    it('returns all tabs if all tabs are dirty', () => {
+      const tab1 = { ...createDefaultTab('tab1.md', '', 'tab1'), isDirty: true };
+      const tab2 = { ...createDefaultTab('tab2.md', '', 'tab2'), isDirty: true };
+
+      const result = closeSavedTabsState([tab1, tab2]);
+      expect(result.map((t) => t.id)).toEqual(['tab1', 'tab2']);
     });
   });
 });

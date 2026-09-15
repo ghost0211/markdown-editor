@@ -9,6 +9,8 @@ import {
   createDefaultTab,
   createDiffTabState,
   moveTabState,
+  closeTabsToTheRightState,
+  closeSavedTabsState,
   openOrFocusDocumentState,
   sanitizeRestoredTabs,
   decideExternalChangeAction,
@@ -253,10 +255,10 @@ export function useDocuments(
     }
   }, [openOrFocusDocument, showToast, t]);
 
-  // Save active document (or Save As)
-  const saveActiveDocument = useCallback(
-    async (forceSaveAs = false): Promise<boolean> => {
-      const tab = tabsRef.current.find((t) => t.id === activeTabId);
+  // Save specific document (or Save As)
+  const saveDocumentTab = useCallback(
+    async (tabId: string, forceSaveAs = false): Promise<boolean> => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
       if (!tab) return false;
 
       let targetPath = tab.filePath;
@@ -301,7 +303,13 @@ export function useDocuments(
         return false;
       }
     },
-    [activeTabId, showToast, saveSession, t]
+    [showToast, saveSession, t]
+  );
+
+  // Save active document (or Save As)
+  const saveActiveDocument = useCallback(
+    (forceSaveAs = false) => saveDocumentTab(activeTabId, forceSaveAs),
+    [saveDocumentTab, activeTabId]
   );
 
   // Create a side-by-side compare tab for two open document tabs
@@ -409,11 +417,11 @@ export function useDocuments(
           variant: 'danger',
           onConfirm: () => {
             const current = tabsRef.current.find((t) => t.id === tabId);
-            const next = current ? [current] : [];
+            const next = current ? [current] : [createDefaultTab(t('common.untitledDoc'), '')];
             tabsRef.current = next;
             setTabs(next);
             saveSession(next);
-            setActiveTabId(tabId);
+            setActiveTabId(next[0].id);
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
           },
           onCancel: () => {
@@ -424,14 +432,121 @@ export function useDocuments(
       }
 
       const current = tabsRef.current.find((t) => t.id === tabId);
-      const next = current ? [current] : [];
+      const next = current ? [current] : [createDefaultTab(t('common.untitledDoc'), '')];
       tabsRef.current = next;
       setTabs(next);
       saveSession(next);
-      setActiveTabId(tabId);
+      setActiveTabId(next[0].id);
     },
     [saveSession, t]
   );
+
+  // Close all tabs to the right of tabId
+  const closeTabsToTheRight = useCallback(
+    (tabId: string) => {
+      const allTabs = tabsRef.current;
+      const targetIdx = allTabs.findIndex((t) => t.id === tabId);
+      if (targetIdx === -1 || targetIdx >= allTabs.length - 1) return;
+
+      const tabsToClose = allTabs.slice(targetIdx + 1);
+      const dirtyTabs = tabsToClose.filter((t) => t.isDirty);
+
+      const performClose = () => {
+        const remainingTabs = closeTabsToTheRightState(tabsRef.current, tabId);
+        tabsRef.current = remainingTabs;
+        setTabs(remainingTabs);
+        saveSession(remainingTabs);
+
+        if (!remainingTabs.some((t) => t.id === activeTabId)) {
+          setActiveTabId(tabId);
+        }
+      };
+
+      if (dirtyTabs.length > 0) {
+        setConfirmDialog({
+          isOpen: true,
+          title: t('confirm.closeRightTabsTitle'),
+          message: t('confirm.closeRightTabsMsg', { count: dirtyTabs.length }),
+          confirmLabel: t('confirm.closeAll'),
+          cancelLabel: t('common.cancel'),
+          variant: 'danger',
+          onConfirm: () => {
+            performClose();
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          },
+          onCancel: () => {
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          },
+        });
+        return;
+      }
+
+      performClose();
+    },
+    [activeTabId, saveSession, t]
+  );
+
+  // Close all saved / unmodified tabs
+  const closeSavedTabs = useCallback(() => {
+    const allTabs = tabsRef.current;
+    const dirtyTabs = closeSavedTabsState(allTabs);
+
+    if (dirtyTabs.length === 0) {
+      const newTab = createDefaultTab(t('common.untitledDoc'), '');
+      const next = [newTab];
+      tabsRef.current = next;
+      setTabs(next);
+      setActiveTabId(newTab.id);
+      saveSession(next);
+      return;
+    }
+
+    tabsRef.current = dirtyTabs;
+    setTabs(dirtyTabs);
+    saveSession(dirtyTabs);
+
+    if (!dirtyTabs.some((t) => t.id === activeTabId)) {
+      setActiveTabId(dirtyTabs[0].id);
+    }
+  }, [activeTabId, saveSession, t]);
+
+  // Close all tabs
+  const closeAllTabs = useCallback(() => {
+    const allTabs = tabsRef.current;
+    if (allTabs.length === 0) return;
+
+    const dirtyTabs = allTabs.filter((t) => t.isDirty);
+
+    const performClose = () => {
+      const newTab = createDefaultTab(t('common.untitledDoc'), '');
+      const next = [newTab];
+      tabsRef.current = next;
+      setTabs(next);
+      setActiveTabId(newTab.id);
+      saveSession(next);
+    };
+
+    if (dirtyTabs.length > 0) {
+      setConfirmDialog({
+        isOpen: true,
+        title: t('confirm.closeAllTabsTitle'),
+        message: t('confirm.closeAllTabsMsg', { count: dirtyTabs.length }),
+        confirmLabel: t('confirm.closeAll'),
+        cancelLabel: t('common.cancel'),
+        variant: 'danger',
+        onConfirm: () => {
+          performClose();
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+        onCancel: () => {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+      });
+      return;
+    }
+
+    performClose();
+  }, [saveSession, t]);
 
   // Reload a tab's content from disk (external change accepted / no local edits)
   const reloadTabFromDisk = useCallback(
@@ -453,6 +568,52 @@ export function useDocuments(
       saveSession(next);
     },
     [saveSession]
+  );
+
+  // Reload a specific tab from disk with confirmation if dirty
+  const reloadTab = useCallback(
+    async (tabId: string) => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return;
+      if (!tab.filePath || tab.filePath.startsWith('browser://')) {
+        showToast(t('toasts.cannotReloadUnsaved'), 'warning');
+        return;
+      }
+
+      const doReload = async () => {
+        try {
+          const content = await readTextFile(tab.filePath!);
+          const mtime = (await getFileMtime(tab.filePath!)) ?? Date.now();
+          reloadTabFromDisk(tabId, content, mtime);
+          showToast(t('toasts.reloadedFromDisk', { title: tab.title }), 'success');
+        } catch (err: unknown) {
+          const msg = (err as Error)?.message || String(err);
+          showToast(t('toasts.reloadFailed', { error: msg }), 'error');
+        }
+      };
+
+      if (tab.isDirty) {
+        setConfirmDialog({
+          isOpen: true,
+          title: t('confirm.reloadFromDiskTitle'),
+          message: t('confirm.reloadFromDiskMsg', { title: tab.title }),
+          confirmLabel: t('confirm.reloadFromDisk'),
+          cancelLabel: t('common.cancel'),
+          variant: 'warning',
+          onConfirm: () => {
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+            void doReload();
+          },
+          onCancel: () => {
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          },
+        });
+        return;
+      }
+
+      await doReload();
+    },
+    [reloadTabFromDisk, showToast, t]
   );
 
   // Silently adopt a new mtime baseline without touching content
@@ -562,9 +723,14 @@ export function useDocuments(
     openFileByPath,
     openFilesByPaths,
     saveActiveDocument,
+    saveDocumentTab,
     requestCloseTab,
     forceCloseTab,
     closeOtherTabs,
+    closeTabsToTheRight,
+    closeSavedTabs,
+    closeAllTabs,
+    reloadTab,
     confirmDialog,
     setConfirmDialog,
   };

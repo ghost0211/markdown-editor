@@ -595,11 +595,76 @@ mod commands {
             Err(e) => Err(format!("打开链接失败: {}", e)),
         }
     }
+
+    #[tauri::command]
+    pub fn show_in_folder(path: String) -> Result<(), String> {
+        let trimmed = path.trim();
+        if trimmed.is_empty() || trimmed.starts_with("browser://") {
+            return Err("文件尚未保存到本地磁盘".to_string());
+        }
+
+        let p = Path::new(trimmed);
+        if !p.exists() {
+            return Err(format!("文件不存在: {}", trimmed));
+        }
+
+        #[cfg(target_os = "windows")]
+        {
+            let norm_path = trimmed.replace('/', "\\");
+            let cmd_res = std::process::Command::new("explorer")
+                .arg(format!("/select,{}", norm_path))
+                .spawn();
+            match cmd_res {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if let Some(parent) = p.parent() {
+                        opener::open(parent).map_err(|oe| format!("打开所在文件夹失败: {} ({})", e, oe))
+                    } else {
+                        Err(format!("打开所在文件夹失败: {}", e))
+                    }
+                }
+            }
+        }
+
+        #[cfg(target_os = "macos")]
+        {
+            let status = std::process::Command::new("open")
+                .args(["-R", trimmed])
+                .spawn();
+            match status {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    if let Some(parent) = p.parent() {
+                        opener::open(parent).map_err(|oe| format!("打开所在文件夹失败: {} ({})", e, oe))
+                    } else {
+                        Err(format!("打开所在文件夹失败: {}", e))
+                    }
+                }
+            }
+        }
+
+        #[cfg(all(not(target_os = "windows"), not(target_os = "macos")))]
+        {
+            if let Some(parent) = p.parent() {
+                opener::open(parent).map_err(|oe| format!("打开所在文件夹失败: {}", oe))
+            } else {
+                opener::open(p).map_err(|oe| format!("打开所在文件夹失败: {}", oe))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_show_in_folder_validation() {
+        assert!(commands::show_in_folder("".to_string()).is_err());
+        assert!(commands::show_in_folder("   ".to_string()).is_err());
+        assert!(commands::show_in_folder("browser://test.md".to_string()).is_err());
+        assert!(commands::show_in_folder("non_existent_folder_or_file_987654.md".to_string()).is_err());
+    }
 
     #[test]
     fn test_is_supported_file_extension() {
@@ -1114,7 +1179,8 @@ pub fn run() {
             commands::export_pdf_from_html,
             commands::open_url,
             commands::open_windows_default_apps_settings,
-            commands::drain_pending_open_files
+            commands::drain_pending_open_files,
+            commands::show_in_folder
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

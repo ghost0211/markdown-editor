@@ -1,10 +1,23 @@
-import React, { useRef, useState } from 'react';
-import { FileText, Plus, X, Sparkles } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import {
+  FileText,
+  Plus,
+  X,
+  Sparkles,
+  FolderOpen,
+  Copy,
+  RotateCw,
+  Save,
+  Layers,
+  ArrowRight,
+  CheckCheck,
+  XCircle,
+} from 'lucide-react';
 import { DocumentTab } from '@/types';
 import { useI18n } from '@/i18n';
 import clsx from 'clsx';
 
-interface TabBarProps {
+export interface TabBarProps {
   tabs: DocumentTab[];
   activeTabId: string;
   onSelectTab: (id: string) => void;
@@ -12,12 +25,79 @@ interface TabBarProps {
   onNewTab: () => void;
   onMoveTab?: (sourceId: string, targetId: string, position: 'before' | 'after') => void;
   onCloseOthers?: (id: string) => void;
+  onCloseToTheRight?: (id: string) => void;
+  onCloseSaved?: () => void;
+  onCloseAll?: () => void;
+  onReloadTab?: (id: string) => void;
+  onSaveTabAs?: (id: string) => void;
+  onRevealInFolder?: (filePath: string) => void;
+  onOpenFile?: () => void;
+  showToast?: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
 }
 
 interface DropIndicator {
   targetId: string;
   position: 'before' | 'after';
 }
+
+interface ContextMenuState {
+  isOpen: boolean;
+  x: number;
+  y: number;
+  targetTab: DocumentTab | null;
+}
+
+interface MenuItemProps {
+  icon: React.ReactNode;
+  label: string;
+  shortcut?: string;
+  disabled?: boolean;
+  onClick: () => void;
+  title?: string;
+  danger?: boolean;
+}
+
+const MenuItem: React.FC<MenuItemProps> = ({
+  icon,
+  label,
+  shortcut,
+  disabled = false,
+  onClick,
+  title,
+  danger = false,
+}) => (
+  <button
+    type="button"
+    role="menuitem"
+    disabled={disabled}
+    title={title}
+    onClick={(e) => {
+      e.stopPropagation();
+      if (disabled) return;
+      onClick();
+    }}
+    className={clsx(
+      'w-full flex items-center justify-between px-2.5 py-1.5 text-left text-xs rounded-md transition-colors select-none',
+      disabled
+        ? 'opacity-40 cursor-not-allowed text-slate-400 dark:text-slate-500'
+        : danger
+        ? 'hover:bg-red-50 dark:hover:bg-red-950/40 text-slate-700 dark:text-slate-200 hover:text-red-600 dark:hover:text-red-400 cursor-pointer'
+        : 'hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 hover:text-slate-900 dark:hover:text-white cursor-pointer'
+    )}
+  >
+    <span className="flex items-center gap-2 truncate">
+      <span className="shrink-0 w-4 h-4 flex items-center justify-center text-slate-500 dark:text-slate-400">
+        {icon}
+      </span>
+      <span className="truncate">{label}</span>
+    </span>
+    {shortcut && (
+      <span className="text-[10px] text-slate-400 dark:text-slate-500 font-mono shrink-0 ml-2">
+        {shortcut}
+      </span>
+    )}
+  </button>
+);
 
 export const TabBar: React.FC<TabBarProps> = ({
   tabs,
@@ -26,11 +106,58 @@ export const TabBar: React.FC<TabBarProps> = ({
   onCloseTab,
   onNewTab,
   onMoveTab,
+  onCloseOthers,
+  onCloseToTheRight,
+  onCloseSaved,
+  onCloseAll,
+  onReloadTab,
+  onSaveTabAs,
+  onRevealInFolder,
+  onOpenFile,
+  showToast,
 }) => {
   const { t } = useI18n();
   const scrollRef = useRef<HTMLDivElement>(null);
   const dragTabIdRef = useRef<string | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [dropIndicator, setDropIndicator] = useState<DropIndicator | null>(null);
+  const [contextMenu, setContextMenu] = useState<ContextMenuState>({
+    isOpen: false,
+    x: 0,
+    y: 0,
+    targetTab: null,
+  });
+
+  const closeMenu = () => {
+    setContextMenu((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
+  };
+
+  // Close context menu on outside click, Escape key, or resize
+  useEffect(() => {
+    if (!contextMenu.isOpen) return;
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        closeMenu();
+      }
+    };
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeMenu();
+      }
+    };
+
+    window.addEventListener('pointerdown', handlePointerDown);
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('resize', closeMenu);
+
+    return () => {
+      window.removeEventListener('pointerdown', handlePointerDown);
+      window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('resize', closeMenu);
+    };
+  }, [contextMenu.isOpen]);
 
   const handleWheel = (e: React.WheelEvent) => {
     if (scrollRef.current && e.deltaY !== 0) {
@@ -75,10 +202,79 @@ export const TabBar: React.FC<TabBarProps> = ({
     onMoveTab(sourceId, targetId, position);
   };
 
+  const handleTabContextMenu = (e: React.MouseEvent, tab: DocumentTab) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const menuWidth = 230;
+    const menuHeight = 360;
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth - 8));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight - 8));
+    setContextMenu({
+      isOpen: true,
+      x,
+      y,
+      targetTab: tab,
+    });
+  };
+
+  const handleBarContextMenu = (e: React.MouseEvent) => {
+    if (e.defaultPrevented) return;
+    e.preventDefault();
+    const menuWidth = 200;
+    const menuHeight = 130;
+    const x = Math.max(8, Math.min(e.clientX, window.innerWidth - menuWidth - 8));
+    const y = Math.max(8, Math.min(e.clientY, window.innerHeight - menuHeight - 8));
+    setContextMenu({
+      isOpen: true,
+      x,
+      y,
+      targetTab: null,
+    });
+  };
+
+  const copyToClipboard = (text: string, successMsg: string) => {
+    if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+      navigator.clipboard
+        .writeText(text)
+        .then(() => showToast?.(successMsg, 'success'))
+        .catch(() => fallbackCopy(text, successMsg));
+    } else {
+      fallbackCopy(text, successMsg);
+    }
+  };
+
+  const fallbackCopy = (text: string, successMsg: string) => {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      showToast?.(successMsg, 'success');
+    } catch {
+      showToast?.('复制失败', 'error');
+    }
+  };
+
+  const isSavedToDisk = (tab: DocumentTab | null): boolean => {
+    return Boolean(tab?.filePath && !tab.filePath.startsWith('browser://'));
+  };
+
+  const targetTab = contextMenu.targetTab;
+  const targetIdx = targetTab ? tabs.findIndex((t) => t.id === targetTab.id) : -1;
+  const hasTabsToTheRight = targetIdx !== -1 && targetIdx < tabs.length - 1;
+  const hasOtherTabs = tabs.length > 1;
+  const hasSavedTabs = tabs.some((t) => !t.isDirty);
+  const targetSaved = isSavedToDisk(targetTab);
+
   return (
     <div
       className="h-9 bg-slate-200/80 dark:bg-[#131b2a] border-b border-slate-300 dark:border-slate-800 flex items-center px-1 select-none shrink-0 overflow-hidden"
       onWheel={handleWheel}
+      onContextMenu={handleBarContextMenu}
       role="tablist"
       aria-label="Document tabs"
     >
@@ -102,6 +298,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               onDrop={(e) => handleDrop(e, tab.id)}
               onDragEnd={clearDragState}
               onClick={() => onSelectTab(tab.id)}
+              onContextMenu={(e) => handleTabContextMenu(e, tab)}
               onKeyDown={(e) => {
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
@@ -192,6 +389,169 @@ export const TabBar: React.FC<TabBarProps> = ({
           <Plus className="w-4 h-4" />
         </button>
       </div>
+
+      {/* Tab Bar Context Menu */}
+      {contextMenu.isOpen && (
+        <div
+          ref={menuRef}
+          role="menu"
+          aria-label="Tab context menu"
+          style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
+          className="fixed z-50 w-56 p-1 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-lg shadow-xl text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-75 select-none"
+        >
+          {targetTab ? (
+            <>
+              {/* Close actions */}
+              <MenuItem
+                icon={<X className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.close')}
+                shortcut={t('tabBar.contextMenu.closeShortcut')}
+                onClick={() => {
+                  closeMenu();
+                  onCloseTab(targetTab.id);
+                }}
+              />
+              <MenuItem
+                icon={<Layers className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.closeOthers')}
+                disabled={!hasOtherTabs}
+                onClick={() => {
+                  closeMenu();
+                  onCloseOthers?.(targetTab.id);
+                }}
+              />
+              <MenuItem
+                icon={<ArrowRight className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.closeToTheRight')}
+                disabled={!hasTabsToTheRight}
+                onClick={() => {
+                  closeMenu();
+                  onCloseToTheRight?.(targetTab.id);
+                }}
+              />
+              <MenuItem
+                icon={<CheckCheck className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.closeSaved')}
+                disabled={!hasSavedTabs}
+                onClick={() => {
+                  closeMenu();
+                  onCloseSaved?.();
+                }}
+              />
+              <MenuItem
+                icon={<XCircle className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.closeAll')}
+                danger
+                onClick={() => {
+                  closeMenu();
+                  onCloseAll?.();
+                }}
+              />
+
+              <div className="my-1 border-t border-slate-100 dark:border-slate-700/60" />
+
+              {/* File / Explorer actions */}
+              <MenuItem
+                icon={<FolderOpen className="w-3.5 h-3.5 text-amber-500" />}
+                label={t('tabBar.contextMenu.revealInFolder')}
+                disabled={!targetSaved}
+                title={!targetSaved ? t('tabBar.contextMenu.revealInFolderDisabled') : undefined}
+                onClick={() => {
+                  closeMenu();
+                  if (targetTab.filePath) {
+                    onRevealInFolder?.(targetTab.filePath);
+                  }
+                }}
+              />
+              <MenuItem
+                icon={<Copy className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.copyPath')}
+                disabled={!targetSaved}
+                onClick={() => {
+                  closeMenu();
+                  if (targetTab.filePath) {
+                    copyToClipboard(targetTab.filePath, t('toasts.pathCopied'));
+                  }
+                }}
+              />
+              <MenuItem
+                icon={<FileText className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.copyFileName')}
+                onClick={() => {
+                  closeMenu();
+                  copyToClipboard(targetTab.title, t('toasts.fileNameCopied'));
+                }}
+              />
+
+              <div className="my-1 border-t border-slate-100 dark:border-slate-700/60" />
+
+              {/* Document actions */}
+              <MenuItem
+                icon={<RotateCw className="w-3.5 h-3.5 text-blue-500" />}
+                label={t('tabBar.contextMenu.reloadFromDisk')}
+                disabled={!targetSaved}
+                onClick={() => {
+                  closeMenu();
+                  onReloadTab?.(targetTab.id);
+                }}
+              />
+              <MenuItem
+                icon={<Save className="w-3.5 h-3.5 text-emerald-500" />}
+                label={t('tabBar.contextMenu.saveAs')}
+                onClick={() => {
+                  closeMenu();
+                  onSaveTabAs?.(targetTab.id);
+                }}
+              />
+
+              <div className="my-1 border-t border-slate-100 dark:border-slate-700/60" />
+
+              {/* New Tab */}
+              <MenuItem
+                icon={<Plus className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.newTab')}
+                shortcut="Ctrl+N"
+                onClick={() => {
+                  closeMenu();
+                  onNewTab();
+                }}
+              />
+            </>
+          ) : (
+            <>
+              {/* Background context menu */}
+              <MenuItem
+                icon={<Plus className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.newTab')}
+                shortcut="Ctrl+N"
+                onClick={() => {
+                  closeMenu();
+                  onNewTab();
+                }}
+              />
+              <MenuItem
+                icon={<FolderOpen className="w-3.5 h-3.5 text-amber-500" />}
+                label={t('tabBar.contextMenu.openFile')}
+                shortcut="Ctrl+O"
+                onClick={() => {
+                  closeMenu();
+                  onOpenFile?.();
+                }}
+              />
+              <div className="my-1 border-t border-slate-100 dark:border-slate-700/60" />
+              <MenuItem
+                icon={<XCircle className="w-3.5 h-3.5" />}
+                label={t('tabBar.contextMenu.closeAll')}
+                danger
+                onClick={() => {
+                  closeMenu();
+                  onCloseAll?.();
+                }}
+              />
+            </>
+          )}
+        </div>
+      )}
     </div>
   );
 };

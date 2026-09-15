@@ -19,15 +19,14 @@ import { useToast } from '@/hooks/useToast';
 import { useDocuments } from '@/hooks/useDocuments';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExportDocument } from '@/hooks/useExportDocument';
-import { I18nProvider } from '@/i18n';
+import { I18nProvider, useI18n } from '@/i18n';
 
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
 import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { isTauri, subscribeOpenFiles, drainPendingOpenFiles } from '@/lib/native';
+import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl } from '@/lib/native';
 import { resolveDocumentLink } from '@/lib/documentLinks';
-import { openExternalUrl } from '@/lib/native';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
@@ -57,6 +56,7 @@ const AppContent: React.FC<AppContentProps> = ({
 
   // Toast hook
   const { toasts, showToast, removeToast } = useToast();
+  const { t } = useI18n();
 
   // Documents manager hook
   const {
@@ -76,7 +76,13 @@ const AppContent: React.FC<AppContentProps> = ({
     openFilesByPaths,
     openFileByPath,
     saveActiveDocument,
+    saveDocumentTab,
     requestCloseTab,
+    closeOtherTabs,
+    closeTabsToTheRight,
+    closeSavedTabs,
+    closeAllTabs,
+    reloadTab,
     confirmDialog,
     setConfirmDialog,
   } = useDocuments(showToast, settings.restoreSession, settings.startupView);
@@ -573,6 +579,23 @@ const AppContent: React.FC<AppContentProps> = ({
         onCloseTab={requestCloseTab}
         onNewTab={handleNewTab}
         onMoveTab={moveTab}
+        onCloseOthers={closeOtherTabs}
+        onCloseToTheRight={closeTabsToTheRight}
+        onCloseSaved={closeSavedTabs}
+        onCloseAll={closeAllTabs}
+        onReloadTab={reloadTab}
+        onSaveTabAs={(id) => void saveDocumentTab(id, true)}
+        onRevealInFolder={async (filePath) => {
+          try {
+            await showInFolder(filePath);
+            showToast(t('toasts.revealedInFolder'), 'info');
+          } catch (err: unknown) {
+            const msg = (err as Error)?.message || String(err);
+            showToast(t('toasts.revealFailed', { error: msg }), 'error');
+          }
+        }}
+        onOpenFile={openDocument}
+        showToast={showToast}
       />
 
       {/* 3. Toolbar (Markdown insertion ribbon) */}
