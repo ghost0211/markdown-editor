@@ -82,8 +82,11 @@ export interface ConfirmDialogState {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  /** Optional third, non-destructive action (e.g. "Save and Close"). */
+  secondaryLabel?: string;
   variant?: 'danger' | 'warning' | 'primary';
   onConfirm: () => void;
+  onSecondary?: () => void;
   onCancel?: () => void;
 }
 

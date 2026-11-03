@@ -313,8 +313,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </span>
         {activeTab?.isDirty && (
           <span
-            className="w-2 h-2 rounded-full bg-amber-500 inline-block animate-pulse"
+            className="w-2 h-2 rounded-full bg-amber-500 inline-block"
             title={t('titleBar.unsavedChanges')}
+            aria-label={t('titleBar.unsavedChanges')}
+            role="status"
           />
         )}
       </div>
@@ -335,10 +337,17 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
         {/* View Mode Segmented Controls (not applicable to diff tabs) */}
         {activeTab?.kind !== 'diff' && (
-        <div className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md text-xs">
+        <div
+          className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md text-xs"
+          role="group"
+          aria-label={t('titleBar.viewModeGroupLabel')}
+        >
           <button
+            type="button"
             onClick={() => onSetViewMode('edit')}
             title={t('titleBar.editModeTooltip')}
+            aria-label={t('titleBar.editMode')}
+            aria-pressed={viewMode === 'edit'}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'edit'
@@ -350,8 +359,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <span className="hidden lg:inline">{t('titleBar.editMode')}</span>
           </button>
           <button
+            type="button"
             onClick={() => onSetViewMode('split')}
             title={t('titleBar.splitModeTooltip')}
+            aria-label={t('titleBar.splitMode')}
+            aria-pressed={viewMode === 'split'}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'split'
@@ -363,8 +375,11 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <span className="hidden lg:inline">{t('titleBar.splitMode')}</span>
           </button>
           <button
+            type="button"
             onClick={() => onSetViewMode('read')}
             title={t('titleBar.readModeTooltip')}
+            aria-label={t('titleBar.readMode')}
+            aria-pressed={viewMode === 'read'}
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'read'

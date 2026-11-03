@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from 'react';
+import { useState, useCallback, useRef, useEffect } from 'react';
 import { DocumentTab, ConfirmDialogState, StartupViewMode, ViewMode } from '@/types';
 import { getWelcomeDocument } from '@/lib/defaultDocument';
 import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime, isTauri } from '@/lib/native';
@@ -19,6 +19,14 @@ import {
 import { useI18n, getCurrentLanguage } from '@/i18n';
 
 const STORAGE_SESSION_KEY = 'markdown_editor_tabs_v1';
+const STORAGE_ACTIVE_TAB_KEY = 'markdown_editor_active_tab_v1';
+
+/**
+ * Debounce window for persisting the session to localStorage. Every keystroke
+ * changes a tab, and serializing every open document on each one is wasteful;
+ * the flush() paths below guarantee nothing is lost when the window closes.
+ */
+const SESSION_SAVE_DEBOUNCE_MS = 400;
 
 export function useDocuments(
   showToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void,
@@ -60,7 +68,18 @@ export function useDocuments(
     ];
   });
 
-  const [activeTabId, setActiveTabId] = useState<string>(() => tabs[0]?.id || 'doc-welcome');
+  const [activeTabId, setActiveTabId] = useState<string>(() => {
+    // Restore the tab the user was last working in, if it still exists.
+    try {
+      const savedActive = localStorage.getItem(STORAGE_ACTIVE_TAB_KEY);
+      if (savedActive && tabs.some((tab) => tab.id === savedActive)) {
+        return savedActive;
+      }
+    } catch {
+      // ignore storage failures
+    }
+    return tabs[0]?.id || 'doc-welcome';
+  });
 
   // Ref to always access the latest tabs array inside async operations
   const tabsRef = useRef<DocumentTab[]>(tabs);
@@ -80,14 +99,90 @@ export function useDocuments(
   // Active tab getter
   const activeTab = tabs.find((t) => t.id === activeTabId) || tabs[0];
 
-  // Helper to persist session
-  const saveSession = useCallback((updatedTabs: DocumentTab[]) => {
+  // Persist the active tab so a restart resumes where the user left off
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_ACTIVE_TAB_KEY, activeTabId);
+    } catch {
+      // ignore storage failures
+    }
+  }, [activeTabId]);
+
+  // Helper to persist session.
+  //
+  // Writes are debounced because every keystroke changes a tab, and
+  // JSON.stringify over all open documents is far too expensive to run on each
+  // one. A failure (typically the ~5 MB localStorage quota) used to be swallowed
+  // silently, so users could believe their draft was persisted when it was not;
+  // it now surfaces a single warning toast.
+  const sessionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSessionRef = useRef<DocumentTab[] | null>(null);
+  const sessionWarningShownRef = useRef(false);
+  const showToastRef = useRef(showToast);
+  showToastRef.current = showToast;
+  const tRef = useRef(t);
+  tRef.current = t;
+
+  const writeSession = useCallback((updatedTabs: DocumentTab[]) => {
     try {
       localStorage.setItem(STORAGE_SESSION_KEY, JSON.stringify(updatedTabs));
+      sessionWarningShownRef.current = false;
+      return true;
     } catch {
-      // ignore storage quota errors
+      if (!sessionWarningShownRef.current) {
+        sessionWarningShownRef.current = true;
+        showToastRef.current(tRef.current('toasts.sessionSaveFailed'), 'warning');
+      }
+      return false;
     }
   }, []);
+
+  /** Writes any debounced session update immediately. */
+  const flushSession = useCallback(() => {
+    if (sessionTimerRef.current !== null) {
+      clearTimeout(sessionTimerRef.current);
+      sessionTimerRef.current = null;
+    }
+    const pending = pendingSessionRef.current;
+    pendingSessionRef.current = null;
+    if (pending) writeSession(pending);
+  }, [writeSession]);
+
+  const saveSession = useCallback(
+    (updatedTabs: DocumentTab[]) => {
+      pendingSessionRef.current = updatedTabs;
+      if (sessionTimerRef.current !== null) return;
+      sessionTimerRef.current = setTimeout(() => {
+        sessionTimerRef.current = null;
+        const pending = pendingSessionRef.current;
+        pendingSessionRef.current = null;
+        if (pending) writeSession(pending);
+      }, SESSION_SAVE_DEBOUNCE_MS);
+    },
+    [writeSession]
+  );
+
+  // Never lose the tail of a debounced write: flush when the window is hidden
+  // or unloaded, and when this hook goes away.
+  useEffect(() => {
+    const handleLeave = () => flushSession();
+    const handleVisibility = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        flushSession();
+      }
+    };
+
+    window.addEventListener('beforeunload', handleLeave);
+    window.addEventListener('pagehide', handleLeave);
+    document.addEventListener('visibilitychange', handleVisibility);
+
+    return () => {
+      window.removeEventListener('beforeunload', handleLeave);
+      window.removeEventListener('pagehide', handleLeave);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      flushSession();
+    };
+  }, [flushSession]);
 
   // Create a new blank tab
   const createNewTab = useCallback(
@@ -262,8 +357,9 @@ export function useDocuments(
     }
   }, [openOrFocusDocument, showToast, t]);
 
-  // Save specific document (or Save As)
-  const saveDocumentTab = useCallback(
+  // Write one document tab to disk (or prompt for a path). Compare tabs have no
+  // file of their own and are routed to their source documents by the caller.
+  const writeDocumentTab = useCallback(
     async (tabId: string, forceSaveAs = false): Promise<boolean> => {
       const tab = tabsRef.current.find((t) => t.id === tabId);
       if (!tab) return false;
@@ -311,6 +407,66 @@ export function useDocuments(
       }
     },
     [showToast, saveSession, t]
+  );
+
+  // Save specific document (or Save As).
+  //
+  // A compare (diff) tab has `content: ''` and no file path, so saving it
+  // directly used to write an empty file to whatever path the user picked.
+  // Saving a diff tab now saves its two source documents instead.
+  const saveDocumentTab = useCallback(
+    async (tabId: string, forceSaveAs = false): Promise<boolean> => {
+      const tab = tabsRef.current.find((t) => t.id === tabId);
+      if (!tab) return false;
+
+      if (tab.kind === 'diff') {
+        if (forceSaveAs) return false;
+        const refs = tab.diffRefs ? [tab.diffRefs.left, tab.diffRefs.right] : [];
+        const sources = refs
+          .map((ref) => tabsRef.current.find((t) => t.id === ref.tabId))
+          .filter((t): t is DocumentTab => Boolean(t && t.kind !== 'diff'));
+        const dirtySources = sources.filter((t) => t.isDirty);
+
+        if (dirtySources.length === 0) {
+          showToast(t('toasts.diffTabNoChanges'), 'info');
+          return false;
+        }
+
+        let allSaved = true;
+        for (const source of dirtySources) {
+          const saved = await writeDocumentTab(source.id);
+          if (!saved) {
+            allSaved = false;
+            break;
+          }
+        }
+        if (allSaved) {
+          showToast(t('toasts.diffTabCannotSave'), 'info');
+        }
+        return allSaved;
+      }
+
+      return writeDocumentTab(tabId, forceSaveAs);
+    },
+    [showToast, t, writeDocumentTab]
+  );
+
+  // Save every dirty tab, stopping at the first cancellation or failure.
+  // Used by the "save all and close" path so bulk closes never discard work
+  // that the user asked to keep.
+  const saveDirtyTabs = useCallback(
+    async (tabIds: string[]): Promise<boolean> => {
+      const targets = tabIds
+        .map((id) => tabsRef.current.find((t) => t.id === id))
+        .filter((t): t is DocumentTab => Boolean(t && t.isDirty && t.kind !== 'diff'));
+
+      for (const target of targets) {
+        const saved = await writeDocumentTab(target.id);
+        if (!saved) return false;
+      }
+      return true;
+    },
+    [writeDocumentTab]
   );
 
   // Save active document (or Save As)
@@ -396,18 +552,26 @@ export function useDocuments(
         title: t('confirm.unsavedChangesTitle'),
         message: t('confirm.unsavedChangesMsg', { title: tab.title }),
         confirmLabel: t('confirm.discardAndClose'),
+        secondaryLabel: t('confirm.saveAndClose'),
         cancelLabel: t('common.cancel'),
         variant: 'danger',
         onConfirm: () => {
           forceCloseTab(tabId);
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },
+        onSecondary: () => {
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          void saveDocumentTab(tabId).then((saved) => {
+            // A cancelled save (e.g. "Save As" dismissed) must keep the tab open.
+            if (saved) forceCloseTab(tabId);
+          });
+        },
         onCancel: () => {
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
         },
       });
     },
-    [forceCloseTab, t]
+    [forceCloseTab, saveDocumentTab, t]
   );
 
   // Close other tabs
@@ -420,6 +584,7 @@ export function useDocuments(
           title: t('confirm.closeOtherTabsTitle'),
           message: t('confirm.closeOtherTabsMsg', { count: dirtyOthers.length }),
           confirmLabel: t('confirm.closeAll'),
+          secondaryLabel: t('confirm.saveAllAndClose'),
           cancelLabel: t('common.cancel'),
           variant: 'danger',
           onConfirm: () => {
@@ -430,6 +595,20 @@ export function useDocuments(
             saveSession(next);
             setActiveTabId(next[0].id);
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          },
+          onSecondary: () => {
+            const targets = dirtyOthers.map((t) => t.id);
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+            void saveDirtyTabs(targets).then((saved) => {
+              // Abort the close if any save was cancelled or failed.
+              if (!saved) return;
+              const current = tabsRef.current.find((t) => t.id === tabId);
+              const next = current ? [current] : [createDefaultTab(t('common.untitledDoc'), '')];
+              tabsRef.current = next;
+              setTabs(next);
+              saveSession(next);
+              setActiveTabId(next[0].id);
+            });
           },
           onCancel: () => {
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -445,7 +624,7 @@ export function useDocuments(
       saveSession(next);
       setActiveTabId(next[0].id);
     },
-    [saveSession, t]
+    [saveDirtyTabs, saveSession, t]
   );
 
   // Close all tabs to the right of tabId
@@ -475,11 +654,19 @@ export function useDocuments(
           title: t('confirm.closeRightTabsTitle'),
           message: t('confirm.closeRightTabsMsg', { count: dirtyTabs.length }),
           confirmLabel: t('confirm.closeAll'),
+          secondaryLabel: t('confirm.saveAllAndClose'),
           cancelLabel: t('common.cancel'),
           variant: 'danger',
           onConfirm: () => {
             performClose();
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          },
+          onSecondary: () => {
+            const targets = dirtyTabs.map((tab) => tab.id);
+            setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+            void saveDirtyTabs(targets).then((saved) => {
+              if (saved) performClose();
+            });
           },
           onCancel: () => {
             setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -490,7 +677,7 @@ export function useDocuments(
 
       performClose();
     },
-    [activeTabId, saveSession, t]
+    [activeTabId, saveDirtyTabs, saveSession, t]
   );
 
   // Close all saved / unmodified tabs
@@ -539,11 +726,19 @@ export function useDocuments(
         title: t('confirm.closeAllTabsTitle'),
         message: t('confirm.closeAllTabsMsg', { count: dirtyTabs.length }),
         confirmLabel: t('confirm.closeAll'),
+        secondaryLabel: t('confirm.saveAllAndClose'),
         cancelLabel: t('common.cancel'),
         variant: 'danger',
         onConfirm: () => {
           performClose();
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+        },
+        onSecondary: () => {
+          const targets = dirtyTabs.map((tab) => tab.id);
+          setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
+          void saveDirtyTabs(targets).then((saved) => {
+            if (saved) performClose();
+          });
         },
         onCancel: () => {
           setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
@@ -553,7 +748,7 @@ export function useDocuments(
     }
 
     performClose();
-  }, [saveSession, t]);
+  }, [saveDirtyTabs, saveSession, t]);
 
   // Reload a tab's content from disk (external change accepted / no local edits)
   const reloadTabFromDisk = useCallback(
@@ -738,6 +933,7 @@ export function useDocuments(
     closeSavedTabs,
     closeAllTabs,
     reloadTab,
+    flushSession,
     confirmDialog,
     setConfirmDialog,
   };

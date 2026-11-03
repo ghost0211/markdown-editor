@@ -12,8 +12,10 @@ import {
   ArrowRight,
   CheckCheck,
   XCircle,
+  GitCompareArrows,
 } from 'lucide-react';
 import { DocumentTab } from '@/types';
+import { getDisambiguatedTabTitles } from '@/lib/documentUtils';
 import { useI18n } from '@/i18n';
 import clsx from 'clsx';
 
@@ -131,6 +133,33 @@ export const TabBar: React.FC<TabBarProps> = ({
   const closeMenu = () => {
     setContextMenu((prev) => (prev.isOpen ? { ...prev, isOpen: false } : prev));
   };
+
+  // Display titles with the parent folder appended for duplicated file names
+  const displayTitles = React.useMemo(
+    () => getDisambiguatedTabTitles(tabs),
+    [tabs]
+  );
+
+  // Keep the active tab visible. Without this a newly opened file (or a tab
+  // reached with Ctrl+Tab) could stay scrolled out of view.
+  useEffect(() => {
+    if (!scrollRef.current) return;
+    const container = scrollRef.current;
+    const active = container.querySelector<HTMLElement>(
+      `[data-tab-id="${activeTabId.replace(/"/g, '\\"')}"]`
+    );
+    if (!active) return;
+    const left = active.offsetLeft;
+    const right = left + active.offsetWidth;
+    // `offsetLeft` is relative to the scroll content; scroll padding keeps a
+    // little breathing room so the tab is not flush against the edge.
+    const padding = 8;
+    if (left - padding < container.scrollLeft) {
+      container.scrollLeft = Math.max(0, left - padding);
+    } else if (right + padding > container.scrollLeft + container.clientWidth) {
+      container.scrollLeft = right + padding - container.clientWidth;
+    }
+  }, [activeTabId, tabs.length]);
 
   // Close context menu on outside click, Escape key, or resize
   useEffect(() => {
@@ -255,7 +284,7 @@ export const TabBar: React.FC<TabBarProps> = ({
       document.body.removeChild(ta);
       showToast?.(successMsg, 'success');
     } catch {
-      showToast?.('复制失败', 'error');
+      showToast?.(t('tabBar.copyFailed'), 'error');
     }
   };
 
@@ -276,22 +305,26 @@ export const TabBar: React.FC<TabBarProps> = ({
       onWheel={handleWheel}
       onContextMenu={handleBarContextMenu}
       role="tablist"
-      aria-label="Document tabs"
+      aria-label={t('tabBar.tabsAriaLabel')}
     >
       <div
         ref={scrollRef}
-        className="flex-1 flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5"
+        className="flex-1 flex items-center space-x-1 overflow-x-auto no-scrollbar py-0.5 min-w-0"
       >
         {tabs.map((tab) => {
           const isActive = tab.id === activeTabId;
           const isWelcome = tab.id === 'doc-welcome';
+          const isDiff = tab.kind === 'diff';
+          const displayTitle = displayTitles.get(tab.id) || tab.title;
 
           return (
             <div
               key={tab.id}
               role="tab"
+              data-tab-id={tab.id}
               aria-selected={isActive}
-              tabIndex={0}
+              aria-label={displayTitle}
+              tabIndex={isActive ? 0 : -1}
               draggable={!!onMoveTab}
               onDragStart={(e) => handleDragStart(e, tab.id)}
               onDragOver={(e) => handleDragOverTab(e, tab.id)}
@@ -303,6 +336,21 @@ export const TabBar: React.FC<TabBarProps> = ({
                 if (e.key === 'Enter' || e.key === ' ') {
                   e.preventDefault();
                   onSelectTab(tab.id);
+                  return;
+                }
+                // Roving tabindex: arrow keys move between tabs like a real tablist.
+                if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
+                  e.preventDefault();
+                  const index = tabs.findIndex((item) => item.id === tab.id);
+                  const delta = e.key === 'ArrowRight' ? 1 : -1;
+                  const next = tabs[(index + delta + tabs.length) % tabs.length];
+                  if (next) {
+                    onSelectTab(next.id);
+                    const el = scrollRef.current?.querySelector<HTMLElement>(
+                      `[data-tab-id="${next.id.replace(/"/g, '\\"')}"]`
+                    );
+                    el?.focus();
+                  }
                 }
               }}
               onMouseDown={(e) => {
@@ -314,6 +362,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               }}
               className={clsx(
                 'group relative flex items-center h-7 px-2.5 max-w-[200px] min-w-[110px] text-xs rounded-t-md cursor-pointer border-t border-x transition-all select-none',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
                 isActive
                   ? 'bg-white dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-800 border-b-white dark:border-b-[#0f172a] font-medium shadow-sm z-10'
                   : 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-300/60 dark:hover:bg-slate-800/60'
@@ -333,12 +382,14 @@ export const TabBar: React.FC<TabBarProps> = ({
               {/* Tab Icon */}
               {isWelcome ? (
                 <Sparkles className="w-3.5 h-3.5 text-blue-500 mr-1.5 shrink-0" />
+              ) : isDiff ? (
+                <GitCompareArrows className="w-3.5 h-3.5 text-violet-500 mr-1.5 shrink-0" />
               ) : (
                 <FileText className="w-3.5 h-3.5 text-slate-400 dark:text-slate-500 mr-1.5 shrink-0" />
               )}
 
               {/* Title */}
-              <span className="truncate flex-1 text-left text-xs">{tab.title}</span>
+              <span className="truncate flex-1 text-left text-xs">{displayTitle}</span>
 
               {/* Dirty status dot or close button */}
               <div className="ml-1.5 flex items-center shrink-0">
@@ -351,10 +402,10 @@ export const TabBar: React.FC<TabBarProps> = ({
                     }}
                     title={t('tabBar.unsavedCloseTooltip')}
                     aria-label={t('tabBar.unsavedCloseTooltip')}
-                    className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700"
+                    className="w-4 h-4 flex items-center justify-center rounded hover:bg-slate-200 dark:hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
-                    <span className="w-2 h-2 rounded-full bg-amber-500 group-hover:hidden" />
-                    <X className="w-3 h-3 hidden group-hover:block text-slate-600 dark:text-slate-300" />
+                    <span className="w-2 h-2 rounded-full bg-amber-500 group-hover:hidden group-focus-within:hidden" />
+                    <X className="w-3 h-3 hidden group-hover:block group-focus-within:block text-slate-600 dark:text-slate-300" />
                   </button>
                 ) : (
                   <button
@@ -366,8 +417,8 @@ export const TabBar: React.FC<TabBarProps> = ({
                     title={t('tabBar.closeTabTooltip')}
                     aria-label={t('tabBar.closeTabTooltip')}
                     className={clsx(
-                      'p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-opacity',
-                      isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+                      'p-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 transition-opacity focus-visible:opacity-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500',
+                      isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 group-focus-within:opacity-100'
                     )}
                   >
                     <X className="w-3 h-3" />
@@ -377,25 +428,26 @@ export const TabBar: React.FC<TabBarProps> = ({
             </div>
           );
         })}
-
-        {/* New Tab Button */}
-        <button
-          type="button"
-          onClick={onNewTab}
-          title={t('tabBar.newTabTooltip')}
-          aria-label={t('tabBar.newTabTooltip')}
-          className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-300/70 dark:hover:bg-slate-800 rounded transition-colors ml-0.5 shrink-0"
-        >
-          <Plus className="w-4 h-4" />
-        </button>
       </div>
+
+      {/* New Tab Button — outside the scroller so it stays reachable no matter
+          how many tabs are open */}
+      <button
+        type="button"
+        onClick={onNewTab}
+        title={t('tabBar.newTabTooltip')}
+        aria-label={t('tabBar.newTabTooltip')}
+        className="p-1 text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-300/70 dark:hover:bg-slate-800 rounded transition-colors ml-1 shrink-0"
+      >
+        <Plus className="w-4 h-4" />
+      </button>
 
       {/* Tab Bar Context Menu */}
       {contextMenu.isOpen && (
         <div
           ref={menuRef}
           role="menu"
-          aria-label="Tab context menu"
+          aria-label={t('tabBar.contextMenuAriaLabel')}
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
           className="fixed z-50 w-56 p-1 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-lg shadow-xl text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-75 select-none"
         >
@@ -498,6 +550,7 @@ export const TabBar: React.FC<TabBarProps> = ({
               <MenuItem
                 icon={<Save className="w-3.5 h-3.5 text-emerald-500" />}
                 label={t('tabBar.contextMenu.saveAs')}
+                disabled={targetTab.kind === 'diff'}
                 onClick={() => {
                   closeMenu();
                   onSaveTabAs?.(targetTab.id);

@@ -18,6 +18,7 @@ export const enUS: TranslationsSchema = {
     utf8: 'UTF-8',
   },
   titleBar: {
+    viewModeGroupLabel: 'View mode',
     collapseOutline: 'Collapse Outline (Ctrl+Shift+O)',
     expandOutline: 'Expand Outline (Ctrl+Shift+O)',
     newDoc: 'New',
@@ -62,6 +63,9 @@ export const enUS: TranslationsSchema = {
     unsavedCloseTooltip: 'Unsaved (Click to close)',
     closeTabTooltip: 'Close Tab (Ctrl+W)',
     newTabTooltip: 'New Document (Ctrl+N)',
+    tabsAriaLabel: 'Document tabs',
+    contextMenuAriaLabel: 'Tab context menu',
+    copyFailed: 'Copy failed',
     contextMenu: {
       close: 'Close',
       closeShortcut: 'Ctrl+W',
@@ -80,6 +84,7 @@ export const enUS: TranslationsSchema = {
     },
   },
   toolbar: {
+    ariaLabel: 'Markdown formatting toolbar',
     h1: 'Heading 1 (# )',
     h2: 'Heading 2 (## )',
     h3: 'Heading 3 (### )',
@@ -222,6 +227,8 @@ export const enUS: TranslationsSchema = {
     reloadFromDiskTitle: 'Reload from Disk',
     reloadFromDiskMsg: 'Document "{title}" has unsaved changes. Reloading will discard them. Are you sure?',
     closeAll: 'Close All',
+    saveAndClose: 'Save and Close',
+    saveAllAndClose: 'Save All and Close',
     externalChangeTitle: 'File Modified Externally',
     externalChangeMsg: 'The file "{title}" was modified by another program. Reload the latest content from disk? Reloading will discard your unsaved changes.',
     reloadFromDisk: 'Reload',
@@ -257,6 +264,9 @@ export const enUS: TranslationsSchema = {
     cannotRevealUnsaved: 'Document is not saved to disk yet',
     revealedInFolder: 'Revealed file in file explorer',
     revealFailed: 'Failed to reveal file: {error}',
+    sessionSaveFailed: 'Could not save the session draft (browser storage is full); these changes may not be restored after a restart',
+    diffTabCannotSave: 'A compare tab has no file of its own; its source documents were saved instead',
+    diffTabNoChanges: 'Neither source document of this compare tab has unsaved changes',
   },
   diff: {
     modalTitle: 'Compare Two Documents',

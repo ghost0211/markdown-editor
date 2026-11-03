@@ -16,6 +16,7 @@ export const zhCN = {
     utf8: 'UTF-8',
   },
   titleBar: {
+    viewModeGroupLabel: '视图模式',
     collapseOutline: '收起大纲 (Ctrl+Shift+O)',
     expandOutline: '展开大纲 (Ctrl+Shift+O)',
     newDoc: '新建',
@@ -60,6 +61,9 @@ export const zhCN = {
     unsavedCloseTooltip: '未保存（点击关闭）',
     closeTabTooltip: '关闭标签页 (Ctrl+W)',
     newTabTooltip: '新建文档 (Ctrl+N)',
+    tabsAriaLabel: '文档标签页',
+    contextMenuAriaLabel: '标签页右键菜单',
+    copyFailed: '复制失败',
     contextMenu: {
       close: '关闭',
       closeShortcut: 'Ctrl+W',
@@ -78,6 +82,7 @@ export const zhCN = {
     },
   },
   toolbar: {
+    ariaLabel: 'Markdown 格式工具栏',
     h1: '一级标题 (# )',
     h2: '二级标题 (## )',
     h3: '三级标题 (### )',
@@ -220,6 +225,8 @@ export const zhCN = {
     reloadFromDiskTitle: '重新从磁盘载入',
     reloadFromDiskMsg: '文档「{title}」有未保存的修改，重新载入将丢失这些修改。是否确认重新载入？',
     closeAll: '全部关闭',
+    saveAndClose: '保存并关闭',
+    saveAllAndClose: '全部保存并关闭',
     externalChangeTitle: '文件已被外部修改',
     externalChangeMsg: '文件「{title}」已被其他程序修改。是否重新加载磁盘上的最新内容？重新加载将丢失当前未保存的修改。',
     reloadFromDisk: '重新加载',
@@ -255,6 +262,9 @@ export const zhCN = {
     cannotRevealUnsaved: '文档尚未保存到本地磁盘',
     revealedInFolder: '已在文件管理器中定位文件',
     revealFailed: '定位文件位置失败: {error}',
+    sessionSaveFailed: '会话草稿保存失败（浏览器存储空间已满），本次改动可能无法在重启后恢复',
+    diffTabCannotSave: '对比标签页没有独立文件，已保存其引用的源文档',
+    diffTabNoChanges: '对比标签页的两个源文档均无未保存的修改',
   },
   diff: {
     modalTitle: '对比两个文档',

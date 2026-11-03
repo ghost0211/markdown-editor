@@ -55,6 +55,20 @@
   scrollbar-width: none;
 }
 
+/* Respect the OS "reduce motion" preference: the app is chrome-heavy and
+   several elements animate (tab transitions, dropdowns, spinners). Users who
+   ask for less motion should not get any of it. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* CodeMirror custom theme overrides */
 .cm-editor {
   height: 100% !important;

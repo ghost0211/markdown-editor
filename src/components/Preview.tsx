@@ -7,6 +7,7 @@ import React, {
   useMemo,
   useContext,
   useEffect,
+  useDeferredValue,
   createContext,
 } from 'react';
 import Markdown, { Components, ExtraProps } from 'react-markdown';
@@ -16,6 +17,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
+import { findSourceLineForElement, toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import 'highlight.js/styles/github-dark.css';
@@ -55,6 +57,8 @@ export interface PreviewHandle {
 interface PreviewProps {
   content: string;
   onOpenLink?: (href: string) => Promise<void>;
+  /** Called with the new full content when a task-list checkbox is clicked. */
+  onToggleTask?: (nextContent: string) => void;
   /** Whether to show source line numbers in the gutter (like the editor). */
   showLineNumbers?: boolean;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
@@ -367,9 +371,18 @@ export function findLastIndexWhere<T>(
 }
 
 const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
-  ({ content, onOpenLink, showLineNumbers = false, onScroll, className }, ref) => {
+  ({ content, onOpenLink, onToggleTask, showLineNumbers = false, onScroll, className }, ref) => {
     const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
+
+    /**
+     * Rendering Markdown costs far more than a keystroke, so the rendered body
+     * follows the editor through a deferred value: the caret keeps moving at
+     * full speed while React re-renders the document at a lower priority.
+     * Scroll bookkeeping, line anchors and the task-checkbox mapping keep using
+     * the live `content` so they stay exact.
+     */
+    const renderedContent = useDeferredValue(content);
 
     // Cache of block-element positions keyed by source line. It is validated
     // against the container's current layout size on every access and rebuilt
@@ -550,6 +563,35 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
         h4: createHeadingRenderer('h4'),
         h5: createHeadingRenderer('h5'),
         h6: createHeadingRenderer('h6'),
+        /**
+         * GFM task-list checkboxes. remark-gfm emits them `disabled`, so the
+         * box is made interactive and clicking it flips the matching `- [ ]`
+         * marker in the source document.
+         */
+        input: ({ node: _node, type, checked, disabled: _disabled, ...props }) => {
+          if (type !== 'checkbox') {
+            return <input type={type} checked={checked} disabled={_disabled} {...props} />;
+          }
+
+          // remark-gfm marks task checkboxes `disabled`; the attribute must be
+          // dropped (props are spread first) or the box stays unclickable.
+          return (
+            <input
+              {...props}
+              type="checkbox"
+              checked={Boolean(checked)}
+              disabled={!onToggleTask}
+              onChange={(event) => {
+                if (!onToggleTask) return;
+                const line = findSourceLineForElement(event.currentTarget);
+                if (line === null) return;
+                const next = toggleTaskCheckboxAtLine(content, line);
+                if (next !== null) onToggleTask(next);
+              }}
+              className="cursor-pointer accent-blue-600"
+            />
+          );
+        },
         p: ({ node, children, ...props }) => (
           <p data-line={getBlockLine(node as HastNodeLike | undefined)} {...props}>
             {children}
@@ -608,7 +650,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, t, onOpenLink]
+      [scrollToTarget, t, onOpenLink, onToggleTask, content]
     );
 
     return (
@@ -628,7 +670,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
             rehypePlugins={REHYPE_PLUGINS}
             components={components}
           >
-            {content}
+            {renderedContent}
           </Markdown>
         </div>
       </div>

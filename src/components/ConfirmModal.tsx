@@ -9,8 +9,10 @@ interface ConfirmModalProps {
   message: string;
   confirmLabel?: string;
   cancelLabel?: string;
+  secondaryLabel?: string;
   variant?: 'danger' | 'warning' | 'primary';
   onConfirm: () => void;
+  onSecondary?: () => void;
   onCancel: () => void;
 }
 
@@ -20,8 +22,10 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   message,
   confirmLabel,
   cancelLabel,
+  secondaryLabel,
   variant = 'primary',
   onConfirm,
+  onSecondary,
   onCancel,
 }) => {
   const { t } = useI18n();
@@ -161,6 +165,15 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           >
             {finalCancelLabel}
           </button>
+          {secondaryLabel && onSecondary && (
+            <button
+              type="button"
+              onClick={onSecondary}
+              className="px-3 py-1.5 rounded text-xs font-medium text-white bg-blue-600 hover:bg-blue-700 transition-colors shadow-sm"
+            >
+              {secondaryLabel}
+            </button>
+          )}
           <button
             type="button"
             onClick={onConfirm}

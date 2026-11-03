@@ -11,6 +11,12 @@ interface KeyboardShortcutsOptions {
   onToggleSidebar: () => void;
   onToggleShortcutsModal: () => void;
   onToggleSettingsModal?: () => void;
+  /**
+   * When false, document-level shortcuts (Ctrl+N / Ctrl+W / ...) are ignored.
+   * Used while a modal dialog owns the keyboard, so typing inside a dialog can
+   * never trigger "new document" or "close tab".
+   */
+  enabled?: boolean;
 }
 
 export function useKeyboardShortcuts({
@@ -23,10 +29,33 @@ export function useKeyboardShortcuts({
   onToggleSidebar,
   onToggleShortcutsModal,
   onToggleSettingsModal,
+  enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      // A handler closer to the focused element already consumed this key
+      // (e.g. Escape/Tab handling inside a dialog).
+      if (e.defaultPrevented) return;
+
       const isCtrlOrMeta = e.ctrlKey || e.metaKey;
+
+      // Help / preferences shortcuts stay available in every state: Ctrl+, is
+      // the only way to close the settings dialog with the keyboard.
+      if (isCtrlOrMeta && e.key === ',') {
+        e.preventDefault();
+        onToggleSettingsModal?.();
+        return;
+      }
+
+      if ((isCtrlOrMeta && e.key === '/') || e.key === 'F1') {
+        e.preventDefault();
+        onToggleShortcutsModal();
+        return;
+      }
+
+      // Everything below acts on the document itself and must not fire while a
+      // modal dialog owns the keyboard.
+      if (!enabled) return;
 
       // Ctrl + Shift + S: Save As
       if (isCtrlOrMeta && e.shiftKey && (e.key === 's' || e.key === 'S')) {
@@ -90,20 +119,6 @@ export function useKeyboardShortcuts({
         onSetViewMode('read');
         return;
       }
-
-      // Ctrl + ,: Settings Modal
-      if (isCtrlOrMeta && e.key === ',') {
-        e.preventDefault();
-        onToggleSettingsModal?.();
-        return;
-      }
-
-      // Ctrl + / or F1: Shortcuts Modal
-      if ((isCtrlOrMeta && e.key === '/') || e.key === 'F1') {
-        e.preventDefault();
-        onToggleShortcutsModal();
-        return;
-      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
@@ -118,5 +133,6 @@ export function useKeyboardShortcuts({
     onToggleSidebar,
     onToggleShortcutsModal,
     onToggleSettingsModal,
+    enabled,
   ]);
 }

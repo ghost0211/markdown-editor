@@ -95,6 +95,41 @@ export interface OpenOrFocusResult {
 }
 
 /**
+ * Returns the parent folder name of a path, used to tell apart tabs whose file
+ * names are identical (e.g. two different `README.md`).
+ */
+export function getParentFolderName(filePath?: string | null): string {
+  if (!filePath) return '';
+  const parts = filePath.split(/[/\\]/).filter(Boolean);
+  // Last part is the file name itself.
+  return parts.length >= 2 ? parts[parts.length - 2] : '';
+}
+
+/**
+ * Computes a disambiguated title per tab for the tab bar.
+ *
+ * Tab titles are plain file names, so two documents called `README.md` in
+ * different folders were indistinguishable. When a title is shared by more than
+ * one tab, each of those tabs gets its parent folder appended, e.g.
+ * `README.md (docs)` vs `README.md (website)`. Untitled documents and tabs
+ * without a file path keep their plain title.
+ */
+export function getDisambiguatedTabTitles(tabs: DocumentTab[]): Map<string, string> {
+  const counts = new Map<string, number>();
+  for (const tab of tabs) {
+    counts.set(tab.title, (counts.get(tab.title) || 0) + 1);
+  }
+
+  const result = new Map<string, string>();
+  for (const tab of tabs) {
+    const isDuplicated = (counts.get(tab.title) || 0) > 1;
+    const folder = isDuplicated ? getParentFolderName(tab.filePath) : '';
+    result.set(tab.id, folder ? `${tab.title} (${folder})` : tab.title);
+  }
+  return result;
+}
+
+/**
  * Pure helper to compute the next DocumentTab list and active tab state
  * when opening a file or focusing an already opened tab.
  *

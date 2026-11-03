@@ -3,7 +3,7 @@ import { TitleBar } from '@/components/TitleBar';
 import { TabBar } from '@/components/TabBar';
 import { Toolbar } from '@/components/Toolbar';
 import { Sidebar } from '@/components/Sidebar';
-import { Editor, EditorHandle } from '@/components/Editor';
+import { Editor, EditorHandle, cachedEditorStateIds, dropCachedEditorState } from '@/components/Editor';
 import { Preview, PreviewHandle } from '@/components/Preview';
 import { StatusBar } from '@/components/StatusBar';
 import { ConfirmModal } from '@/components/ConfirmModal';
@@ -90,6 +90,7 @@ const AppContent: React.FC<AppContentProps> = ({
     closeSavedTabs,
     closeAllTabs,
     reloadTab,
+    flushSession,
     confirmDialog,
     setConfirmDialog,
   } = useDocuments(showToast, settings.restoreSession, settings.startupView);
@@ -394,15 +395,35 @@ const AppContent: React.FC<AppContentProps> = ({
   useEffect(() => {
     const flush = () => {
       const id = activeTabIdRef.current;
-      if (!id) return;
-      const pos = scrollPositionsRef.current.get(id);
-      if (pos) {
-        updateScrollPositions(id, pos.editor, pos.preview);
+      if (id) {
+        const pos = scrollPositionsRef.current.get(id);
+        if (pos) {
+          updateScrollPositions(id, pos.editor, pos.preview);
+        }
       }
+      // The scroll write above is itself debounced; force it out together with
+      // any other pending session change before the window goes away.
+      flushSession();
     };
     window.addEventListener('beforeunload', flush);
-    return () => window.removeEventListener('beforeunload', flush);
-  }, [updateScrollPositions]);
+    window.addEventListener('pagehide', flush);
+    return () => {
+      window.removeEventListener('beforeunload', flush);
+      window.removeEventListener('pagehide', flush);
+    };
+  }, [flushSession, updateScrollPositions]);
+
+  /**
+   * Release cached editor state for tabs that no longer exist. Without this the
+   * cache would hold the full undo history of every document ever opened in the
+   * session, which grows without bound.
+   */
+  useEffect(() => {
+    const liveIds = new Set(tabs.map((tab) => tab.id));
+    for (const id of cachedEditorStateIds()) {
+      if (!liveIds.has(id)) dropCachedEditorState(id);
+    }
+  }, [tabs]);
 
   // External file modification detection: poll while visible + on window focus
   const checkExternalChangesRef = useRef(checkExternalChanges);
@@ -466,7 +487,11 @@ const AppContent: React.FC<AppContentProps> = ({
     return calculateStats(activeTab.content);
   }, [activeTab?.content]);
 
-  // Keyboard shortcuts integration
+  // Keyboard shortcuts integration. Disabled while a modal owns the keyboard so
+  // Ctrl+N / Ctrl+W cannot tear down the document behind an open dialog.
+  const isModalOpen =
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || confirmDialog.isOpen;
+
   useKeyboardShortcuts({
     onNew: handleNewTab,
     onOpen: openDocument,
@@ -477,6 +502,7 @@ const AppContent: React.FC<AppContentProps> = ({
     onToggleSidebar: toggleSidebar,
     onToggleShortcutsModal: handleToggleShortcuts,
     onToggleSettingsModal: handleToggleSettings,
+    enabled: !isModalOpen,
   });
 
   // Handle heading selection from outline
@@ -551,6 +577,17 @@ const AppContent: React.FC<AppContentProps> = ({
       }
     },
     [activeTabId, updateCursor]
+  );
+
+  // Clicking a task-list checkbox in the preview writes the flipped `- [ ]`
+  // marker back into the source document of the active tab.
+  const handleToggleTask = useCallback(
+    (nextContent: string) => {
+      if (activeTabId) {
+        updateContent(activeTabId, nextContent);
+      }
+    },
+    [activeTabId, updateContent]
   );
 
   // Stable identity so <Editor> does not re-dispatch StateEffect.reconfigure on
@@ -673,6 +710,9 @@ const AppContent: React.FC<AppContentProps> = ({
             >
               <Editor
                 ref={editorRef}
+                docId={activeTab?.id}
+                initialCursorLine={activeTab?.cursorLine}
+                initialCursorCol={activeTab?.cursorCol}
                 value={activeTab?.content || ''}
                 onChange={handleEditorChange}
                 onCursorChange={handleCursorChange}
@@ -696,6 +736,7 @@ const AppContent: React.FC<AppContentProps> = ({
             >
               <Preview
                 onOpenLink={handleOpenLink}
+                onToggleTask={handleToggleTask}
                 ref={previewRef}
                 content={activeTab?.content || ''}
                 showLineNumbers={settings.lineNumbers}
@@ -723,9 +764,11 @@ const AppContent: React.FC<AppContentProps> = ({
         title={confirmDialog.title}
         message={confirmDialog.message}
         confirmLabel={confirmDialog.confirmLabel}
+        secondaryLabel={confirmDialog.secondaryLabel}
         cancelLabel={confirmDialog.cancelLabel}
         variant={confirmDialog.variant}
         onConfirm={confirmDialog.onConfirm}
+        onSecondary={confirmDialog.onSecondary}
         onCancel={handleCancelConfirm}
       />
 

@@ -1,5 +1,6 @@
 import {
   useCallback,
+  useEffect,
   useImperativeHandle,
   forwardRef,
   useMemo,
@@ -9,10 +10,15 @@ import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
 import { languages } from '@codemirror/language-data';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { EditorView } from '@codemirror/view';
-import { EditorState } from '@codemirror/state';
+import { EditorView, ViewUpdate } from '@codemirror/view';
+import { EditorState, Text } from '@codemirror/state';
 import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
+import {
+  SerializedEditorState,
+  restoreEditorInitialState,
+  serializeEditorState,
+} from '@/lib/editorStateCache';
 import { useI18n } from '@/i18n';
 
 export interface EditorHandle {
@@ -39,6 +45,29 @@ interface EditorProps {
   tabSize?: number;
   wordWrap?: boolean;
   lineNumbers?: boolean;
+  /** Identity of the document currently shown. Switching it restores that
+   *  document's own undo history / selection instead of replacing the text. */
+  docId?: string;
+  /** Cursor position to restore the first time a document is opened. */
+  initialCursorLine?: number;
+  initialCursorCol?: number;
+}
+
+/**
+ * Module-level (not component state) so a cached document keeps its undo
+ * history across view-mode switches that unmount the editor entirely, e.g.
+ * edit -> read -> edit.
+ */
+const stateCache = new Map<string, SerializedEditorState>();
+
+/** Releases the cached editor state of a document that was closed for good. */
+export function dropCachedEditorState(docId: string): void {
+  stateCache.delete(docId);
+}
+
+/** Ids of every document that still has cached editor state. */
+export function cachedEditorStateIds(): string[] {
+  return Array.from(stateCache.keys());
 }
 
 /**
@@ -87,6 +116,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       tabSize = 2,
       wordWrap = true,
       lineNumbers = true,
+      docId,
+      initialCursorLine = 1,
+      initialCursorCol = 1,
     },
     ref
   ) => {
@@ -140,21 +172,72 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       return ext;
     }, [fontSize, lineHeight, tabSize, wordWrap]);
 
+    /**
+     * Editor state to start this document from.
+     *
+     * - First visit to a document in this session: no snapshot, so the library
+     *   builds the state from `value`.
+     * - Revisit: rebuild the state captured when the document was last left
+     *   behind, which carries its undo history and selection.
+     * - Content drift (file reloaded from disk, edits made from the preview):
+     *   the cache entry is stale and must be ignored.
+     *
+     * The dependency is `docId`, not `[]`: only the inner CodeMirror remounts
+     * (via `key`), this component instance survives a tab switch.
+     */
+    const initialState = useMemo(
+      () => (docId ? restoreEditorInitialState(stateCache.get(docId), value) : undefined),
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+      [docId]
+    );
+
+    // Cursor position to restore when this document has no cached state yet
+    // (first visit in this session).
+    const initialSelection = useMemo(() => {
+      const doc = Text.of(value.split('\n'));
+      const lineInfo = doc.line(Math.max(1, Math.min(initialCursorLine, doc.lines)));
+      const anchor = Math.min(lineInfo.to, lineInfo.from + Math.max(0, initialCursorCol - 1));
+      return { anchor, head: anchor };
+      // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [docId]);
+
+    /**
+     * Live state of every document seen in this editor instance, keyed by
+     * document id. Updated on every CodeMirror update (an O(1) reference
+     * assignment); serialization only happens when a document is left.
+     *
+     * Keyed by id rather than a single "latest" slot because the remount of the
+     * inner CodeMirror may deliver the new document's first update before the
+     * effect cleanup that snapshots the previous document runs.
+     */
+    const latestStatesRef = useRef(new Map<string, EditorState>());
+
+    const rememberState = useCallback((ownerId: string | undefined, state: EditorState) => {
+      if (!ownerId) return;
+      latestStatesRef.current.set(ownerId, state);
+    }, []);
+
+    useEffect(() => {
+      const leavingDocId = docId;
+      return () => {
+        if (!leavingDocId) return;
+        const snapshot = latestStatesRef.current.get(leavingDocId);
+        latestStatesRef.current.delete(leavingDocId);
+        if (snapshot) stateCache.set(leavingDocId, serializeEditorState(snapshot));
+      };
+    }, [docId]);
+
     // Handle cursor position updates
     const handleUpdate = useCallback(
-      (viewUpdate: {
-        state: {
-          selection: { main: { head: number } };
-          doc: { lineAt: (pos: number) => { number: number; from: number } };
-        };
-      }) => {
+      (viewUpdate: ViewUpdate) => {
+        rememberState(docId, viewUpdate.state);
         if (!onCursorChange) return;
         const pos = viewUpdate.state.selection.main.head;
         const line = viewUpdate.state.doc.lineAt(pos);
         const col = pos - line.from + 1;
         onCursorChange(line.number, col);
       },
-      [onCursorChange]
+      [docId, onCursorChange, rememberState]
     );
 
     // Expose imperative actions to parent
@@ -262,13 +345,20 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     return (
       <div className={`h-full w-full overflow-hidden ${className || ''}`}>
         <CodeMirror
+          // Remount per document so each tab starts from its own cached state
+          // (undo history + selection) instead of having its text replaced in
+          // a shared undo stack. See src/lib/editorStateCache.ts.
+          key={docId || 'document'}
           ref={cmRef}
           value={value}
+          initialState={initialState}
+          selection={initialSelection}
           height="100%"
           theme={isDark ? oneDark : 'light'}
           extensions={extensions}
           onChange={onChange}
           onUpdate={handleUpdate}
+          onCreateEditor={(_view, state) => rememberState(docId, state)}
           basicSetup={basicSetup}
           className="h-full font-mono"
         />
