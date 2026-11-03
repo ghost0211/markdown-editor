@@ -342,7 +342,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'edit'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             )}
           >
@@ -355,7 +355,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'split'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             )}
           >
@@ -368,7 +368,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             className={clsx(
               'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
               viewMode === 'read'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs'
+                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
                 : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
             )}
           >

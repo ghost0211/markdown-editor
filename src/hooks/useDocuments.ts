@@ -126,12 +126,19 @@ export function useDocuments(
 
   // Update cursor position of a tab
   const updateCursor = useCallback((tabId: string, line: number, col: number) => {
+    let changed = false;
     const next = tabsRef.current.map((tab) => {
       if (tab.id === tabId) {
+        // Short-circuit: CodeMirror reports a cursor update on every update
+        // cycle, and re-rendering the whole app tree for an unchanged
+        // position is pure overhead (very visible on large documents).
+        if (tab.cursorLine === line && tab.cursorCol === col) return tab;
+        changed = true;
         return { ...tab, cursorLine: line, cursorCol: col };
       }
       return tab;
     });
+    if (!changed) return;
     tabsRef.current = next;
     setTabs(next);
   }, []);

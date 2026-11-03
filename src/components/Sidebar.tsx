@@ -35,6 +35,24 @@ export const Sidebar: React.FC<SidebarProps> = ({
     return headings.filter((h) => h.text.toLowerCase().includes(query));
   }, [headings, search]);
 
+  /**
+   * Single pass over the sorted outline to find the section containing the
+   * cursor. The previous implementation re-scanned the whole array for every
+   * rendered item (O(n²)) and ran again on every caret movement — hundreds of
+   * thousands of comparisons per keystroke on large documents.
+   */
+  const activeHeadingId = useMemo(() => {
+    let activeId: string | null = null;
+    for (const heading of headings) {
+      if (heading.line <= currentLine) {
+        activeId = heading.id;
+      } else {
+        break;
+      }
+    }
+    return activeId;
+  }, [headings, currentLine]);
+
   if (!isOpen) return null;
 
   return (
@@ -104,12 +122,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         ) : (
           filteredHeadings.map((heading) => {
-            const isCurrent =
-              currentLine >= heading.line &&
-              (!headings.find(
-                (h) => h.line > heading.line && currentLine >= h.line
-              ) ||
-                heading.id === headings[headings.length - 1].id);
+            const isCurrent = heading.id === activeHeadingId;
 
             // Indentation padding per heading level
             const paddingLeft = `${(heading.level - 1) * 12 + 6}px`;

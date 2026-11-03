@@ -1,4 +1,11 @@
 /** @type {import('tailwindcss').Config} */
+import { createRequire } from 'module';
+
+// Loaded through createRequire because the plugin is CommonJS while this
+// config is ESM (package.json sets "type": "module").
+const require = createRequire(import.meta.url);
+const tailwindcssAnimate = require('tailwindcss-animate');
+
 export default {
   content: [
     "./index.html",
@@ -46,5 +53,5 @@ export default {
       },
     },
   },
-  plugins: [],
+  plugins: [tailwindcssAnimate],
 }

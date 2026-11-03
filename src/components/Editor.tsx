@@ -41,6 +41,38 @@ interface EditorProps {
   lineNumbers?: boolean;
 }
 
+/**
+ * Hoisted to module scope (instead of an inline JSX object literal) so the
+ * reference stays stable across renders. @uiw/react-codemirror dispatches a
+ * full `StateEffect.reconfigure` whenever `basicSetup` or `onChange` changes
+ * identity — with inline literals that happened on every single keystroke.
+ */
+const BASE_BASIC_SETUP = {
+  highlightActiveLineGutter: true,
+  highlightSpecialChars: true,
+  history: true,
+  foldGutter: true,
+  drawSelection: true,
+  dropCursor: true,
+  allowMultipleSelections: true,
+  indentOnInput: true,
+  syntaxHighlighting: true,
+  bracketMatching: true,
+  closeBrackets: true,
+  autocompletion: true,
+  rectangularSelection: true,
+  crosshairCursor: false,
+  highlightActiveLine: true,
+  highlightSelectionMatches: true,
+  closeBracketsKeymap: true,
+  defaultKeymap: true,
+  searchKeymap: true,
+  historyKeymap: true,
+  foldKeymap: true,
+  completionKeymap: true,
+  lintKeymap: true,
+};
+
 export const Editor = forwardRef<EditorHandle, EditorProps>(
   (
     {
@@ -60,6 +92,14 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
   ) => {
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const { t, language } = useI18n();
+
+    // Keeps the latest scroll handler reachable from the (stable) extension
+    // list without making the extension list depend on its identity.
+    const onScrollRef = useRef(onScroll);
+    onScrollRef.current = onScroll;
+
+    // Stable for as long as the user's line-number preference is unchanged.
+    const basicSetup = useMemo(() => ({ ...BASE_BASIC_SETUP, lineNumbers }), [lineNumbers]);
 
     // In-flight programmatic scroll target. CodeMirror measures line heights
     // lazily, so scrollToLine may take several frames to converge; while it is
@@ -85,8 +125,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         EditorView.domEventHandlers({
           scroll: (event) => {
             const target = event.target as HTMLElement;
-            if (target && onScroll) {
-              onScroll(target.scrollTop, target.scrollHeight, target.clientHeight);
+            const handler = onScrollRef.current;
+            if (target && handler) {
+              handler(target.scrollTop, target.scrollHeight, target.clientHeight);
             }
           },
         }),
@@ -97,7 +138,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       }
 
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap, onScroll]);
+    }, [fontSize, lineHeight, tabSize, wordWrap]);
 
     // Handle cursor position updates
     const handleUpdate = useCallback(
@@ -228,32 +269,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           extensions={extensions}
           onChange={onChange}
           onUpdate={handleUpdate}
-          basicSetup={{
-            lineNumbers,
-            highlightActiveLineGutter: true,
-            highlightSpecialChars: true,
-            history: true,
-            foldGutter: true,
-            drawSelection: true,
-            dropCursor: true,
-            allowMultipleSelections: true,
-            indentOnInput: true,
-            syntaxHighlighting: true,
-            bracketMatching: true,
-            closeBrackets: true,
-            autocompletion: true,
-            rectangularSelection: true,
-            crosshairCursor: false,
-            highlightActiveLine: true,
-            highlightSelectionMatches: true,
-            closeBracketsKeymap: true,
-            defaultKeymap: true,
-            searchKeymap: true,
-            historyKeymap: true,
-            foldKeymap: true,
-            completionKeymap: true,
-            lintKeymap: true,
-          }}
+          basicSetup={basicSetup}
           className="h-full font-mono"
         />
       </div>

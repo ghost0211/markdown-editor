@@ -164,7 +164,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           <button
             type="button"
             onClick={onConfirm}
-            className={clsx('px-3 py-1.5 rounded text-xs font-medium transition-colors shadow-xs', btnColor)}
+            className={clsx('px-3 py-1.5 rounded text-xs font-medium transition-colors shadow-sm', btnColor)}
           >
             {finalConfirmLabel}
           </button>

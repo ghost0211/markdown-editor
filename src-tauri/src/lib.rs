@@ -373,6 +373,17 @@ fn export_pdf_from_html_sync(path: String, html: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Maps a frontend theme preference onto a window theme.
+///
+/// Kept as a pure function so the mapping is unit-testable without a window.
+fn resolve_window_theme(preference: &str) -> Option<tauri::Theme> {
+    match preference.trim().to_ascii_lowercase().as_str() {
+        "dark" => Some(tauri::Theme::Dark),
+        "light" => Some(tauri::Theme::Light),
+        _ => None,
+    }
+}
+
 mod commands {
     use super::*;
 
@@ -652,11 +663,38 @@ mod commands {
             }
         }
     }
+
+    ///
+    /// Syncs the OS window theme with the in-app theme so the native title bar
+    /// and its native minimize/maximize/close buttons follow dark mode instead
+    /// of staying light while the app is dark.
+    ///
+    /// "system" (or any unrecognised value) resolves to `None`, which tells the
+    /// window manager to follow the OS preference.
+    #[tauri::command]
+    pub fn set_window_theme(window: tauri::WebviewWindow, theme: String) -> Result<(), String> {
+        window
+            .set_theme(resolve_window_theme(&theme))
+            .map_err(|e| format!("设置窗口主题失败: {}", e))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_resolve_window_theme_preference() {
+        assert_eq!(resolve_window_theme("dark"), Some(tauri::Theme::Dark));
+        assert_eq!(resolve_window_theme("Dark"), Some(tauri::Theme::Dark));
+        assert_eq!(resolve_window_theme("  DARK "), Some(tauri::Theme::Dark));
+        assert_eq!(resolve_window_theme("light"), Some(tauri::Theme::Light));
+        assert_eq!(resolve_window_theme("Light"), Some(tauri::Theme::Light));
+        // "system" (and anything unrecognised) means "follow the OS".
+        assert_eq!(resolve_window_theme("system"), None);
+        assert_eq!(resolve_window_theme(""), None);
+        assert_eq!(resolve_window_theme("sepia"), None);
+    }
 
     #[test]
     fn test_show_in_folder_validation() {
@@ -1180,7 +1218,8 @@ pub fn run() {
             commands::open_url,
             commands::open_windows_default_apps_settings,
             commands::drain_pending_open_files,
-            commands::show_in_folder
+            commands::show_in_folder,
+            commands::set_window_theme
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

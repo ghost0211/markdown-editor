@@ -206,7 +206,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className={clsx(
                       'flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-md font-medium transition-all text-xs',
                       isSelected
-                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs border border-slate-200/70 dark:border-slate-600'
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-200/70 dark:border-slate-600'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/60'
                     )}
                   >
@@ -247,7 +247,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     className={clsx(
                       'flex items-center justify-center space-x-1.5 py-2 px-2.5 rounded-md font-medium transition-all text-xs',
                       isSelected
-                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-xs border border-slate-200/70 dark:border-slate-600'
+                        ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm border border-slate-200/70 dark:border-slate-600'
                         : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200 hover:bg-slate-200/50 dark:hover:bg-slate-800/60'
                     )}
                   >
@@ -408,7 +408,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       className={clsx(
                         'px-2 py-0.5 rounded font-mono font-medium text-[11px] transition-colors',
                         settings.tabSize === size
-                          ? 'bg-blue-600 text-white shadow-xs'
+                          ? 'bg-blue-600 text-white shadow-sm'
                           : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
                       )}
                     >
@@ -441,7 +441,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span
                     className={clsx(
-                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-xs',
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
                       settings.wordWrap ? 'translate-x-4' : 'translate-x-0'
                     )}
                   />
@@ -471,7 +471,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span
                     className={clsx(
-                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-xs',
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
                       settings.lineNumbers ? 'translate-x-4' : 'translate-x-0'
                     )}
                   />
@@ -511,7 +511,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 >
                   <span
                     className={clsx(
-                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-xs',
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
                       settings.restoreSession ? 'translate-x-4' : 'translate-x-0'
                     )}
                   />
@@ -585,7 +585,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       : t('settings.openWindowsSettingsWebTooltip')
                   }
                   className={clsx(
-                    'w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-md font-medium transition-colors shadow-xs',
+                    'w-full flex items-center justify-center space-x-2 py-2 px-3 rounded-md font-medium transition-colors shadow-sm',
                     !isDesktop
                       ? 'bg-slate-100 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-800 text-slate-400 dark:text-slate-500 cursor-not-allowed'
                       : 'bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 border border-slate-300 dark:border-slate-700 text-slate-700 dark:text-slate-200'
@@ -622,7 +622,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label={t('settings.doneAria')}
-            className="flex items-center space-x-1 px-4 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-xs transition-colors"
+            className="flex items-center space-x-1 px-4 py-1.5 rounded text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-sm transition-colors"
           >
             <Check className="w-3.5 h-3.5" />
             <span>{t('settings.done')}</span>

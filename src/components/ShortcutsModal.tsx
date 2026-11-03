@@ -161,7 +161,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
                     <span className="text-slate-600 dark:text-slate-300 font-medium">
                       {item.desc}
                     </span>
-                    <kbd className="px-2 py-0.5 text-[11px] font-mono font-semibold bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded shadow-xs">
+                    <kbd className="px-2 py-0.5 text-[11px] font-mono font-semibold bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 border border-slate-300 dark:border-slate-700 rounded shadow-sm">
                       {item.key}
                     </kbd>
                   </div>

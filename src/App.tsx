@@ -25,7 +25,7 @@ import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
 import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl } from '@/lib/native';
+import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl, setWindowTheme } from '@/lib/native';
 import { resolveDocumentLink } from '@/lib/documentLinks';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 
@@ -53,6 +53,13 @@ const AppContent: React.FC<AppContentProps> = ({
 
   // Theme hook
   const { theme, setTheme, isDark } = useTheme(settings.theme, handleThemeChange);
+
+  // Keep the native window chrome (title bar + native min/max/close buttons) in
+  // step with the in-app theme. Without this Windows keeps a light caption in
+  // dark mode, which is the main visual mismatch between OS chrome and app UI.
+  useEffect(() => {
+    void setWindowTheme(theme);
+  }, [theme]);
 
   // Toast hook
   const { toasts, showToast, removeToast } = useToast();
@@ -546,6 +553,17 @@ const AppContent: React.FC<AppContentProps> = ({
     [activeTabId, updateCursor]
   );
 
+  // Stable identity so <Editor> does not re-dispatch StateEffect.reconfigure on
+  // every parent render (see BASE_BASIC_SETUP in Editor.tsx).
+  const handleEditorChange = useCallback(
+    (val: string) => {
+      if (activeTabId) {
+        updateContent(activeTabId, val);
+      }
+    },
+    [activeTabId, updateContent]
+  );
+
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 font-sans">
       {/* 1. TitleBar & Quick Controls */}
@@ -656,11 +674,7 @@ const AppContent: React.FC<AppContentProps> = ({
               <Editor
                 ref={editorRef}
                 value={activeTab?.content || ''}
-                onChange={(val) => {
-                  if (activeTabId) {
-                    updateContent(activeTabId, val);
-                  }
-                }}
+                onChange={handleEditorChange}
                 onCursorChange={handleCursorChange}
                 onScroll={handleEditorScroll}
                 isDark={isDark}

@@ -397,6 +397,22 @@ export async function showInFolder(path: string): Promise<void> {
 }
 
 /**
+ * Syncs the OS window theme with the in-app theme.
+ *
+ * Keeps the native title bar (and its native minimize/maximize/close buttons)
+ * consistent with the app instead of staying light while the app is dark.
+ * No-op in Web mode; failures are non-fatal and only logged.
+ */
+export async function setWindowTheme(theme: 'light' | 'dark' | 'system'): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke('set_window_theme', { theme });
+  } catch (err: unknown) {
+    console.warn('同步窗口主题失败:', err);
+  }
+}
+
+/**
  * Browser file download helper
  */
 function downloadBlob(

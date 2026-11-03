@@ -11,6 +11,7 @@ import React, {
 } from 'react';
 import Markdown, { Components, ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { remarkCjkFriendlyEmphasis } from '@/lib/remarkCjkFriendlyEmphasis';
 import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
@@ -31,6 +32,14 @@ export const CODE_THEME = {
   headerText: '#8b949e',
   text: '#c9d1d9',
 } as const;
+
+/**
+ * Hoisted to module scope so their references stay stable across renders.
+ * Passing fresh array literals here makes react-markdown rebuild its internal
+ * processor pipeline on every keystroke.
+ */
+const REMARK_PLUGINS = [remarkGfm, remarkCjkFriendlyEmphasis];
+const REHYPE_PLUGINS = [rehypeSlug, rehypeHighlight];
 
 export interface PreviewHandle {
   scrollToAnchor: (slug: string, line?: number) => void;
@@ -328,7 +337,36 @@ interface LineAnchor {
   top: number;
 }
 
-export const Preview = forwardRef<PreviewHandle, PreviewProps>(
+/**
+ * Binary search for the last anchor satisfying `predicate`, assuming the array
+ * is ordered so that the predicate is monotonically false→true.
+ *
+ * Anchor arrays hold one entry per rendered block, so a 5k-line document can
+ * easily contain thousands of them. Both scroll directions used to scan the
+ * whole array on every scroll event; this makes the lookup O(log n) instead.
+ *
+ * @returns index of the best match, or -1 when no entry matches.
+ */
+export function findLastIndexWhere<T>(
+  items: readonly T[],
+  predicate: (item: T) => boolean
+): number {
+  let lo = 0;
+  let hi = items.length - 1;
+  let found = -1;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (predicate(items[mid])) {
+      found = mid;
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return found;
+}
+
+const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
   ({ content, onOpenLink, showLineNumbers = false, onScroll, className }, ref) => {
     const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -397,16 +435,12 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
 
         // Bracket the target line between the nearest known block anchors,
         // with sentinels at the document start and the bottom scroll limit.
-        let lo: LineAnchor = { line: 1, top: 0 };
-        let hi: LineAnchor = { line: totalLines + 1, top: maxScroll };
-        for (const anchor of anchors) {
-          if (anchor.line <= line) {
-            lo = anchor;
-          } else {
-            hi = anchor;
-            break;
-          }
-        }
+        // Anchors are sorted by line, so binary search finds the last one at or
+        // before the target without scanning the whole document.
+        const idx = findLastIndexWhere(anchors, (anchor) => anchor.line <= line);
+        const lo: LineAnchor = idx >= 0 ? anchors[idx] : { line: 1, top: 0 };
+        const hi: LineAnchor =
+          idx + 1 < anchors.length ? anchors[idx + 1] : { line: totalLines + 1, top: maxScroll };
 
         const span = hi.line - lo.line;
         const ratio = span > 0 ? Math.min(1, Math.max(0, (line + fraction - lo.line) / span)) : 0;
@@ -470,17 +504,15 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
             return { line, fraction: 0 };
           }
 
-          // Inverse of scrollToSourceLine: bracket scrollTop between anchors
-          let lo: LineAnchor = { line: 1, top: 0 };
-          let hi: LineAnchor = { line: totalLines + 1, top: maxScroll };
-          for (const anchor of anchors) {
-            if (anchor.top <= scrollTop) {
-              lo = anchor;
-            } else {
-              hi = anchor;
-              break;
-            }
-          }
+          // Inverse of scrollToSourceLine: bracket scrollTop between anchors.
+          // Anchors are ordered by top for a monotonically increasing scroll
+          // position, so binary search replaces the previous linear scan.
+          const idx = findLastIndexWhere(anchors, (anchor) => anchor.top <= scrollTop);
+          const lo: LineAnchor = idx >= 0 ? anchors[idx] : { line: 1, top: 0 };
+          const hi: LineAnchor =
+            idx + 1 < anchors.length
+              ? anchors[idx + 1]
+              : { line: totalLines + 1, top: maxScroll };
 
           const span = hi.top - lo.top;
           const ratio = span > 0 ? Math.min(1, Math.max(0, (scrollTop - lo.top) / span)) : 0;
@@ -592,8 +624,8 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
         >
           <Markdown
             urlTransform={documentUrlTransform}
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeSlug, rehypeHighlight]}
+            remarkPlugins={REMARK_PLUGINS}
+            rehypePlugins={REHYPE_PLUGINS}
             components={components}
           >
             {content}
@@ -604,4 +636,10 @@ export const Preview = forwardRef<PreviewHandle, PreviewProps>(
   }
 );
 
-Preview.displayName = 'Preview';
+PreviewComponent.displayName = 'Preview';
+
+/**
+ * Memoized so unrelated App state (toasts, cursor moves, settings dialogs)
+ * does not re-run the Markdown → HAST → HTML pipeline for an unchanged body.
+ */
+export const Preview = React.memo(PreviewComponent);
