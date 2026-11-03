@@ -27,6 +27,7 @@ import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@
 import { MarkdownAction } from '@/lib/markdownCommands';
 import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl, setWindowTheme } from '@/lib/native';
 import { resolveDocumentLink } from '@/lib/documentLinks';
+import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
@@ -580,14 +581,20 @@ const AppContent: React.FC<AppContentProps> = ({
   );
 
   // Clicking a task-list checkbox in the preview writes the flipped `- [ ]`
-  // marker back into the source document of the active tab.
+  // marker back into the source document of the active tab. The preview only
+  // reports the source line; the toggle is applied to the live content here so
+  // it cannot act on a stale (deferred) render.
   const handleToggleTask = useCallback(
-    (nextContent: string) => {
-      if (activeTabId) {
-        updateContent(activeTabId, nextContent);
-      }
+    (line: number) => {
+      const tabId = activeTabIdRef.current;
+      const current = tabsRef.current.find((tab) => tab.id === tabId);
+      if (!current) return;
+      const next = toggleTaskCheckboxAtLine(current.content, line);
+      if (next !== null) updateContent(current.id, next);
     },
-    [activeTabId, updateContent]
+    // Reads tab state through refs so the callback stays stable across
+    // keystrokes and does not defeat Preview's memoisation.
+    [updateContent]
   );
 
   // Stable identity so <Editor> does not re-dispatch StateEffect.reconfigure on

@@ -5,7 +5,7 @@ import { I18nProvider } from '../src/i18n';
 
 const CONTENT = ['- [ ] buy milk', '- [x] walk dog'].join('\n');
 
-const render = (props: { onToggleTask?: (next: string) => void }) =>
+const render = (props: { onToggleTask?: (line: number) => void }) =>
   renderToStaticMarkup(
     <I18nProvider language="en-US">
       <Preview content={CONTENT} {...props} />

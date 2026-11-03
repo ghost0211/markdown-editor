@@ -17,7 +17,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
-import { findSourceLineForElement, toggleTaskCheckboxAtLine } from '@/lib/taskList';
+import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import 'highlight.js/styles/github-dark.css';
@@ -57,8 +57,12 @@ export interface PreviewHandle {
 interface PreviewProps {
   content: string;
   onOpenLink?: (href: string) => Promise<void>;
-  /** Called with the new full content when a task-list checkbox is clicked. */
-  onToggleTask?: (nextContent: string) => void;
+  /**
+   * Called with the 1-based source line of a clicked task-list checkbox.
+   * The line mapping stays valid even while the rendered body lags behind the
+   * editor (deferred rendering), so the caller toggles its own live content.
+   */
+  onToggleTask?: (line: number) => void;
   /** Whether to show source line numbers in the gutter (like the editor). */
   showLineNumbers?: boolean;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
@@ -584,9 +588,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
               onChange={(event) => {
                 if (!onToggleTask) return;
                 const line = findSourceLineForElement(event.currentTarget);
-                if (line === null) return;
-                const next = toggleTaskCheckboxAtLine(content, line);
-                if (next !== null) onToggleTask(next);
+                if (line !== null) onToggleTask(line);
               }}
               className="cursor-pointer accent-blue-600"
             />
@@ -650,7 +652,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, t, onOpenLink, onToggleTask, content]
+      [scrollToTarget, t, onOpenLink, onToggleTask]
     );
 
     return (
