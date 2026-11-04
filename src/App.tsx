@@ -6,6 +6,7 @@ import { Sidebar } from '@/components/Sidebar';
 import { Editor, EditorHandle, cachedEditorStateIds, dropCachedEditorState } from '@/components/Editor';
 import { Preview, PreviewHandle } from '@/components/Preview';
 import { StatusBar } from '@/components/StatusBar';
+import { SplitPane } from '@/components/SplitPane';
 import { ConfirmModal } from '@/components/ConfirmModal';
 import { CompareModal } from '@/components/CompareModal';
 import { DiffView } from '@/components/DiffView';
@@ -25,13 +26,31 @@ import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
 import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl, setWindowTheme } from '@/lib/native';
+import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl, setWindowTheme, writeBinaryFile } from '@/lib/native';
 import { resolveDocumentLink } from '@/lib/documentLinks';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
+import { clampRatio } from '@/lib/splitPane';
+import { cycleTabIndex } from '@/lib/tabNavigation';
+import {
+  createImageAssetName,
+  createImageMarkdown,
+  getImageAltFromName,
+  getImageAssetDestination,
+} from '@/lib/imageAssets';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
+const STORAGE_SPLIT_RATIO_KEY = 'markdown_editor_split_ratio';
+
+function readFileAsDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
+    reader.readAsDataURL(file);
+  });
+}
 
 interface AppContentProps {
   settings: EditorSettings;
@@ -170,6 +189,18 @@ const AppContent: React.FC<AppContentProps> = ({
     const saved = localStorage.getItem(STORAGE_SIDEBAR_KEY);
     return saved !== null ? saved === 'true' : true;
   });
+
+  const [splitRatio, setSplitRatio] = useState(() => {
+    const saved = Number.parseFloat(localStorage.getItem(STORAGE_SPLIT_RATIO_KEY) || '');
+    return Number.isFinite(saved) ? clampRatio(saved) : 0.5;
+  });
+  const handleSplitRatioCommit = useCallback((ratio: number) => {
+    try {
+      localStorage.setItem(STORAGE_SPLIT_RATIO_KEY, String(ratio));
+    } catch {
+      // A layout preference is non-critical; ignore storage failures.
+    }
+  }, []);
 
   const toggleSidebar = useCallback(() => {
     setIsSidebarOpen((prev) => {
@@ -443,10 +474,13 @@ const AppContent: React.FC<AppContentProps> = ({
     };
   }, []);
 
-  // Auto-collapse sidebar on small screens
+  // Auto-collapse sidebar and use a single pane on small screens
+  const [isNarrowViewport, setIsNarrowViewport] = useState(() => window.innerWidth < 768);
   useEffect(() => {
     const handleResize = () => {
-      if (window.innerWidth < 768 && isSidebarOpen) {
+      const narrow = window.innerWidth < 768;
+      setIsNarrowViewport(narrow);
+      if (narrow && isSidebarOpen) {
         setIsSidebarOpen(false);
       }
     };
@@ -488,6 +522,19 @@ const AppContent: React.FC<AppContentProps> = ({
     return calculateStats(activeTab.content);
   }, [activeTab?.content]);
 
+  const handleCycleTab = useCallback(
+    (direction: 1 | -1) => {
+      const currentTabs = tabsRef.current;
+      const currentIndex = currentTabs.findIndex((tab) => tab.id === activeTabIdRef.current);
+      const nextIndex = cycleTabIndex(currentIndex, currentTabs.length, direction);
+      if (nextIndex !== null) setActiveTabId(currentTabs[nextIndex].id);
+    },
+    [setActiveTabId]
+  );
+
+  const handleNextTab = useCallback(() => handleCycleTab(1), [handleCycleTab]);
+  const handlePreviousTab = useCallback(() => handleCycleTab(-1), [handleCycleTab]);
+
   // Keyboard shortcuts integration. Disabled while a modal owns the keyboard so
   // Ctrl+N / Ctrl+W cannot tear down the document behind an open dialog.
   const isModalOpen =
@@ -503,6 +550,8 @@ const AppContent: React.FC<AppContentProps> = ({
     onToggleSidebar: toggleSidebar,
     onToggleShortcutsModal: handleToggleShortcuts,
     onToggleSettingsModal: handleToggleSettings,
+    onNextTab: handleNextTab,
+    onPreviousTab: handlePreviousTab,
     enabled: !isModalOpen,
   });
 
@@ -597,6 +646,74 @@ const AppContent: React.FC<AppContentProps> = ({
     [updateContent]
   );
 
+  /**
+   * Saves pasted/dropped images next to a saved desktop document and inserts
+   * relative Markdown links. Unsaved documents and the browser build embed a
+   * data URL instead, so the image never points at a transient clipboard file.
+   */
+  const handleImageFiles = useCallback(
+    async (files: File[], position: number) => {
+      const docId = activeTabIdRef.current;
+      const document = tabsRef.current.find((tab) => tab.id === docId);
+      if (!document || document.kind === 'diff' || files.length === 0) return;
+
+      const canUseAssets =
+        isTauri() && Boolean(document.filePath) && !document.filePath!.startsWith('browser://');
+      const snippets: string[] = [];
+      let lastError = '';
+
+      for (const file of files) {
+        try {
+          const alt = getImageAltFromName(file.name, t('markdown.imageAlt'));
+          if (canUseAssets) {
+            const destination = getImageAssetDestination(
+              document.filePath!,
+              createImageAssetName(file)
+            );
+            const bytes = new Uint8Array(await file.arrayBuffer());
+            await writeBinaryFile(destination.absolutePath, bytes);
+            snippets.push(createImageMarkdown(destination.markdownPath, alt));
+          } else {
+            snippets.push(createImageMarkdown(await readFileAsDataUrl(file), alt));
+          }
+        } catch (error) {
+          lastError = error instanceof Error ? error.message : String(error);
+        }
+      }
+
+      if (snippets.length > 0) {
+        // Re-read the document after async file I/O. If the user switched tabs,
+        // update the original tab rather than inserting into the visible one.
+        const latest = tabsRef.current.find((tab) => tab.id === docId);
+        if (latest) {
+          const at = Math.max(0, Math.min(position, latest.content.length));
+          const prefix = at > 0 && latest.content[at - 1] !== '\n' ? '\n\n' : '';
+          const suffix = at < latest.content.length && latest.content[at] !== '\n' ? '\n\n' : '';
+          const insertion = `${prefix}${snippets.join('\n\n')}${suffix}`;
+
+          if (activeTabIdRef.current === docId && editorRef.current) {
+            editorRef.current.insertText(insertion, at);
+          } else {
+            updateContent(docId, latest.content.slice(0, at) + insertion + latest.content.slice(at));
+          }
+          showToast(t('toasts.imageInserted', { count: snippets.length }), 'success');
+        }
+      }
+
+      if (lastError) {
+        showToast(t('toasts.imageInsertFailed', { error: lastError }), 'error');
+      }
+    },
+    [showToast, t, updateContent]
+  );
+
+  const handleImageFilesForEditor = useCallback(
+    (files: File[], position: number) => {
+      void handleImageFiles(files, position);
+    },
+    [handleImageFiles]
+  );
+
   // Stable identity so <Editor> does not re-dispatch StateEffect.reconfigure on
   // every parent render (see BASE_BASIC_SETUP in Editor.tsx).
   const handleEditorChange = useCallback(
@@ -608,8 +725,40 @@ const AppContent: React.FC<AppContentProps> = ({
     [activeTabId, updateContent]
   );
 
+  const editorContent = (
+    <Editor
+      ref={editorRef}
+      docId={activeTab?.id}
+      initialCursorLine={activeTab?.cursorLine}
+      initialCursorCol={activeTab?.cursorCol}
+      onImageFiles={handleImageFilesForEditor}
+      value={activeTab?.content || ''}
+      onChange={handleEditorChange}
+      onCursorChange={handleCursorChange}
+      onScroll={handleEditorScroll}
+      isDark={isDark}
+      fontSize={settings.fontSize}
+      lineHeight={settings.lineHeight}
+      tabSize={settings.tabSize}
+      wordWrap={settings.wordWrap}
+      lineNumbers={settings.lineNumbers}
+    />
+  );
+
+  const previewContent = (
+    <Preview
+      onOpenLink={handleOpenLink}
+      onToggleTask={handleToggleTask}
+      ref={previewRef}
+      content={activeTab?.content || ''}
+      sourcePath={activeTab?.filePath}
+      showLineNumbers={settings.lineNumbers}
+      onScroll={handlePreviewScroll}
+    />
+  );
+
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-white dark:bg-[#0f172a] text-slate-900 dark:text-slate-100 font-sans">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-app text-slate-900 dark:text-slate-100 font-sans">
       {/* 1. TitleBar & Quick Controls */}
       <TitleBar
         activeTab={activeTab}
@@ -679,7 +828,7 @@ const AppContent: React.FC<AppContentProps> = ({
         )}
 
         {/* Central Workspace */}
-        <main className="flex-1 flex overflow-hidden relative bg-slate-100/50 dark:bg-[#0b1120]">
+        <main className="flex-1 flex overflow-hidden relative bg-workspace">
           {activeTab?.kind === 'diff' && activeTab.diffRefs ? (
             (() => {
               const left = resolveDiffSide(activeTab.diffRefs!.left);
@@ -704,53 +853,30 @@ const AppContent: React.FC<AppContentProps> = ({
                 />
               );
             })()
+          ) : viewMode === 'split' && !isNarrowViewport ? (
+            <SplitPane
+              ratio={splitRatio}
+              onRatioChange={setSplitRatio}
+              onRatioCommit={handleSplitRatioCommit}
+              separatorLabel={t('splitPane.resize')}
+              left={<div className="h-full min-w-0 overflow-hidden">{editorContent}</div>}
+              right={
+                <div className="h-full min-w-0 overflow-hidden bg-app">
+                  {previewContent}
+                </div>
+              }
+            />
           ) : (
             <>
-              {/* Edit Mode / Split Left */}
+              {/* Edit mode, or split mode collapsed to one pane on narrow windows */}
               {(viewMode === 'edit' || viewMode === 'split') && (
-            <div
-              className={`h-full overflow-hidden ${
-                viewMode === 'split'
-                  ? 'w-1/2 border-r border-slate-200 dark:border-slate-800'
-                  : 'w-full'
-              }`}
-            >
-              <Editor
-                ref={editorRef}
-                docId={activeTab?.id}
-                initialCursorLine={activeTab?.cursorLine}
-                initialCursorCol={activeTab?.cursorCol}
-                value={activeTab?.content || ''}
-                onChange={handleEditorChange}
-                onCursorChange={handleCursorChange}
-                onScroll={handleEditorScroll}
-                isDark={isDark}
-                fontSize={settings.fontSize}
-                lineHeight={settings.lineHeight}
-                tabSize={settings.tabSize}
-                wordWrap={settings.wordWrap}
-                lineNumbers={settings.lineNumbers}
-              />
-            </div>
-          )}
-
-          {/* Read Mode / Split Right */}
-          {(viewMode === 'read' || viewMode === 'split') && (
-            <div
-              className={`h-full overflow-hidden bg-white dark:bg-[#0f172a] ${
-                viewMode === 'split' ? 'w-1/2' : 'w-full'
-              }`}
-            >
-              <Preview
-                onOpenLink={handleOpenLink}
-                onToggleTask={handleToggleTask}
-                ref={previewRef}
-                content={activeTab?.content || ''}
-                showLineNumbers={settings.lineNumbers}
-                onScroll={handlePreviewScroll}
-              />
-            </div>
-          )}
+                <div className="h-full w-full overflow-hidden">{editorContent}</div>
+              )}
+              {viewMode === 'read' && (
+                <div className="h-full w-full overflow-hidden bg-app">
+                  {previewContent}
+                </div>
+              )}
             </>
           )}
         </main>

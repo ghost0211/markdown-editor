@@ -405,6 +405,18 @@ mod commands {
         }
     }
 
+    /// Reads local binary content for preview media (images inserted by
+    /// paste/drop). Uses the same explicit path-based command boundary as
+    /// read_text_file instead of enabling a global asset-protocol scope.
+    #[tauri::command]
+    pub fn read_binary_file(path: String) -> Result<Vec<u8>, String> {
+        let p = Path::new(&path);
+        if !p.exists() {
+            return Err(format!("文件不存在: {}", path));
+        }
+        fs::read(p).map_err(|e| format!("读取二进制文件失败 ({}): {}", path, e))
+    }
+
     /// Returns the file's last-modified time in milliseconds since the Unix epoch.
     /// Used by the frontend to detect external modifications to open documents.
     #[tauri::command]
@@ -1208,6 +1220,7 @@ pub fn run() {
         .manage(pending_open_files)
         .invoke_handler(tauri::generate_handler![
             commands::read_text_file,
+            commands::read_binary_file,
             commands::get_file_mtime,
             commands::write_text_file,
             commands::write_binary_file,

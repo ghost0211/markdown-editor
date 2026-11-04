@@ -1,5 +1,6 @@
 import { useEffect } from 'react';
 import { ViewMode } from '@/types';
+import { getTabCycleDirection } from '@/lib/tabNavigation';
 
 interface KeyboardShortcutsOptions {
   onNew: () => void;
@@ -11,6 +12,8 @@ interface KeyboardShortcutsOptions {
   onToggleSidebar: () => void;
   onToggleShortcutsModal: () => void;
   onToggleSettingsModal?: () => void;
+  onNextTab?: () => void;
+  onPreviousTab?: () => void;
   /**
    * When false, document-level shortcuts (Ctrl+N / Ctrl+W / ...) are ignored.
    * Used while a modal dialog owns the keyboard, so typing inside a dialog can
@@ -29,6 +32,8 @@ export function useKeyboardShortcuts({
   onToggleSidebar,
   onToggleShortcutsModal,
   onToggleSettingsModal,
+  onNextTab,
+  onPreviousTab,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -56,6 +61,16 @@ export function useKeyboardShortcuts({
       // Everything below acts on the document itself and must not fire while a
       // modal dialog owns the keyboard.
       if (!enabled) return;
+
+      // Browser-style tab cycling. Keep focus where it is (usually the editor)
+      // while TabBar scrolls the newly active tab into view.
+      const cycleDirection = getTabCycleDirection(e.key, isCtrlOrMeta, e.shiftKey);
+      if (cycleDirection !== null) {
+        e.preventDefault();
+        if (cycleDirection === 1) onNextTab?.();
+        else onPreviousTab?.();
+        return;
+      }
 
       // Ctrl + Shift + S: Save As
       if (isCtrlOrMeta && e.shiftKey && (e.key === 's' || e.key === 'S')) {
@@ -133,6 +148,8 @@ export function useKeyboardShortcuts({
     onToggleSidebar,
     onToggleShortcutsModal,
     onToggleSettingsModal,
+    onNextTab,
+    onPreviousTab,
     enabled,
   ]);
 }

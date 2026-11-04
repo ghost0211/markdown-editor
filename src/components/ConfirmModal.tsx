@@ -121,7 +121,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
     >
       <div
         ref={modalRef}
-        className="w-full max-w-md bg-white dark:bg-[#182234] rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-slate-800 dark:text-slate-100"
+        className="w-full max-w-md bg-elevated rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 overflow-hidden text-slate-800 dark:text-slate-100"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -156,7 +156,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end space-x-2 px-4 py-3 bg-slate-50 dark:bg-[#131b2a] border-t border-slate-200 dark:border-slate-700/80">
+        <div className="flex items-center justify-end space-x-2 px-4 py-3 bg-panel border-t border-slate-200 dark:border-slate-700/80">
           <button
             ref={cancelBtnRef}
             type="button"

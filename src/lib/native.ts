@@ -117,6 +117,24 @@ export async function readTextFile(path: string): Promise<string> {
 }
 
 /**
+ * Reads binary file content for local preview media. Kept separate from text
+ * reads so images are never decoded as UTF-8 or exposed through a broad asset
+ * protocol scope.
+ */
+export async function readBinaryFile(path: string): Promise<Uint8Array> {
+  if (!isTauri()) {
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
+  }
+  try {
+    const bytes = await invoke<number[]>('read_binary_file', { path });
+    return new Uint8Array(bytes);
+  } catch (err: unknown) {
+    const msg = typeof err === 'string' ? err : (err as Error)?.message || '读取二进制文件失败';
+    throw new Error(msg);
+  }
+}
+
+/**
  * Returns the file's last-modified time in milliseconds since the Unix epoch.
  * Returns null in Web mode or on error (e.g. file deleted), allowing callers
  * to treat it as "unknown" without throwing.

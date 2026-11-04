@@ -86,6 +86,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         { key: 'Ctrl + S', desc: t('shortcutsModal.saveFile') },
         { key: 'Ctrl + Shift + S', desc: t('shortcutsModal.saveAsFile') },
         { key: 'Ctrl + W', desc: t('shortcutsModal.closeTab') },
+        { key: 'Ctrl + Tab / Ctrl + PageDown', desc: t('shortcutsModal.nextTab') },
+        { key: 'Ctrl + Shift + Tab / Ctrl + PageUp', desc: t('shortcutsModal.previousTab') },
       ],
     },
     {
@@ -104,6 +106,8 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       items: [
         { key: 'Ctrl + B', desc: t('shortcutsModal.bold') },
         { key: 'Ctrl + I', desc: t('shortcutsModal.italic') },
+        { key: 'Ctrl + K', desc: t('shortcutsModal.insertLink') },
+        { key: 'Enter', desc: t('shortcutsModal.continueList') },
         { key: 'Ctrl + Z / Y', desc: t('shortcutsModal.undoRedo') },
         { key: 'Ctrl + F', desc: t('shortcutsModal.find') },
         { key: 'Ctrl + H', desc: t('shortcutsModal.replace') },
@@ -125,7 +129,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
     >
       <div
         ref={modalRef}
-        className="w-full max-w-xl bg-white dark:bg-[#182234] rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden text-slate-800 dark:text-slate-100 max-h-[85vh] flex flex-col"
+        className="w-full max-w-xl bg-elevated rounded-lg shadow-2xl border border-slate-200 dark:border-slate-700 overflow-hidden text-slate-800 dark:text-slate-100 max-h-[85vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -152,7 +156,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
               <h4 className="font-semibold text-slate-500 dark:text-slate-400 text-[11px] uppercase tracking-wider">
                 {group.title}
               </h4>
-              <div className="bg-slate-50 dark:bg-[#111927] rounded-lg p-2 border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-200/60 dark:divide-slate-800">
+              <div className="bg-panel rounded-lg p-2 border border-slate-200/80 dark:border-slate-800 divide-y divide-slate-200/60 dark:divide-slate-800">
                 {group.items.map((item) => (
                   <div
                     key={item.key}
@@ -172,7 +176,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         </div>
 
         {/* Footer */}
-        <div className="flex items-center justify-end px-4 py-3 bg-slate-50 dark:bg-[#131b2a] border-t border-slate-200 dark:border-slate-700">
+        <div className="flex items-center justify-end px-4 py-3 bg-panel border-t border-slate-200 dark:border-slate-700">
           <button
             type="button"
             onClick={onClose}

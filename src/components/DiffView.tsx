@@ -143,7 +143,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
   );
 
   return (
-    <div className="h-full w-full flex flex-col overflow-hidden bg-white dark:bg-[#0f172a]">
+    <div className="h-full w-full flex flex-col overflow-hidden bg-app">
       <div className="flex shrink-0 border-b border-slate-200 dark:border-slate-800 divide-x divide-slate-200 dark:divide-slate-800">
         {renderSideHeader(leftTitle, leftReadOnly)}
         {renderSideHeader(rightTitle, rightReadOnly)}

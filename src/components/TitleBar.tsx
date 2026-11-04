@@ -112,7 +112,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       : t('titleBar.themeSystem');
 
   return (
-    <header className="h-10 bg-slate-100 dark:bg-[#182234] border-b border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-xs text-slate-600 dark:text-slate-300 shrink-0">
+    <header className="h-10 bg-chrome border-b border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-xs text-slate-600 dark:text-slate-300 shrink-0">
       {/* Left: App Logo & Quick File Actions */}
       <div className="flex items-center space-x-1.5">
         <button
@@ -242,7 +242,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
             <div
               role="menu"
               aria-label={t('titleBar.exportMenuAriaLabel')}
-              className="absolute left-0 top-full mt-1.5 w-52 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
+              className="absolute left-0 top-full mt-1.5 w-52 bg-elevated border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
             >
               <button
                 type="button"

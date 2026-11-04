@@ -12,7 +12,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 1. **Refined Windows Desktop Layout**:
    - Top title and quick action bar (New, Open, Save, Save As, Export Word/PDF/HTML, View Switching, Theme Toggle, Preferences, Keyboard Shortcuts Help).
    - Smart left-hand Table of Contents (TOC) outline supporting H1-H6 heading hierarchy parsing and instant navigation.
-   - Central multi-view workspace supporting three modes: **Editor Only**, **Split View**, and **Preview Only**.
+   - Central multi-view workspace supporting three modes: **Editor Only**, **Split View**, and **Preview Only**. The split divider supports pointer dragging and keyboard resizing, with a persisted ratio.
    - Immersive bottom status bar: Real-time word count (smart detection of Chinese characters and English words), character count, line count, cursor position (Ln/Col), dirty save status, and estimated reading time.
    - Responsive design: Automatically collapses the sidebar on compact screens with instant shortcut toggle.
 
@@ -25,7 +25,9 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 3. **Professional Markdown Editing Experience**:
    - Powered by **CodeMirror 6**, providing syntax highlighting, line numbers, word wrapping, bracket matching, and active line highlighting.
    - Toolbar formatting shortcuts: Bold, Italic, Strikethrough, Blockquote, Inline Code, Multi-Language Code Blocks, Unordered/Ordered/Task Lists, Links, Images, Tables, and Horizontal Rules.
-   - Smart selection wrapping and cursor positioning.
+   - Smart selection wrapping and cursor positioning, with `Ctrl+B` / `Ctrl+I` / `Ctrl+K` formatting shortcuts.
+   - Enter continues lists, increments ordered items and resets task items to unchecked; Enter on an empty item exits the list.
+   - Paste or drop images: saved desktop documents copy them into a sibling `assets/` directory with relative links; unsaved documents and Web mode embed them.
 
 4. **Native File System Capabilities**:
    - Powered by a Rust backend integrating `rfd` native file dialogs and `std::fs` for sub-millisecond file operations.
@@ -65,7 +67,8 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Two-way navigation: jumps to CodeMirror lines in Edit/Split modes and scrolls to preview anchors in Preview mode.
 
 8. **GFM Rich-Text Rendering & Security Sandbox**:
-   - Full GitHub Flavored Markdown support (tables, task lists, strikethrough, autolinks).
+   - Full GitHub Flavored Markdown support (tables, clickable task lists, strikethrough, autolinks).
+   - KaTeX inline/block math and Mermaid diagram previews.
    - Code syntax highlighting (Rust, TypeScript, JavaScript, Python, CSS, HTML, JSON, etc.) with language tags and copy-to-clipboard buttons.
    - **XSS Sandbox**: Blocks dangerous raw HTML injections.
    - **Protocol Whitelist**: Restricts external links strictly to `http`, `https`, and `mailto`, opening safely in the default system browser.
@@ -107,7 +110,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 | **HTML (.html) Export** | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-highlight`, `rehype-sanitize`, `rehype-stringify` | Standalone single-page HTML with embedded CSS, responsive styling, syntax highlighting, and XSS sanitization |
 | **Frontend Framework** | React 18 + TypeScript + Vite | Modern UI components with fast hot module replacement |
 | **Editor Core** | CodeMirror 6 (`@uiw/react-codemirror`) | Modular code editor with Markdown highlighting and custom themes |
-| **Markdown Rendering** | `react-markdown`, `remark-gfm`, `rehype-slug`, `rehype-highlight` | GFM AST parsing, anchor generation, and syntax highlighting |
+| **Markdown Rendering** | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-katex`, `mermaid` | GFM, anchors, syntax highlighting, math, and diagrams |
 | **Icons & Styling** | `lucide-react`, Tailwind CSS | Polished Windows desktop interface without emoji icons |
 | **Testing Framework** | Vitest | Unit and acceptance testing for algorithms, security, and UI components |
 
@@ -130,6 +133,10 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 | `F1` or `Ctrl + /` | Open Keyboard Shortcuts help | Global |
 | `Ctrl + B` | Format selection as Bold | Editor |
 | `Ctrl + I` | Format selection as Italic | Editor |
+| `Ctrl + K` | Insert link | Editor |
+| `Enter` | Continue a list; exit on an empty item | Editor |
+| `Ctrl + Tab` / `Ctrl + PageDown` | Next tab | Global |
+| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | Previous tab | Global |
 | `Ctrl + Z / Y` | Undo / Redo | Editor |
 
 ---

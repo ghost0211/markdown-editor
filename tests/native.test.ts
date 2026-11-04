@@ -8,6 +8,7 @@ import {
   writeTextFile,
   writeHtmlFile,
   readTextFile,
+  readBinaryFile,
   exportPdfFromHtml,
   drainPendingOpenFiles,
   subscribeOpenFiles,
@@ -400,6 +401,10 @@ describe('Native Export Wrappers (native.ts)', () => {
       storageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({ language: 'en-US' });
 
       await expect(readTextFile('C:/test.md')).rejects.toThrow(
+        /Web browser environment does not support reading local files directly by path/
+      );
+
+      await expect(readBinaryFile('C:/image.png')).rejects.toThrow(
         /Web browser environment does not support reading local files directly by path/
       );
 

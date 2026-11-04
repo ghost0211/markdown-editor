@@ -12,7 +12,7 @@
 1. **精美 Windows 桌面布局**：
    - 顶部标题与快速操作栏（新建/打开/保存/另存为/导出 Word、PDF 与 HTML/视图切换/主题切换/偏好设置/快捷键帮助）。
    - 左侧智能文档大纲（TOC），支持 H1-H6 目录树解析与快速跳转。
-   - 中央工作区，支持三种视图切换：**纯编辑模式**、**双栏分屏模式**、**纯阅读模式**。
+   - 中央工作区，支持三种视图切换：**纯编辑模式**、**双栏分屏模式**、**纯阅读模式**；双栏分隔线支持鼠标拖拽与键盘调整，比例自动记忆。
    - 底部沉浸式状态栏：实时显示字数（中文字符与英文单词智能统计）、字符数、行数、光标行列（Ln/Col）、保存状态及预估阅读时间。
    - 响应式设计：小屏幕或窄窗口自动收起侧边栏，支持快捷键随时唤出。
 
@@ -25,7 +25,9 @@
 3. **专业级 Markdown 编辑体验**：
    - 基于 **CodeMirror 6**，提供专业的 Markdown 语法高亮、行号、自动换行、括号匹配与行聚焦。
    - 工具栏快捷插入：粗体、斜体、删除线、引用块、行内代码、多语言代码块、无序/有序/任务列表、超链接、图片、表格与分割线。
-   - 智能选区包裹与光标自动定位。
+   - 智能选区包裹与光标自动定位，支持 `Ctrl+B` / `Ctrl+I` / `Ctrl+K` 格式化快捷键。
+   - 列表回车自动续行、有序列表自动递增、任务列表新项自动恢复未勾选；空列表项回车退出列表。
+   - 支持粘贴或拖入图片：已保存文档自动写入旁边 `assets/` 并插入相对链接，未保存文档与 Web 模式使用内嵌图片。
 
 4. **原生级文件系统能力**：
    - Rust 后端集成 `rfd` 原生文件选择对话框与 `std::fs` 文件读写，保证毫秒级响应。
@@ -67,7 +69,8 @@
    - 点击大纲条目：在编辑/分屏模式下精确跳转至 CodeMirror 对应行；在阅读/分屏模式下平滑滚动至预览锚点。
 
 8. **GFM 富文本渲染与安全防护**：
-   - 全面支持 GitHub Flavored Markdown（表格对齐、待办任务复选框、删除线、自动链接等）。
+   - 全面支持 GitHub Flavored Markdown（表格对齐、可点击待办任务复选框、删除线、自动链接等）。
+   - 支持 KaTeX 行内/块级数学公式与 Mermaid 图表预览。
    - 代码块语法高亮（Rust、TypeScript、JavaScript、Python、CSS、HTML、JSON 等）。
    - 代码块顶部包含语言标签与「一键复制代码」按钮。
    - **XSS 安全防护**：默认拦截危险原生 HTML 注入，保证本地应用与文档浏览安全。
@@ -112,7 +115,7 @@
 | **HTML (.html) 导出** | `unified`, `remark-parse`, `remark-gfm`, `remark-rehype`, `rehype-highlight`, `rehype-sanitize`, `rehype-stringify` | 独立单页 HTML 生成（内嵌 CSS 样式）、响应式排版、代码高亮与严格安全净化 |
 | **前端框架** | React 18 + TypeScript + Vite | 现代化组件开发与极速热重载 |
 | **核心编辑器** | CodeMirror 6 (`@uiw/react-codemirror`) | 现代模块化代码编辑器，Markdown 语法高亮与主题 |
-| **Markdown 渲染** | `react-markdown`, `remark-gfm`, `rehype-slug`, `rehype-highlight` | GFM 解析、标题锚点生成与代码高亮 |
+| **Markdown 渲染** | `react-markdown`, `remark-gfm`, `remark-math`, `rehype-katex`, `mermaid` | GFM、标题锚点、代码高亮、数学公式与图表 |
 | **图标与样式** | `lucide-react`, Tailwind CSS | 精致无 Emoji 的 Windows 原生质感界面 |
 | **测试框架** | Vitest | 快速纯函数、转换器、安全性与逻辑单元测试 |
 
@@ -135,6 +138,10 @@
 | `F1` 或 `Ctrl + /` | 打开快捷键帮助窗口 |
 | `Ctrl + B` | 选中文本加粗 |
 | `Ctrl + I` | 选中文本斜体 |
+| `Ctrl + K` | 插入链接 |
+| `Enter` | 在列表中续行，空列表项退出列表 |
+| `Ctrl + Tab` / `Ctrl + PageDown` | 下一个标签页 |
+| `Ctrl + Shift + Tab` / `Ctrl + PageUp` | 上一个标签页 |
 | `Ctrl + Z / Y` | 撤销 / 重做 |
 
 ---

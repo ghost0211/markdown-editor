@@ -27,7 +27,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   }[viewMode];
 
   return (
-    <footer className="h-6 bg-slate-100 dark:bg-[#131b2a] border-t border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-[11px] text-slate-500 dark:text-slate-400 font-sans shrink-0">
+    <footer className="h-6 bg-chrome border-t border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-[11px] text-slate-500 dark:text-slate-400 font-sans shrink-0">
       {/* Left: Document Statistics */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-1" title={t('statusBar.wordsTooltip')}>

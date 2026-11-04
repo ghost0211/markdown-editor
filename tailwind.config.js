@@ -15,6 +15,14 @@ export default {
   theme: {
     extend: {
       colors: {
+        // Semantic surfaces backed by CSS variables, so light/dark colors live
+        // in one place instead of scattered arbitrary dark:bg-[#...] values.
+        app: "rgb(var(--color-bg-app) / <alpha-value>)",
+        chrome: "rgb(var(--color-bg-chrome) / <alpha-value>)",
+        panel: "rgb(var(--color-bg-panel) / <alpha-value>)",
+        workspace: "rgb(var(--color-bg-workspace) / <alpha-value>)",
+        elevated: "rgb(var(--color-bg-elevated) / <alpha-value>)",
+        edge: "rgb(var(--color-border) / <alpha-value>)",
         brand: {
           50: "#eff6ff",
           100: "#dbeafe",

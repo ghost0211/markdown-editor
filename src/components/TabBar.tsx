@@ -301,7 +301,7 @@ export const TabBar: React.FC<TabBarProps> = ({
 
   return (
     <div
-      className="h-9 bg-slate-200/80 dark:bg-[#131b2a] border-b border-slate-300 dark:border-slate-800 flex items-center px-1 select-none shrink-0 overflow-hidden"
+      className="h-9 bg-chrome border-b border-slate-300 dark:border-slate-800 flex items-center px-1 select-none shrink-0 overflow-hidden"
       onWheel={handleWheel}
       onContextMenu={handleBarContextMenu}
       role="tablist"
@@ -364,7 +364,7 @@ export const TabBar: React.FC<TabBarProps> = ({
                 'group relative flex items-center h-7 px-2.5 max-w-[200px] min-w-[110px] text-xs rounded-t-md cursor-pointer border-t border-x transition-all select-none',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
                 isActive
-                  ? 'bg-white dark:bg-[#0f172a] text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-800 border-b-white dark:border-b-[#0f172a] font-medium shadow-sm z-10'
+                  ? 'bg-app text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-800 border-b-app font-medium shadow-sm z-10'
                   : 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-300/60 dark:hover:bg-slate-800/60'
               )}
               title={tab.filePath || tab.title}
@@ -449,7 +449,7 @@ export const TabBar: React.FC<TabBarProps> = ({
           role="menu"
           aria-label={t('tabBar.contextMenuAriaLabel')}
           style={{ left: `${contextMenu.x}px`, top: `${contextMenu.y}px` }}
-          className="fixed z-50 w-56 p-1 bg-white dark:bg-[#1e293b] border border-slate-200 dark:border-slate-700/80 rounded-lg shadow-xl text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-75 select-none"
+          className="fixed z-50 w-56 p-1 bg-elevated border border-slate-200 dark:border-slate-700/80 rounded-lg shadow-xl text-xs text-slate-700 dark:text-slate-200 animate-in fade-in zoom-in-95 duration-75 select-none"
         >
           {targetTab ? (
             <>

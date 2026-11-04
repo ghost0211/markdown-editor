@@ -1,8 +1,13 @@
 import { defaultUrlTransform } from 'react-markdown';
 
 /** Preserve local file destinations without allowing executable URL schemes. */
-export function documentUrlTransform(url: string): string {
+export function documentUrlTransform(url: string, key = ''): string {
   if (/^(?:[a-z]:[/\\]|file:\/\/)/i.test(url)) return url;
+  // Pasted/embedded images use data URLs in unsaved documents. Allow only
+  // inert raster image MIME types and only for `src`, never for links.
+  if (key === 'src' && /^data:image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon);base64,/i.test(url)) {
+    return url;
+  }
   return defaultUrlTransform(url);
 }
 

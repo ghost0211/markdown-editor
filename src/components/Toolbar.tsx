@@ -32,7 +32,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
 
   return (
     <div
-      className="h-9 bg-slate-50 dark:bg-[#111927] border-b border-slate-200 dark:border-slate-800 px-3 flex items-center space-x-1 select-none overflow-x-auto no-scrollbar shrink-0 text-xs"
+      className="h-9 bg-panel border-b border-slate-200 dark:border-slate-800 px-3 flex items-center space-x-1 select-none overflow-x-auto no-scrollbar shrink-0 text-xs"
       role="toolbar"
       aria-label={t('toolbar.ariaLabel')}
     >

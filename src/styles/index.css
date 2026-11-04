@@ -5,6 +5,24 @@
 @tailwind utilities;
 
 @layer base {
+  :root {
+    --color-bg-app: 255 255 255;
+    --color-bg-chrome: 241 245 249;
+    --color-bg-panel: 248 250 252;
+    --color-bg-workspace: 248 250 252;
+    --color-bg-elevated: 255 255 255;
+    --color-border: 226 232 240;
+  }
+
+  .dark {
+    --color-bg-app: 15 23 42;
+    --color-bg-chrome: 19 27 42;
+    --color-bg-panel: 17 25 39;
+    --color-bg-workspace: 11 18 32;
+    --color-bg-elevated: 24 34 52;
+    --color-border: 30 41 59;
+  }
+
   * {
     box-sizing: border-box;
   }
@@ -89,23 +107,17 @@
   opacity: 0.6;
 }
 
-/* Dark mode styling for codemirror background */
-.dark .cm-editor {
-  background-color: #0f172a !important;
+/* CodeMirror uses the same semantic surfaces as the surrounding app chrome. */
+.cm-editor {
+  background-color: rgb(var(--color-bg-app)) !important;
 }
-.dark .cm-gutters {
-  background-color: #0f172a !important;
-  border-right: 1px solid #1e293b !important;
+.cm-gutters {
+  background-color: rgb(var(--color-bg-panel)) !important;
+  border-right: 1px solid rgb(var(--color-border)) !important;
 }
 
-/* Light mode styling for codemirror background */
 .cm-editor:not(.cm-focused) {
   outline: none !important;
-}
-
-.cm-gutters {
-  background-color: #f8fafc !important;
-  border-right: 1px solid #e2e8f0 !important;
 }
 
 /* Diff (MergeView) layout:

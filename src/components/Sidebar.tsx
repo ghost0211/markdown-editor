@@ -56,7 +56,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   if (!isOpen) return null;
 
   return (
-    <aside className="w-64 bg-slate-50 dark:bg-[#111927] border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 select-none text-xs h-full z-20">
+    <aside className="w-64 bg-panel border-r border-slate-200 dark:border-slate-800 flex flex-col shrink-0 select-none text-xs h-full z-20">
       {/* Header */}
       <div className="h-9 px-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between font-medium text-slate-700 dark:text-slate-200">
         <div className="flex items-center space-x-1.5">
@@ -85,7 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
               aria-label={t('sidebar.searchPlaceholder')}
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="w-full bg-white dark:bg-[#182234] border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="w-full bg-elevated border border-slate-200 dark:border-slate-700 rounded-md pl-8 pr-2 py-1 text-xs text-slate-800 dark:text-slate-200 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             {search && (
               <button

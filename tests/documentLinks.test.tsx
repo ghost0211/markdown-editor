@@ -24,6 +24,14 @@ describe('document links', () => {
     expect(() => resolveDocumentLink('test.md', null)).toThrow('保存');
     expect(() => resolveDocumentLink('test.md', 'browser://index.md')).toThrow('保存');
   });
+  it('allows raster data URLs only for image sources', () => {
+    const data = 'data:image/png;base64,iVBORw0KGgo=';
+    const html = renderToStaticMarkup(
+      <Markdown urlTransform={documentUrlTransform}>{`![embedded](<${data}>) [unsafe](${data})`}</Markdown>
+    );
+    expect(html).toContain(`src="${data}"`);
+    expect(html).not.toContain(`href="${data}"`);
+  });
   it('renders local destinations while blocking executable schemes', () => {
     const html = renderToStaticMarkup(<Markdown urlTransform={documentUrlTransform}>{'[local](file:///D:/docs/a.md) [relative](../中文.md) [unsafe](javascript:alert)'}</Markdown>);
     expect(html).toContain('href="file:///D:/docs/a.md"');

@@ -14,6 +14,8 @@ import { EditorView, ViewUpdate } from '@codemirror/view';
 import { EditorState, Text } from '@codemirror/state';
 import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
+import { createMarkdownEditingKeymap } from '@/lib/editorKeymap';
+import { filterImageFiles } from '@/lib/imageAssets';
 import {
   SerializedEditorState,
   restoreEditorInitialState,
@@ -27,6 +29,8 @@ export interface EditorHandle {
   focus: () => void;
   getScrollTop: () => number;
   setScrollTop: (top: number) => void;
+  /** Inserts Markdown at a source position without replacing the whole undo stack. */
+  insertText: (text: string, position?: number) => void;
   /** Scrolls so the given source line sits at the top of the viewport. */
   scrollToLine: (line: number, fraction?: number) => void;
   /** Returns the first visible source line and the scrolled fraction within it. */
@@ -51,6 +55,8 @@ interface EditorProps {
   /** Cursor position to restore the first time a document is opened. */
   initialCursorLine?: number;
   initialCursorCol?: number;
+  /** Receives pasted/dropped image files and the source position to insert at. */
+  onImageFiles?: (files: File[], position: number) => void;
 }
 
 /**
@@ -119,6 +125,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       docId,
       initialCursorLine = 1,
       initialCursorCol = 1,
+      onImageFiles,
     },
     ref
   ) => {
@@ -129,6 +136,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     // list without making the extension list depend on its identity.
     const onScrollRef = useRef(onScroll);
     onScrollRef.current = onScroll;
+    const onImageFilesRef = useRef(onImageFiles);
+    onImageFilesRef.current = onImageFiles;
 
     // Stable for as long as the user's line-number preference is unchanged.
     const basicSetup = useMemo(() => ({ ...BASE_BASIC_SETUP, lineNumbers }), [lineNumbers]);
@@ -142,6 +151,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     // CodeMirror extensions
     const extensions = useMemo(() => {
       const ext = [
+        createMarkdownEditingKeymap({ t, language }),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
         EditorState.tabSize.of(tabSize),
         indentUnit.of(' '.repeat(tabSize)),
@@ -162,6 +172,30 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
               handler(target.scrollTop, target.scrollHeight, target.clientHeight);
             }
           },
+          paste: (event, view) => {
+            const handler = onImageFilesRef.current;
+            if (!handler) return;
+            const images = filterImageFiles(event.clipboardData?.files || []);
+            if (images.length === 0) return;
+            event.preventDefault();
+            handler(images, view.state.selection.main.from);
+          },
+          dragover: (event) => {
+            if (onImageFilesRef.current && event.dataTransfer?.types.includes('Files')) {
+              event.preventDefault();
+            }
+          },
+          drop: (event, view) => {
+            const handler = onImageFilesRef.current;
+            if (!handler) return;
+            const images = filterImageFiles(event.dataTransfer?.files || []);
+            if (images.length === 0) return;
+            event.preventDefault();
+            const position =
+              view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+              view.state.selection.main.from;
+            handler(images, position);
+          },
         }),
       ];
 
@@ -170,7 +204,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       }
 
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, t, language]);
 
     /**
      * Editor state to start this document from.
@@ -265,6 +299,19 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           const view = cmRef.current?.view;
           if (!view) return;
           executeCodeMirrorAction(view, action, { t, language });
+        },
+
+        insertText: (text: string, position?: number) => {
+          const view = cmRef.current?.view;
+          if (!view || !text) return;
+          const at = Math.max(0, Math.min(position ?? view.state.selection.main.from, view.state.doc.length));
+          view.dispatch({
+            changes: { from: at, to: at, insert: text },
+            selection: { anchor: at + text.length },
+            scrollIntoView: true,
+            userEvent: 'input',
+          });
+          view.focus();
         },
 
         focus: () => {

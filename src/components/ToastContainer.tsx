@@ -26,10 +26,10 @@ export const ToastContainer: React.FC<ToastContainerProps> = ({ toasts, onDismis
         }[toast.type];
 
         const bgBorder = {
-          success: 'border-emerald-500/30 bg-white dark:bg-[#182234] text-slate-800 dark:text-slate-100',
-          error: 'border-red-500/30 bg-white dark:bg-[#182234] text-slate-800 dark:text-slate-100',
-          warning: 'border-amber-500/30 bg-white dark:bg-[#182234] text-slate-800 dark:text-slate-100',
-          info: 'border-blue-500/30 bg-white dark:bg-[#182234] text-slate-800 dark:text-slate-100',
+          success: 'border-emerald-500/30 bg-elevated text-slate-800 dark:text-slate-100',
+          error: 'border-red-500/30 bg-elevated text-slate-800 dark:text-slate-100',
+          warning: 'border-amber-500/30 bg-elevated text-slate-800 dark:text-slate-100',
+          info: 'border-blue-500/30 bg-elevated text-slate-800 dark:text-slate-100',
         }[toast.type];
 
         return (

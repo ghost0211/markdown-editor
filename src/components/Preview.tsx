@@ -12,7 +12,9 @@ import React, {
 } from 'react';
 import Markdown, { Components, ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkMath from 'remark-math';
 import { remarkCjkFriendlyEmphasis } from '@/lib/remarkCjkFriendlyEmphasis';
+import rehypeKatex from 'rehype-katex';
 import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
@@ -20,7 +22,10 @@ import { documentUrlTransform } from '@/lib/documentLinks';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy } from 'lucide-react';
 import { useI18n } from '@/i18n';
+import { MermaidBlock } from './MermaidBlock';
+import { LocalImage } from '@/components/LocalImage';
 import 'highlight.js/styles/github-dark.css';
+import 'katex/dist/katex.min.css';
 
 /**
  * Centralized color constants for code blocks (GitHub Dark compatible).
@@ -35,13 +40,15 @@ export const CODE_THEME = {
   text: '#c9d1d9',
 } as const;
 
+export { MermaidBlock } from './MermaidBlock';
+
 /**
  * Hoisted to module scope so their references stay stable across renders.
  * Passing fresh array literals here makes react-markdown rebuild its internal
  * processor pipeline on every keystroke.
  */
-const REMARK_PLUGINS = [remarkGfm, remarkCjkFriendlyEmphasis];
-const REHYPE_PLUGINS = [rehypeSlug, rehypeHighlight];
+const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkCjkFriendlyEmphasis];
+const REHYPE_PLUGINS = [rehypeKatex, rehypeSlug, rehypeHighlight];
 
 export interface PreviewHandle {
   scrollToAnchor: (slug: string, line?: number) => void;
@@ -67,6 +74,7 @@ interface PreviewProps {
   showLineNumbers?: boolean;
   onScroll?: (scrollTop: number, scrollHeight: number, clientHeight: number) => void;
   className?: string;
+  sourcePath?: string | null;
 }
 
 /** Minimal structural view of a hast node, sufficient for line extraction. */
@@ -328,15 +336,23 @@ export const BlockCode: React.FC<CodeProps> = ({
 
 /**
  * Dispatcher component mapped to markdown `code` tag.
- * Reads PreContext to route to either InlineCode or BlockCode cleanly,
+ * Reads PreContext to route to InlineCode, MermaidBlock, or BlockCode cleanly,
  * ensuring React hook order is never conditionally altered.
  */
 export const CodeBlock: React.FC<CodeProps> = (props) => {
   const isInsidePre = useContext(PreContext);
-  if (isInsidePre) {
-    return <BlockCode {...props} />;
+  if (!isInsidePre) {
+    return <InlineCode {...props} />;
   }
-  return <InlineCode {...props} />;
+
+  const match = /language-([a-zA-Z0-9_-]+)/.exec(props.className || '');
+  const language = match ? match[1] : '';
+
+  if (language === 'mermaid') {
+    return <MermaidBlock {...props} />;
+  }
+
+  return <BlockCode {...props} />;
 };
 
 interface LineAnchor {
@@ -375,7 +391,18 @@ export function findLastIndexWhere<T>(
 }
 
 const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
-  ({ content, onOpenLink, onToggleTask, showLineNumbers = false, onScroll, className }, ref) => {
+  (
+    {
+      content,
+      onOpenLink,
+      onToggleTask,
+      showLineNumbers = false,
+      onScroll,
+      className,
+      sourcePath,
+    },
+    ref
+  ) => {
     const { t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
@@ -622,6 +649,9 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
         ),
         pre: PreRenderer,
         code: CodeBlock,
+        img: ({ node: _node, ...props }) => (
+          <LocalImage {...props} sourcePath={sourcePath} />
+        ),
         a: ({ href, children, node: _node, ...props }) => {
           const isAnchor = href?.startsWith('#');
 
@@ -652,7 +682,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, t, onOpenLink, onToggleTask]
+      [scrollToTarget, t, onOpenLink, onToggleTask, sourcePath]
     );
 
     return (
