@@ -180,17 +180,23 @@ npm run tauri dev
 ### 1. 打包生成安装包
 打包生成独立的 Windows 可执行程序 (`.exe`) 及安装包 (`.msi` / `.nsis`)：
 
-```bash
+```powershell
 # 1. 确保前端与后端无编译错误
 npm run build
-cd src-tauri && cargo check && cd ..
+cargo check --manifest-path src-tauri/Cargo.toml
 
-# 2. 一键打包 Windows 发布版本
+# 2. 在 PowerShell 中配置更新签名（私钥需与应用公钥匹配）
+$env:TAURI_SIGNING_PRIVATE_KEY = Join-Path $env:USERPROFILE '.tauri\markdown-editor-updater.key'
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
+
+# 3. 一键打包 Windows 发布版本
 npm run tauri build
 ```
 
 打包完成后，安装包将生成在：
 `src-tauri/target/release/bundle/nsis/` 或 `src-tauri/target/release/` 目录下。
+
+桌面版支持在「偏好设置 → 软件更新」检查、下载并安装新版，安装前先保存文档。首次配置 GitHub 发布签名、更新清单与升级验证见 [自动更新说明](docs/auto-update.md)。
 
 ### 2. Windows 文件关联与「默认应用」行为说明
 - **注册机制**：在 NSIS 安装包中，已配置 `bundle.fileAssociations` 自动将 MarkdownEditor 注册为 `.md`、`.markdown`、`.mdown`、`.mkd`、`.txt` 的打开方式候选程序。

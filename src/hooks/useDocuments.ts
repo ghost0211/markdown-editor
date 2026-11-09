@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { prepareDocumentsForUpdate } from '@/lib/appUpdateDocuments';
 import { DocumentTab, ConfirmDialogState, StartupViewMode, ViewMode } from '@/types';
 import { getWelcomeDocument } from '@/lib/defaultDocument';
 import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime, isTauri } from '@/lib/native';
@@ -469,6 +470,11 @@ export function useDocuments(
     [writeDocumentTab]
   );
 
+  /** Never let the Windows updater exit while unsaved documents remain. */
+  const prepareForAppUpdate = useCallback(async (): Promise<boolean> => {
+    return prepareDocumentsForUpdate(() => tabsRef.current, saveDirtyTabs, flushSession);
+  }, [saveDirtyTabs, flushSession]);
+
   // Save active document (or Save As)
   const saveActiveDocument = useCallback(
     (forceSaveAs = false) => saveDocumentTab(activeTabId, forceSaveAs),
@@ -934,6 +940,7 @@ export function useDocuments(
     closeAllTabs,
     reloadTab,
     flushSession,
+    prepareForAppUpdate,
     confirmDialog,
     setConfirmDialog,
   };

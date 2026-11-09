@@ -12,12 +12,14 @@ import { CompareModal } from '@/components/CompareModal';
 import { DiffView } from '@/components/DiffView';
 import { ShortcutsModal } from '@/components/ShortcutsModal';
 import { SettingsModal } from '@/components/SettingsModal';
+import { UpdateInstallOverlay } from '@/components/AppUpdateSection';
 import { ToastContainer } from '@/components/ToastContainer';
 
 import { useSettings } from '@/hooks/useSettings';
 import { useTheme } from '@/hooks/useTheme';
 import { useToast } from '@/hooks/useToast';
 import { useDocuments } from '@/hooks/useDocuments';
+import { useAppUpdater } from '@/hooks/useAppUpdater';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExportDocument } from '@/hooks/useExportDocument';
 import { I18nProvider, useI18n } from '@/i18n';
@@ -111,9 +113,17 @@ const AppContent: React.FC<AppContentProps> = ({
     closeAllTabs,
     reloadTab,
     flushSession,
+    prepareForAppUpdate,
     confirmDialog,
     setConfirmDialog,
   } = useDocuments(showToast, settings.restoreSession, settings.startupView);
+
+  const updater = useAppUpdater(showToast);
+  const handleBeforeUpdateInstall = useCallback(async () => {
+    const ready = await prepareForAppUpdate();
+    if (!ready) showToast(t('updates.saveCancelled'), 'warning');
+    return ready;
+  }, [prepareForAppUpdate, showToast, t]);
 
   const [linkAnchor, setLinkAnchor] = useState<{ path: string; anchor: string } | null>(null);
   const handleOpenLink = useCallback(async (href: string) => {
@@ -925,9 +935,12 @@ const AppContent: React.FC<AppContentProps> = ({
         onUpdateSetting={updateSetting}
         onResetSettings={resetSettings}
         showToast={showToast}
+        updater={updater}
+        onBeforeUpdateInstall={handleBeforeUpdateInstall}
       />
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <UpdateInstallOverlay state={updater.state} />
     </div>
   );
 };

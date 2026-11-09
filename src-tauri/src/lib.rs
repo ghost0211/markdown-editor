@@ -1217,6 +1217,8 @@ pub fn run() {
                 let _ = app.emit("open-files", ());
             }
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_process::init())
         .manage(pending_open_files)
         .invoke_handler(tauri::generate_handler![
             commands::read_text_file,

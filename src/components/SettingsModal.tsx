@@ -21,6 +21,7 @@ import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption, Language } f
 import { SETTINGS_BOUNDS } from '@/lib/settings';
 import { openWindowsDefaultAppsSettings, isTauri } from '@/lib/native';
 import { useI18n } from '@/i18n';
+import { AppUpdateSection, type AppUpdateControls } from './AppUpdateSection';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -29,6 +30,8 @@ interface SettingsModalProps {
   onUpdateSetting: <K extends keyof EditorSettings>(key: K, value: EditorSettings[K]) => void;
   onResetSettings: () => void;
   showToast: (msg: string, type: 'info' | 'success' | 'warning' | 'error') => void;
+  updater?: AppUpdateControls;
+  onBeforeUpdateInstall?: () => Promise<boolean>;
 }
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -38,6 +41,8 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onUpdateSetting,
   onResetSettings,
   showToast,
+  updater,
+  onBeforeUpdateInstall,
 }) => {
   const { t } = useI18n();
   const [isOpeningSettings, setIsOpeningSettings] = useState(false);
@@ -603,6 +608,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
             </div>
           </div>
+          <AppUpdateSection updater={updater} onBeforeInstall={onBeforeUpdateInstall} />
         </div>
 
         {/* Modal Footer */}

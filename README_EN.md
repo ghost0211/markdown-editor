@@ -175,17 +175,23 @@ Compiles the Rust backend and opens the native desktop window.
 ### 1. Build Desktop Release
 Builds standalone Windows executables (`.exe`) and NSIS installer packages (`.exe` / `.msi`):
 
-```bash
+```powershell
 # 1. Verify frontend and backend builds
 npm run build
-cd src-tauri && cargo check && cd ..
+cargo check --manifest-path src-tauri/Cargo.toml
 
-# 2. Package release bundle
+# 2. Configure the updater signing key in PowerShell (must match the app public key)
+$env:TAURI_SIGNING_PRIVATE_KEY = Join-Path $env:USERPROFILE '.tauri\markdown-editor-updater.key'
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = ''
+
+# 3. Package release bundle
 npm run tauri build
 ```
 
 The output installer is generated under:
 `src-tauri/target/release/bundle/nsis/`
+
+The desktop app checks for signed updates after startup and in Preferences → Software updates. Downloads and installation are separate; unsaved documents must be saved before installation. See [update setup and release instructions](docs/auto-update.md) for the signing secrets and the one-time manual upgrade from older versions.
 
 ### 2. Windows File Association & Default App Notes
 - **Registration**: NSIS installer automatically registers MarkdownEditor as a candidate handler for `.md`, `.markdown`, `.mdown`, `.mkd`, and `.txt`.
