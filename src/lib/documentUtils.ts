@@ -3,6 +3,14 @@ import { DocumentTab, StartupViewMode, ViewMode } from '@/types';
 const VALID_VIEW_MODES: readonly ViewMode[] = ['edit', 'split', 'read'];
 
 /**
+ * Normalizes CRLF / CR line endings to LF so dirty-state and snapshot
+ * comparisons match CodeMirror's internal document representation (`\n`).
+ */
+export function normalizeLineEndings(text: string): string {
+  return text.replace(/\r\n?/g, '\n');
+}
+
+/**
  * Generates a unique, collision-resistant document tab ID.
  * Prefers crypto.randomUUID() when available in modern browsers / WebView2,
  * with a timestamp-random fallback.
@@ -206,7 +214,7 @@ export function computeSavedTabState(
     filePath: targetPath,
     title: fileName,
     savedContent: savedSnapshot,
-    isDirty: tab.content !== savedSnapshot,
+    isDirty: normalizeLineEndings(tab.content) !== normalizeLineEndings(savedSnapshot),
     fileMtime: fileMtime !== undefined ? fileMtime : tab.fileMtime,
   };
 }
@@ -233,6 +241,62 @@ export function createDefaultTab(
   };
 }
 
+/**
+ * Pure helper to open a document dropped via HTML5 File drag-and-drop.
+ *
+ * Crucial invariant:
+ * - A newly dropped file has NOT been edited by the user yet, so `savedContent`
+ *   MUST equal `content` and `isDirty` MUST start as `false` (closing an
+ *   unedited dropped file must never prompt "unsaved changes").
+ * - If an untouched pathless tab with the same title and content is already
+ *   open, focuses it instead of creating a duplicate tab.
+ * - Replaces the initial untouched welcome tab (`doc-welcome`), matching
+ *   `openOrFocusDocumentState`.
+ */
+export function openDroppedDocumentState(
+  currentTabs: DocumentTab[],
+  name: string,
+  content: string
+): OpenOrFocusResult {
+  const cleanTitle = name?.trim() || '未命名文档.md';
+  const normalizedIncoming = normalizeLineEndings(content);
+
+  const existing = currentTabs.find(
+    (tab) =>
+      tab.kind !== 'diff' &&
+      tab.filePath === null &&
+      !tab.isDirty &&
+      tab.title === cleanTitle &&
+      normalizeLineEndings(tab.content) === normalizedIncoming
+  );
+
+  if (existing) {
+    return {
+      tabs: currentTabs,
+      activeTabId: existing.id,
+      action: 'focused',
+      tab: existing,
+    };
+  }
+
+  const newTab = createDefaultTab(cleanTitle, content);
+
+  const isPristineWelcome =
+    currentTabs.length === 1 &&
+    currentTabs[0].id === 'doc-welcome' &&
+    !currentTabs[0].isDirty &&
+    currentTabs[0].filePath === null;
+
+  const nextTabs = isPristineWelcome ? [newTab] : [...currentTabs, newTab];
+
+  return {
+    tabs: nextTabs,
+    activeTabId: newTab.id,
+    action: 'opened',
+    tab: newTab,
+  };
+}
+
 export type ExternalChangeAction = 'none' | 'baseline' | 'reload' | 'prompt';
 
 /**
@@ -253,7 +317,7 @@ export function decideExternalChangeAction(
   if (tab.fileMtime === undefined) return 'baseline';
   if (currentMtime === tab.fileMtime) return 'none';
   if (currentContent === null) return 'none';
-  if (currentContent === tab.savedContent) return 'baseline';
+  if (normalizeLineEndings(currentContent) === normalizeLineEndings(tab.savedContent)) return 'baseline';
   return tab.isDirty ? 'prompt' : 'reload';
 }
 

@@ -239,20 +239,26 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             }
           },
           dragover: (event) => {
-            if (onImageFilesRef.current && event.dataTransfer?.types.includes('Files')) {
+            if (event.dataTransfer?.types.includes('Files')) {
               event.preventDefault();
             }
           },
           drop: (event, view) => {
+            const files = Array.from(event.dataTransfer?.files || []);
+            if (files.length === 0) return false;
             const handler = onImageFilesRef.current;
-            if (!handler) return;
-            const images = filterImageFiles(event.dataTransfer?.files || []);
-            if (images.length === 0) return;
-            event.preventDefault();
-            const position =
-              view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
-              view.state.selection.main.from;
-            handler(images, position);
+            const images = handler ? filterImageFiles(files) : [];
+            if (images.length > 0 && handler) {
+              event.preventDefault();
+              const position =
+                view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
+                view.state.selection.main.from;
+              handler(images, position);
+              return true;
+            }
+            // Never let CodeMirror's built-in FileReader insert dropped OS files
+            // (.md, .txt, binaries) directly into the active document buffer.
+            return true;
           },
         }),
       ];

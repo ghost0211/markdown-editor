@@ -86,4 +86,11 @@ describe('editorStateCache: per-document undo isolation', () => {
   it('returns undefined for a missing snapshot', () => {
     expect(restoreEditorInitialState(undefined, 'anything')).toBeUndefined();
   });
+
+  it('keeps cached snapshot valid for CRLF files whose CodeMirror doc uses LF', () => {
+    const state = EditorState.create({ doc: 'line 1\r\nline 2\r\n', extensions });
+    const snapshot = serializeEditorState(state);
+    expect(snapshot.doc).toBe('line 1\nline 2\n');
+    expect(isSnapshotValid(snapshot, 'line 1\r\nline 2\r\n')).toBe(true);
+  });
 });

@@ -1,5 +1,6 @@
 import { EditorState } from '@codemirror/state';
 import { historyField } from '@codemirror/commands';
+import { normalizeLineEndings } from '@/lib/documentUtils';
 
 /**
  * Per-tab editor state cache.
@@ -40,7 +41,10 @@ export function isSnapshotValid(
   snapshot: SerializedEditorState | undefined,
   value: string
 ): snapshot is SerializedEditorState {
-  return Boolean(snapshot) && snapshot!.doc === value;
+  return (
+    Boolean(snapshot) &&
+    normalizeLineEndings(snapshot!.doc) === normalizeLineEndings(value)
+  );
 }
 
 export function serializeEditorState(state: EditorState): SerializedEditorState {

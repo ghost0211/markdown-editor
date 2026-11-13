@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { drainPendingOpenFiles, isTauri, subscribeOpenFiles } from '@/lib/native';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 import { dragCarriesFiles, filterMarkdownFiles, MAX_DROPPED_FILE_BYTES } from '@/lib/dropFiles';
+import { filterImageFiles } from '@/lib/imageAssets';
 import { useI18n } from '@/i18n';
 
 export interface UseWindowFileDropOptions {
@@ -39,13 +40,35 @@ export function useWindowFileDrop({
       if (dragCarriesFiles(event.dataTransfer)) event.preventDefault();
     };
 
-    const handleDrop = (event: DragEvent) => {
+    // Registered in capture phase so Markdown / text files dropped directly onto
+    // the CodeMirror editor surface are opened as clean document tabs instead of
+    // being intercepted by CodeMirror's built-in FileReader text-insertion handler
+    // (which would paste the file into the active buffer and mark it dirty).
+    const handleDropCapture = (event: DragEvent) => {
       if (event.defaultPrevented || !dragCarriesFiles(event.dataTransfer)) return;
-      event.preventDefault();
 
-      const files = filterMarkdownFiles(Array.from(event.dataTransfer?.files ?? []));
+      const allFiles = Array.from(event.dataTransfer?.files ?? []);
+      const mdFiles = filterMarkdownFiles(allFiles);
+      const imageFiles = filterImageFiles(allFiles);
+
+      if (mdFiles.length === 0) {
+        // Let image-only drops reach CodeMirror's drop handler so images insert
+        // at the drop cursor; block unknown non-image file drops here so
+        // CodeMirror never dumps binary/raw files into the active document.
+        if (imageFiles.length === 0 && allFiles.length > 0) {
+          event.preventDefault();
+        }
+        return;
+      }
+
+      // If no images accompany the Markdown drop, mark defaultPrevented now so
+      // CodeMirror's runHandlers skips its built-in drop handler.
+      if (imageFiles.length === 0) {
+        event.preventDefault();
+      }
+
       void (async () => {
-        for (const file of files) {
+        for (const file of mdFiles) {
           if (file.size > MAX_DROPPED_FILE_BYTES) {
             showToastRef.current(tRef.current('toasts.dropTooLarge', { name: file.name }), 'warning');
             continue;
@@ -63,11 +86,21 @@ export function useWindowFileDrop({
       })();
     };
 
+    // Bubble-phase guard: if an image file was dropped outside the editor (e.g.
+    // onto the Preview or TitleBar), prevent the WebView from navigating to it.
+    const handleDropBubble = (event: DragEvent) => {
+      if (!event.defaultPrevented && dragCarriesFiles(event.dataTransfer)) {
+        event.preventDefault();
+      }
+    };
+
     window.addEventListener('dragover', handleDragOver);
-    window.addEventListener('drop', handleDrop);
+    window.addEventListener('drop', handleDropCapture, true);
+    window.addEventListener('drop', handleDropBubble);
     return () => {
       window.removeEventListener('dragover', handleDragOver);
-      window.removeEventListener('drop', handleDrop);
+      window.removeEventListener('drop', handleDropCapture, true);
+      window.removeEventListener('drop', handleDropBubble);
     };
   }, []);
 

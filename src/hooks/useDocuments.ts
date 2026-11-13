@@ -5,6 +5,7 @@ import { getWelcomeDocument } from '@/lib/defaultDocument';
 import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime } from '@/lib/native';
 import {
   getFileNameFromPath,
+  normalizeLineEndings,
   normalizePathKey,
   computeSavedTabState,
   createDefaultTab,
@@ -13,6 +14,7 @@ import {
   closeTabsToTheRightState,
   closeSavedTabsState,
   openOrFocusDocumentState,
+  openDroppedDocumentState,
   OpenOrFocusResult,
 } from '@/lib/documentUtils';
 import {
@@ -146,7 +148,8 @@ export function useDocuments(
     (tabId: string, newContent: string) => {
       const next = tabsRef.current.map((tab) => {
         if (tab.id === tabId) {
-          const isDirty = newContent !== tab.savedContent;
+          const isDirty =
+            normalizeLineEndings(newContent) !== normalizeLineEndings(tab.savedContent);
           return {
             ...tab,
             content: newContent,
@@ -307,14 +310,17 @@ export function useDocuments(
 
   const openDroppedDocument = useCallback(
     (name: string, content: string) => {
-      const base = createDefaultTab(name, '');
-      const tab: DocumentTab = { ...base, content, isDirty: content !== '' };
-      const next = [...tabsRef.current, tab];
-      tabsRef.current = next;
-      setTabs(next);
-      setActiveTabId(tab.id);
-      saveSession(next);
-      showToast(t('toasts.droppedAsUnsaved', { title: name }), 'info');
+      const result = openDroppedDocumentState(tabsRef.current, name, content);
+      tabsRef.current = result.tabs;
+      setTabs(result.tabs);
+      setActiveTabId(result.activeTabId);
+      saveSession(result.tabs);
+
+      if (result.action === 'focused') {
+        showToast(t('toasts.switchedToOpenDoc', { title: result.tab.title }), 'info');
+      } else {
+        showToast(t('toasts.droppedAsUnsaved', { title: result.tab.title }), 'info');
+      }
     },
     [saveSession, showToast, t]
   );
