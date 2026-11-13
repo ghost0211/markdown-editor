@@ -347,3 +347,21 @@ export function sanitizeRestoredTabs(
     };
   });
 }
+
+/** A tab auto save may ever write: a dirty document that already has a real file path. */
+export function isAutoSaveEligible(tab: DocumentTab | undefined): tab is DocumentTab {
+  if (!tab || tab.kind === 'diff' || !tab.isDirty) return false;
+  const path = tab.filePath?.trim();
+  return Boolean(path) && !path!.startsWith('browser://');
+}
+
+/**
+ * Whether it is safe to auto save 	ab right now. The file's on-disk mtime must
+ * be known and still equal what we last read or wrote; otherwise someone else
+ * touched the file and the external-change dialog has to decide, not auto save.
+ */
+export function decideAutoSave(tab: DocumentTab | undefined, diskMtime: number | null): boolean {
+  if (!isAutoSaveEligible(tab)) return false;
+  if (diskMtime === null || tab.fileMtime === undefined) return false;
+  return diskMtime === tab.fileMtime;
+}

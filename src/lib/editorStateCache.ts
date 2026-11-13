@@ -62,3 +62,27 @@ export function restoreEditorInitialState(
   if (!isSnapshotValid(snapshot, value)) return undefined;
   return { json: snapshot!.json, fields: HISTORY_FIELDS };
 }
+
+/**
+ * Module-level per-document state cache so a document keeps its undo history
+ * across tab switches and view-mode switches (edit -> read -> edit).
+ */
+const stateCache = new Map<string, SerializedEditorState>();
+
+export function getCachedEditorState(docId: string): SerializedEditorState | undefined {
+  return stateCache.get(docId);
+}
+
+export function setCachedEditorState(docId: string, state: SerializedEditorState): void {
+  stateCache.set(docId, state);
+}
+
+/** Releases the cached editor state of a document that was closed for good. */
+export function dropCachedEditorState(docId: string): void {
+  stateCache.delete(docId);
+}
+
+/** Ids of every document that still has cached editor state. */
+export function cachedEditorStateIds(): string[] {
+  return Array.from(stateCache.keys());
+}

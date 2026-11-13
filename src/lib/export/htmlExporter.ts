@@ -1,6 +1,10 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
+import { remarkCallouts } from '@/lib/remarkCallouts';
+import { remarkDropFrontMatter } from '@/lib/frontMatter';
+import { rehypeEmbedImages, type ImageResolver } from '@/lib/export/embedImages';
 import remarkRehype from 'remark-rehype';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
@@ -47,6 +51,12 @@ export const SANITIZE_SCHEMA: SanitizeSchema = {
       'disabled',
       'checked',
     ],
+    blockquote: [
+      ...(defaultSchema.attributes?.blockquote || []),
+      ['className', /^md-callout(-(note|tip|important|warning|caution))?$/],
+      ['dataCallout', /^(note|tip|important|warning|caution)$/],
+    ],
+    p: [...(defaultSchema.attributes?.p || []), ['className', 'md-callout-title']],
     th: [...(defaultSchema.attributes?.th || []), ['align', /^(left|center|right)$/i]],
     td: [...(defaultSchema.attributes?.td || []), ['align', /^(left|center|right)$/i]],
     a: [
@@ -55,13 +65,21 @@ export const SANITIZE_SCHEMA: SanitizeSchema = {
       'rel',
     ],
   },
-  clobberPrefix: 'user-content-',
+  // remark-rehype already prefixes footnote ids with "user-content-"; letting
+  // the sanitizer add a second prefix broke every footnote link in the export.
+  clobberPrefix: '',
   strip: ['script', 'style', 'iframe', 'object', 'embed', 'form'],
 };
 
 export interface HtmlRenderOptions {
   sourceFilePath?: string;
   lang?: string;
+  /**
+   * When set, relative images are resolved through it and inlined as data URLs
+   * so the exported file is fully self-contained. Without it images stay
+   * references (relative / absolute paths or network links).
+   */
+  resolveImage?: ImageResolver;
 }
 
 /**
@@ -160,9 +178,13 @@ export async function buildStandaloneHtml(
   const processed = await unified()
     .use(remarkParse)
     .use(remarkGfm)
+    .use(remarkFrontmatter, ['yaml', 'toml'])
+    .use(remarkDropFrontMatter)
+    .use(remarkCallouts, { lang: opts.lang })
     .use(remarkRehype)
     .use(rehypeHighlight)
     .use(rehypeSanitize, SANITIZE_SCHEMA)
+    .use(rehypeEmbedImages, { resolve: opts.resolveImage })
     .use(rehypeStringify)
     .process(markdown);
 
@@ -332,6 +354,46 @@ blockquote {
 blockquote p:last-child {
   margin-bottom: 0;
 }
+
+/* GitHub-style alerts: > [!NOTE] */
+blockquote.md-callout { color: #1e293b; }
+blockquote.md-callout .md-callout-title { margin: 0 0 6px; font-weight: 600; }
+blockquote.md-callout-note { border-left-color: #0969da; background-color: #eff6ff; }
+blockquote.md-callout-note .md-callout-title { color: #0969da; }
+blockquote.md-callout-tip { border-left-color: #1a7f37; background-color: #f0fdf4; }
+blockquote.md-callout-tip .md-callout-title { color: #1a7f37; }
+blockquote.md-callout-important { border-left-color: #8250df; background-color: #faf5ff; }
+blockquote.md-callout-important .md-callout-title { color: #8250df; }
+blockquote.md-callout-warning { border-left-color: #9a6700; background-color: #fffbeb; }
+blockquote.md-callout-warning .md-callout-title { color: #9a6700; }
+blockquote.md-callout-caution { border-left-color: #cf222e; background-color: #fef2f2; }
+blockquote.md-callout-caution .md-callout-title { color: #cf222e; }
+
+/* Footnotes */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+section.footnotes {
+  margin-top: 32px;
+  padding-top: 12px;
+  border-top: 1px solid #cbd5e1;
+  font-size: 13px;
+  color: #475569;
+}
+
+section.footnotes ol { padding-left: 1.4em; }
+section.footnotes p { margin: 0.3em 0; }
+sup a[data-footnote-ref] { text-decoration: none; padding: 0 1px; }
+a[data-footnote-backref] { text-decoration: none; margin-left: 4px; }
 
 code {
   font-family: Consolas, "Fira Code", Monaco, "Cascadia Code", "Courier New", monospace;

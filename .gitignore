@@ -13,6 +13,10 @@ src-tauri/target/
 dist/
 dist-ssr/
 *.local
+*.local/
+.release.local/
+.math-check.local/
+.update-check.local/
 
 # Tauri build artifacts
 src-tauri/WixTools/

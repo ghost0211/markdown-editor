@@ -58,8 +58,30 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
         lineNumbers: false,
         restoreSession: false,
         startupView: 'edit' as const,
+        autoSave: true,
+        spellcheck: true,
+        typewriterMode: true,
+        focusMode: true,
+        exportEmbedImages: true,
       };
       expect(validateSettings(valid)).toEqual(valid);
+    });
+
+    it('autoSave and editor/export toggles are opt-in and only accept booleans', () => {
+      expect(DEFAULT_SETTINGS.autoSave).toBe(false);
+      expect(DEFAULT_SETTINGS.spellcheck).toBe(false);
+      expect(DEFAULT_SETTINGS.typewriterMode).toBe(false);
+      expect(DEFAULT_SETTINGS.focusMode).toBe(false);
+      expect(DEFAULT_SETTINGS.exportEmbedImages).toBe(false);
+      expect(validateSettings({ autoSave: true }).autoSave).toBe(true);
+      expect(validateSettings({ autoSave: false }).autoSave).toBe(false);
+      expect(validateSettings({ autoSave: 'yes' as unknown as boolean }).autoSave).toBe(false);
+      expect(validateSettings({ spellcheck: true }).spellcheck).toBe(true);
+      expect(validateSettings({ spellcheck: 1 as unknown as boolean }).spellcheck).toBe(false);
+      expect(validateSettings({ typewriterMode: true }).typewriterMode).toBe(true);
+      expect(validateSettings({ focusMode: true }).focusMode).toBe(true);
+      expect(validateSettings({ exportEmbedImages: true }).exportEmbedImages).toBe(true);
+      expect(validateSettings({}).autoSave).toBe(false);
     });
 
     it('should validate language to allowed options (zh-CN, en-US) and default to zh-CN', () => {

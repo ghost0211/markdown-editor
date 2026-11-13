@@ -5,7 +5,7 @@ import { t, getCurrentLanguage } from '@/i18n';
 
 export const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
-export type ExportFormat = 'docx' | 'pdf' | 'html';
+export type ExportFormat = 'docx' | 'pdf' | 'html' | 'svg' | 'png';
 
 /**
  * Opens Windows Default Apps settings page (ms-settings:defaultapps).
@@ -18,7 +18,7 @@ export async function openWindowsDefaultAppsSettings(): Promise<void> {
       await invoke('open_windows_default_apps_settings');
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '打开 Windows 设置失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotOpenSettings'));
@@ -49,6 +49,7 @@ export function isValidExternalUrl(urlStr?: string | null): boolean {
   }
 
   // Reject ASCII control characters
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
     return false;
   }
@@ -109,7 +110,7 @@ export async function readTextFile(path: string): Promise<string> {
       return await invoke<string>('read_text_file', { path });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '读取文件失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
@@ -130,7 +131,7 @@ export async function readBinaryFile(path: string): Promise<Uint8Array> {
     return new Uint8Array(bytes);
   } catch (err: unknown) {
     const msg = typeof err === 'string' ? err : (err as Error)?.message || '读取二进制文件失败';
-    throw new Error(msg);
+    throw new Error(msg, { cause: err });
   }
 }
 
@@ -160,13 +161,15 @@ export async function writeTextFile(path: string, content: string): Promise<void
       await invoke('write_text_file', { path, content });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存文件失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Web fallback: Trigger browser file download with appropriate MIME
     const lower = path.toLowerCase();
     const mimeType = lower.endsWith('.html') || lower.endsWith('.htm')
       ? 'text/html;charset=utf-8'
+      : lower.endsWith('.svg')
+      ? 'image/svg+xml;charset=utf-8'
       : 'text/markdown;charset=utf-8';
     downloadBlob(content, path || 'document.md', mimeType);
   }
@@ -181,7 +184,7 @@ export async function writeHtmlFile(path: string, content: string): Promise<void
       await invoke('write_text_file', { path, content });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存 HTML 文件失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     downloadBlob(content, path || 'document.html', 'text/html;charset=utf-8');
@@ -198,7 +201,7 @@ export async function writeBinaryFile(path: string, data: Uint8Array | number[])
       await invoke('write_binary_file', { path, data: payload });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存二进制文件失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Web fallback: Trigger browser file download with appropriate mime
@@ -207,6 +210,8 @@ export async function writeBinaryFile(path: string, data: Uint8Array | number[])
       ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       : lower.endsWith('.pdf')
       ? 'application/pdf'
+      : lower.endsWith('.png')
+      ? 'image/png'
       : 'application/octet-stream';
     downloadBlob(data, path || 'document.bin', mimeType);
   }
@@ -222,7 +227,7 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
       return res;
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '打开文件对话框失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Browser fallback
@@ -283,7 +288,7 @@ export async function saveFileDialog(defaultName?: string): Promise<string | nul
       return await invoke<string | null>('save_file_dialog', { defaultName });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存对话框失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Browser fallback: prompts user for filename
@@ -311,14 +316,14 @@ export async function exportFileDialog(
       });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '导出对话框打开失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Browser fallback: prompts user for filename
     if (typeof window === 'undefined') return null;
     const lang = getCurrentLanguage();
     const base = (defaultName || t(lang, 'common.untitled')).replace(
-      /\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm)$/i,
+      /\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm|svg|png)$/i,
       ''
     );
     const promptName = `${base}.${format}`;
@@ -341,7 +346,7 @@ export async function exportPdfFromHtml(path: string, html: string): Promise<voi
       await invoke('export_pdf_from_html', { path, html });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || 'PDF 导出失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     // Browser print fallback
@@ -407,7 +412,7 @@ export async function showInFolder(path: string): Promise<void> {
       await invoke('show_in_folder', { path: trimmed });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '打开文件位置失败';
-      throw new Error(msg);
+      throw new Error(msg, { cause: err });
     }
   } else {
     throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotShowInFolder'));
@@ -427,6 +432,43 @@ export async function setWindowTheme(theme: 'light' | 'dark' | 'system'): Promis
     await invoke('set_window_theme', { theme });
   } catch (err: unknown) {
     console.warn('同步窗口主题失败:', err);
+  }
+}
+
+/**
+ * Reads the persisted tab session JSON from Tauri's native app-data directory.
+ * Returns null in Web mode or when no session file exists yet.
+ */
+export async function readSessionData(): Promise<string | null> {
+  if (!isTauri()) return null;
+  const raw = await invoke<string | null>('read_session_data');
+  return typeof raw === 'string' && raw.trim() ? raw : null;
+}
+
+/**
+ * Atomically writes the tab session JSON into Tauri's native app-data directory.
+ * Avoids WebView localStorage ~5 MB quota limits for multi-document or large drafts.
+ */
+export async function writeSessionData(data: string): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke('write_session_data', { data });
+  } catch (err: unknown) {
+    const msg = typeof err === 'string' ? err : (err as Error)?.message || '保存会话数据失败';
+    throw new Error(msg, { cause: err });
+  }
+}
+
+/**
+ * Deletes the persisted tab session file in Tauri's native app-data directory.
+ */
+export async function clearSessionData(): Promise<void> {
+  if (!isTauri()) return;
+  try {
+    await invoke('clear_session_data');
+  } catch (err: unknown) {
+    const msg = typeof err === 'string' ? err : (err as Error)?.message || '清理会话数据失败';
+    throw new Error(msg, { cause: err });
   }
 }
 

@@ -15,6 +15,16 @@ export interface EditorSettings {
   lineNumbers: boolean;
   restoreSession: boolean;
   startupView: StartupViewMode;
+  /** Silently write dirty, file-backed documents back to disk shortly after edits. */
+  autoSave: boolean;
+  /** Underline misspelled words in the editor using the system spell checker. */
+  spellcheck: boolean;
+  /** Keep the line being edited vertically centred. */
+  typewriterMode: boolean;
+  /** Dim paragraphs outside the active block so the current paragraph stands out. */
+  focusMode: boolean;
+  /** Inline local images as data URLs when exporting HTML, so the file is self-contained. */
+  exportEmbedImages: boolean;
 }
 
 export interface DocumentTab {

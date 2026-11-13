@@ -15,6 +15,7 @@ import {
   Plus,
   FileCheck,
   LoaderCircle,
+  Download,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption, Language } from '@/types';
@@ -453,6 +454,96 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Spell Check */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.spellcheck')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.spellcheckDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.spellcheckAria')}
+                  aria-checked={settings.spellcheck}
+                  onClick={() => onUpdateSetting('spellcheck', !settings.spellcheck)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 focus:outline-hidden',
+                    settings.spellcheck ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.spellcheck ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Typewriter Mode */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.typewriterMode')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.typewriterModeDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.typewriterModeAria')}
+                  aria-checked={settings.typewriterMode}
+                  onClick={() => onUpdateSetting('typewriterMode', !settings.typewriterMode)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 focus:outline-hidden',
+                    settings.typewriterMode ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.typewriterMode ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+
+              {/* Focus Mode */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.focusMode')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.focusModeDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.focusModeAria')}
+                  aria-checked={settings.focusMode}
+                  onClick={() => onUpdateSetting('focusMode', !settings.focusMode)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 focus:outline-hidden',
+                    settings.focusMode ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.focusMode ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+
               {/* Line Numbers */}
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
@@ -523,6 +614,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </button>
               </div>
 
+              {/* Auto Save */}
+              <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.autoSave')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.autoSaveDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.autoSaveAria')}
+                  aria-checked={settings.autoSave}
+                  onClick={() => onUpdateSetting('autoSave', !settings.autoSave)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 focus:outline-hidden',
+                    settings.autoSave ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.autoSave ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+
               {/* Startup View Preference */}
               <div className="flex items-center justify-between pt-1 border-t border-slate-200/60 dark:border-slate-800">
                 <div>
@@ -547,6 +668,45 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <option value="edit">{t('settings.viewEdit')}</option>
                   <option value="read">{t('settings.viewRead')}</option>
                 </select>
+              </div>
+            </div>
+          </div>
+
+          {/* Section: Export */}
+          <div className="space-y-3">
+            <div className="flex items-center space-x-1.5 text-slate-700 dark:text-slate-300 font-semibold">
+              <Download className="w-3.5 h-3.5 text-indigo-500" />
+              <span>{t('settings.exportSection')}</span>
+            </div>
+
+            <div className="bg-panel rounded-lg p-3 border border-slate-200/80 dark:border-slate-800">
+              <div className="flex items-center justify-between">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.exportEmbedImages')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.exportEmbedImagesDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.exportEmbedImagesAria')}
+                  aria-checked={settings.exportEmbedImages}
+                  onClick={() => onUpdateSetting('exportEmbedImages', !settings.exportEmbedImages)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 focus:outline-hidden shrink-0 ml-3',
+                    settings.exportEmbedImages ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.exportEmbedImages ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
               </div>
             </div>
           </div>

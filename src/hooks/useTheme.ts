@@ -21,7 +21,7 @@ export function useTheme(
   });
 
   const applyTheme = useCallback((currentTheme: ThemeMode) => {
-    let isDark = false;
+    let isDark: boolean;
     if (currentTheme === 'dark') {
       isDark = true;
     } else if (currentTheme === 'light') {

@@ -12,6 +12,10 @@ import React, {
 } from 'react';
 import Markdown, { Components, ExtraProps } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
+import type { PluggableList } from 'unified';
+import { remarkCallouts } from '@/lib/remarkCallouts';
+import { remarkFrontMatterAsCode } from '@/lib/frontMatter';
 import remarkMath from 'remark-math';
 import { remarkCjkFriendlyEmphasis } from '@/lib/remarkCjkFriendlyEmphasis';
 import rehypeKatex from 'rehype-katex';
@@ -20,10 +24,19 @@ import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
 import { findSourceLineForElement } from '@/lib/taskList';
-import { Check, Copy } from 'lucide-react';
+import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import { MermaidBlock } from './MermaidBlock';
 import { LocalImage } from '@/components/LocalImage';
+import { ImageLightbox, ImageLightboxHandle } from '@/components/ImageLightbox';
+import {
+  CHUNKS_PER_IDLE_BATCH,
+  INITIAL_VISIBLE_CHUNKS,
+  MarkdownChunk,
+  getAdaptivePreviewDebounceMs,
+  hasPotentialMathSyntax,
+  splitLargeMarkdownIntoChunks,
+} from '@/lib/largeDocument';
 import 'highlight.js/styles/github-dark.css';
 import 'katex/dist/katex.min.css';
 
@@ -47,8 +60,45 @@ export { MermaidBlock } from './MermaidBlock';
  * Passing fresh array literals here makes react-markdown rebuild its internal
  * processor pipeline on every keystroke.
  */
-const REMARK_PLUGINS = [remarkGfm, remarkMath, remarkCjkFriendlyEmphasis];
-const REHYPE_PLUGINS = [rehypeKatex, rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_WITH_MATH: PluggableList = [rehypeKatex, rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_NO_MATH: PluggableList = [rehypeSlug, rehypeHighlight];
+
+function getRehypePlugins(withMath: boolean): PluggableList {
+  return withMath ? REHYPE_PLUGINS_WITH_MATH : REHYPE_PLUGINS_NO_MATH;
+}
+
+/**
+ * Remark plugins cached by `(lang, withMath, allowFrontMatter)` so their array
+ * references remain stable across renders while skipping `remark-math` on
+ * math-free text and skipping front-matter parsing on chunks after line 1.
+ */
+const REMARK_PLUGINS_CACHE = new Map<string, PluggableList>();
+function getRemarkPlugins(
+  lang: string,
+  withMath: boolean,
+  allowFrontMatter = true
+): PluggableList {
+  const key = `${lang}|${withMath ? 'm1' : 'm0'}|${allowFrontMatter ? 'fm1' : 'fm0'}`;
+  let plugins = REMARK_PLUGINS_CACHE.get(key);
+  if (!plugins) {
+    plugins = [remarkGfm];
+    if (allowFrontMatter) {
+      plugins.push([remarkFrontmatter, ['yaml', 'toml']], remarkFrontMatterAsCode);
+    }
+    if (withMath) {
+      plugins.push(remarkMath);
+    }
+    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }]);
+    REMARK_PLUGINS_CACHE.set(key, plugins);
+  }
+  return plugins;
+}
+
+/**
+ * Provides a 0-based line offset for chunked large-document rendering so every
+ * block element's `data-line` reflects its exact 1-based line in the full file.
+ */
+const ChunkLineOffsetContext = createContext<number>(0);
 
 export interface PreviewHandle {
   scrollToAnchor: (slug: string, line?: number) => void;
@@ -89,14 +139,18 @@ interface HastNodeLike {
  * child starts on the same line (the child renders the number instead),
  * preventing duplicated line numbers for e.g. `li > p` or `blockquote > p`.
  */
-function getBlockLine(node: HastNodeLike | undefined, skipIfChildSameLine = false): number | undefined {
+function getBlockLine(
+  node: HastNodeLike | undefined,
+  skipIfChildSameLine = false,
+  lineOffset = 0
+): number | undefined {
   const line = node?.position?.start?.line;
   if (typeof line !== 'number' || line <= 0) return undefined;
   if (skipIfChildSameLine) {
     const firstElementChild = node?.children?.find((c) => c.type === 'element');
     if (firstElementChild?.position?.start?.line === line) return undefined;
   }
-  return line;
+  return line + lineOffset;
 }
 
 type HeadingTag = 'h1' | 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
@@ -105,7 +159,9 @@ const createHeadingRenderer = (Tag: HeadingTag) => {
   const HeadingComponent: React.FC<
     React.ComponentPropsWithoutRef<HeadingTag> & ExtraProps
   > = ({ node, children, ...props }) => {
-    const line = node?.position?.start?.line;
+    const lineOffset = useContext(ChunkLineOffsetContext);
+    const rawLine = node?.position?.start?.line;
+    const line = typeof rawLine === 'number' && rawLine > 0 ? rawLine + lineOffset : undefined;
     return (
       <Tag data-line={line} {...props}>
         {children}
@@ -114,6 +170,64 @@ const createHeadingRenderer = (Tag: HeadingTag) => {
   };
   HeadingComponent.displayName = Tag;
   return HeadingComponent;
+};
+
+const ParagraphRenderer: React.FC<React.ComponentPropsWithoutRef<'p'> & ExtraProps> = ({
+  node,
+  children,
+  ...props
+}) => {
+  const lineOffset = useContext(ChunkLineOffsetContext);
+  return (
+    <p data-line={getBlockLine(node as HastNodeLike | undefined, false, lineOffset)} {...props}>
+      {children}
+    </p>
+  );
+};
+
+const ListItemRenderer: React.FC<React.ComponentPropsWithoutRef<'li'> & ExtraProps> = ({
+  node,
+  children,
+  ...props
+}) => {
+  const lineOffset = useContext(ChunkLineOffsetContext);
+  return (
+    <li data-line={getBlockLine(node as HastNodeLike | undefined, true, lineOffset)} {...props}>
+      {children}
+    </li>
+  );
+};
+
+const BlockquoteRenderer: React.FC<React.ComponentPropsWithoutRef<'blockquote'> & ExtraProps> = ({
+  node,
+  children,
+  ...props
+}) => {
+  const lineOffset = useContext(ChunkLineOffsetContext);
+  return (
+    <blockquote
+      data-line={getBlockLine(node as HastNodeLike | undefined, true, lineOffset)}
+      {...props}
+    >
+      {children}
+    </blockquote>
+  );
+};
+
+const TableRenderer: React.FC<React.ComponentPropsWithoutRef<'table'> & ExtraProps> = ({
+  node,
+  children,
+  ...props
+}) => {
+  const lineOffset = useContext(ChunkLineOffsetContext);
+  return (
+    <div
+      className="md-table-wrap"
+      data-line={getBlockLine(node as HastNodeLike | undefined, false, lineOffset)}
+    >
+      <table {...props}>{children}</table>
+    </div>
+  );
 };
 
 /**
@@ -205,9 +319,9 @@ export const PreRenderer: React.FC<React.ComponentPropsWithoutRef<'pre'> & Extra
   node,
   children,
 }) => {
-  // Forward the source line to the inner code block so its wrapper can carry
-  // data-line (the wrapper is the visible block container with the header bar).
-  const line = (node as HastNodeLike | undefined)?.position?.start?.line;
+  const lineOffset = useContext(ChunkLineOffsetContext);
+  const rawLine = (node as HastNodeLike | undefined)?.position?.start?.line;
+  const line = typeof rawLine === 'number' && rawLine > 0 ? rawLine + lineOffset : undefined;
   const child =
     React.isValidElement(children) && typeof line === 'number' && line > 0
       ? React.cloneElement(children as React.ReactElement<{ dataLine?: number }>, {
@@ -252,6 +366,8 @@ export const BlockCode: React.FC<CodeProps> = ({
 }) => {
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const isFrontMatter = Boolean(codeClassName && /\bmd-frontmatter\b/.test(codeClassName));
+  const [collapsed, setCollapsed] = useState(false);
 
   const match = /language-([a-zA-Z0-9_-]+)/.exec(codeClassName || '');
   const language = match ? match[1] : '';
@@ -269,29 +385,57 @@ export const BlockCode: React.FC<CodeProps> = ({
     }
   }, [rawCode]);
 
+  const headerLabel = isFrontMatter
+    ? `${t('preview.frontMatter')} · ${(language || 'yaml').toUpperCase()}`
+    : language || 'text';
+
   return (
     <div
       className="relative group my-4 rounded-lg overflow-hidden border shadow-sm md-code-block"
       data-line={dataLine}
+      data-frontmatter={isFrontMatter ? 'true' : undefined}
       style={{
         backgroundColor: CODE_THEME.bg,
         borderColor: CODE_THEME.headerBorder,
       }}
     >
       <div
-        className="flex items-center justify-between px-3 py-1.5 border-b text-xs font-mono select-none"
+        className={`flex items-center justify-between px-3 py-1.5 text-xs font-mono select-none ${
+          collapsed ? '' : 'border-b'
+        }`}
         style={{
           backgroundColor: CODE_THEME.headerBg,
           color: CODE_THEME.headerText,
           borderColor: CODE_THEME.headerBorder,
         }}
       >
-        <span
-          className="text-[11px] uppercase tracking-wider font-semibold"
-          style={{ color: CODE_THEME.headerText }}
-        >
-          {language || 'text'}
-        </span>
+        {isFrontMatter ? (
+          <button
+            type="button"
+            onClick={() => setCollapsed((prev) => !prev)}
+            aria-expanded={!collapsed}
+            aria-label={
+              collapsed ? t('preview.expandFrontMatter') : t('preview.collapseFrontMatter')
+            }
+            title={collapsed ? t('preview.expandFrontMatter') : t('preview.collapseFrontMatter')}
+            className="flex items-center space-x-1 text-[11px] uppercase tracking-wider font-semibold hover:opacity-90 transition-opacity cursor-pointer"
+            style={{ color: CODE_THEME.headerText }}
+          >
+            {collapsed ? (
+              <ChevronRight className="w-3.5 h-3.5" />
+            ) : (
+              <ChevronDown className="w-3.5 h-3.5" />
+            )}
+            <span>{headerLabel}</span>
+          </button>
+        ) : (
+          <span
+            className="text-[11px] uppercase tracking-wider font-semibold"
+            style={{ color: CODE_THEME.headerText }}
+          >
+            {headerLabel}
+          </span>
+        )}
         <button
           type="button"
           onClick={handleCopy}
@@ -312,24 +456,26 @@ export const BlockCode: React.FC<CodeProps> = ({
           )}
         </button>
       </div>
-      <div
-        className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed"
-        style={{ backgroundColor: CODE_THEME.bg, color: CODE_THEME.text }}
-      >
-        <pre className="!bg-transparent !p-0 !m-0" style={{ color: 'inherit', margin: 0, padding: 0 }}>
-          <code
-            className={codeClassName}
-            style={{
-              ...style,
-              color: CODE_THEME.text,
-              backgroundColor: 'transparent',
-            }}
-            {...props}
-          >
-            {children}
-          </code>
-        </pre>
-      </div>
+      {!collapsed && (
+        <div
+          className="p-3 overflow-x-auto text-[13px] font-mono leading-relaxed"
+          style={{ backgroundColor: CODE_THEME.bg, color: CODE_THEME.text }}
+        >
+          <pre className="!bg-transparent !p-0 !m-0" style={{ color: 'inherit', margin: 0, padding: 0 }}>
+            <code
+              className={codeClassName}
+              style={{
+                ...style,
+                color: CODE_THEME.text,
+                backgroundColor: 'transparent',
+              }}
+              {...props}
+            >
+              {children}
+            </code>
+          </pre>
+        </div>
+      )}
     </div>
   );
 };
@@ -390,6 +536,52 @@ export function findLastIndexWhere<T>(
   return found;
 }
 
+interface MarkdownChunkBlockProps {
+  chunk: MarkdownChunk;
+  language: string;
+  components: Components;
+}
+
+const MarkdownChunkBlock: React.FC<MarkdownChunkBlockProps> = ({
+  chunk,
+  language,
+  components,
+}) => {
+  const withMath = hasPotentialMathSyntax(chunk.text);
+  const allowFrontMatter = chunk.startLine === 1;
+  const lineOffset = chunk.startLine - 1;
+
+  const body = (
+    <Markdown
+      urlTransform={documentUrlTransform}
+      remarkPlugins={getRemarkPlugins(language, withMath, allowFrontMatter)}
+      rehypePlugins={getRehypePlugins(withMath)}
+      components={components}
+    >
+      {chunk.text}
+    </Markdown>
+  );
+
+  if (lineOffset === 0) {
+    return body;
+  }
+
+  return (
+    <ChunkLineOffsetContext.Provider value={lineOffset}>
+      {body}
+    </ChunkLineOffsetContext.Provider>
+  );
+};
+
+const MemoizedMarkdownChunk = React.memo(
+  MarkdownChunkBlock,
+  (prev, next) =>
+    prev.chunk.text === next.chunk.text &&
+    prev.chunk.startLine === next.chunk.startLine &&
+    prev.language === next.language &&
+    prev.components === next.components
+);
+
 const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
   (
     {
@@ -403,17 +595,88 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
     },
     ref
   ) => {
-    const { t } = useI18n();
+    const { language } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
     /**
-     * Rendering Markdown costs far more than a keystroke, so the rendered body
-     * follows the editor through a deferred value: the caret keeps moving at
-     * full speed while React re-renders the document at a lower priority.
-     * Scroll bookkeeping, line anchors and the task-checkbox mapping keep using
-     * the live `content` so they stay exact.
+     * Normal documents follow `useDeferredValue(content)` with zero artificial
+     * delay; multi-hundred-KB / multi-MB documents add an adaptive debounce so
+     * continuous typing never stalls on full-AST parses.
      */
-    const renderedContent = useDeferredValue(content);
+    const deferredContent = useDeferredValue(content);
+    const debounceMs = getAdaptivePreviewDebounceMs(content.length);
+    const [debouncedLargeContent, setDebouncedLargeContent] = useState<string>(content);
+    const prevSourcePathRef = useRef(sourcePath);
+
+    useEffect(() => {
+      // Switching to another file updates immediately without debounce lag
+      if (prevSourcePathRef.current !== sourcePath) {
+        prevSourcePathRef.current = sourcePath;
+        setDebouncedLargeContent(content);
+        return;
+      }
+      if (debounceMs === 0) {
+        setDebouncedLargeContent(content);
+        return;
+      }
+      const timer = setTimeout(() => {
+        setDebouncedLargeContent(content);
+      }, debounceMs);
+      return () => clearTimeout(timer);
+    }, [content, debounceMs, sourcePath]);
+
+    const renderedContent = debounceMs === 0 ? deferredContent : debouncedLargeContent;
+
+    const chunks = useMemo(
+      () => splitLargeMarkdownIntoChunks(renderedContent),
+      [renderedContent]
+    );
+
+    const isSSR = typeof window === 'undefined';
+    const [visibleChunkCount, setVisibleChunkCount] = useState<number>(() =>
+      isSSR ? chunks.length : Math.min(chunks.length, INITIAL_VISIBLE_CHUNKS)
+    );
+    const hydratedDocKeyRef = useRef<string | null | undefined>(sourcePath);
+
+    useEffect(() => {
+      if (isSSR) return;
+      if (hydratedDocKeyRef.current !== sourcePath) {
+        hydratedDocKeyRef.current = sourcePath;
+        setVisibleChunkCount(Math.min(chunks.length, INITIAL_VISIBLE_CHUNKS));
+        return;
+      }
+      if (chunks.length <= INITIAL_VISIBLE_CHUNKS) {
+        setVisibleChunkCount(chunks.length);
+        return;
+      }
+      // Once progressively hydrated, keep new chunks visible during edits
+      setVisibleChunkCount((prev) =>
+        prev >= chunks.length ? chunks.length : Math.max(prev, INITIAL_VISIBLE_CHUNKS)
+      );
+    }, [chunks.length, isSSR, sourcePath]);
+
+    useEffect(() => {
+      if (isSSR || visibleChunkCount >= chunks.length) return;
+
+      const revealNextBatch = () => {
+        setVisibleChunkCount((prev) => Math.min(chunks.length, prev + CHUNKS_PER_IDLE_BATCH));
+      };
+
+      const win = window as Window & {
+        requestIdleCallback?: (cb: () => void, opts?: { timeout: number }) => number;
+        cancelIdleCallback?: (id: number) => void;
+      };
+
+      if (typeof win.requestIdleCallback === 'function') {
+        const idleId = win.requestIdleCallback(revealNextBatch, { timeout: 60 });
+        return () => win.cancelIdleCallback?.(idleId);
+      }
+
+      const timerId = window.setTimeout(revealNextBatch, 16);
+      return () => window.clearTimeout(timerId);
+    }, [chunks.length, isSSR, visibleChunkCount]);
+
+    const visibleChunks = isSSR ? chunks : chunks.slice(0, visibleChunkCount);
 
     // Cache of block-element positions keyed by source line. It is validated
     // against the container's current layout size on every access and rebuilt
@@ -430,7 +693,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
 
     useEffect(() => {
       lineAnchorsRef.current = null;
-    }, [content]);
+    }, [content, visibleChunkCount]);
 
     const getLineAnchors = useCallback((): LineAnchor[] => {
       const container = containerRef.current;
@@ -517,14 +780,22 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
       [scrollToElement]
     );
 
+    const ensureAllChunksMounted = useCallback(() => {
+      if (!isSSR && visibleChunkCount < chunks.length) {
+        setVisibleChunkCount(chunks.length);
+      }
+    }, [chunks.length, isSSR, visibleChunkCount]);
+
     useImperativeHandle(
       ref,
       () => ({
         scrollToAnchor: (slug: string, line?: number) => {
+          ensureAllChunksMounted();
           scrollToTarget(slug, line);
         },
 
         scrollToRatio: (ratio: number) => {
+          ensureAllChunksMounted();
           if (!containerRef.current) return;
           const { scrollHeight, clientHeight } = containerRef.current;
           const maxScroll = scrollHeight - clientHeight;
@@ -533,7 +804,10 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           }
         },
 
-        scrollToSourceLine,
+        scrollToSourceLine: (line: number, fraction?: number) => {
+          ensureAllChunksMounted();
+          scrollToSourceLine(line, fraction);
+        },
 
         getTopSourceLine: () => {
           const container = containerRef.current;
@@ -576,8 +850,19 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           }
         },
       }),
-      [scrollToTarget, scrollToSourceLine]
+      [ensureAllChunksMounted, getLineAnchors, scrollToTarget, scrollToSourceLine, totalLines]
     );
+
+    const lightboxRef = useRef<ImageLightboxHandle>(null);
+
+    // Clicking a rendered image (outside of a link) opens it enlarged.
+    const handleContainerClick = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+      const target = event.target as HTMLElement;
+      if (target.tagName !== 'IMG' || target.closest('a')) return;
+      const image = target as HTMLImageElement;
+      if (!image.currentSrc && !image.src) return;
+      lightboxRef.current?.open(image.currentSrc || image.src, image.alt || '');
+    }, []);
 
     const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
       if (onScroll) {
@@ -621,32 +906,10 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
             />
           );
         },
-        p: ({ node, children, ...props }) => (
-          <p data-line={getBlockLine(node as HastNodeLike | undefined)} {...props}>
-            {children}
-          </p>
-        ),
-        li: ({ node, children, ...props }) => (
-          <li data-line={getBlockLine(node as HastNodeLike | undefined, true)} {...props}>
-            {children}
-          </li>
-        ),
-        blockquote: ({ node, children, ...props }) => (
-          <blockquote
-            data-line={getBlockLine(node as HastNodeLike | undefined, true)}
-            {...props}
-          >
-            {children}
-          </blockquote>
-        ),
-        table: ({ node, children, ...props }) => (
-          <div
-            className="md-table-wrap"
-            data-line={getBlockLine(node as HastNodeLike | undefined)}
-          >
-            <table {...props}>{children}</table>
-          </div>
-        ),
+        p: ParagraphRenderer,
+        li: ListItemRenderer,
+        blockquote: BlockquoteRenderer,
+        table: TableRenderer,
         pre: PreRenderer,
         code: CodeBlock,
         img: ({ node: _node, ...props }) => (
@@ -682,28 +945,30 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, t, onOpenLink, onToggleTask, sourcePath]
+      [scrollToTarget, onOpenLink, onToggleTask, sourcePath]
     );
 
     return (
       <div
         ref={containerRef}
         onScroll={handleScroll}
+        onClick={handleContainerClick}
         className={`h-full w-full overflow-y-auto px-6 py-6 select-text ${className || ''}`}
       >
+        <ImageLightbox ref={lightboxRef} />
         <div
           className={`max-w-3xl mx-auto markdown-body ${
             showLineNumbers ? 'md-show-line-numbers' : ''
           }`}
         >
-          <Markdown
-            urlTransform={documentUrlTransform}
-            remarkPlugins={REMARK_PLUGINS}
-            rehypePlugins={REHYPE_PLUGINS}
-            components={components}
-          >
-            {renderedContent}
-          </Markdown>
+          {visibleChunks.map((chunk) => (
+            <MemoizedMarkdownChunk
+              key={chunk.index}
+              chunk={chunk}
+              language={language}
+              components={components}
+            />
+          ))}
         </div>
       </div>
     );

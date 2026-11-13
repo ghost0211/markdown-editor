@@ -54,7 +54,7 @@ export function getImageAssetDestination(documentPath: string, fileName: string)
 }
 
 export function createImageMarkdown(pathOrDataUrl: string, alt: string): string {
-  const safeAlt = alt.replace(/[\[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
+  const safeAlt = alt.replace(/[[\]\n\r]/g, ' ').replace(/\s+/g, ' ').trim();
   // Wrap destinations in angle brackets so paths containing spaces or
   // parentheses remain valid Markdown.
   return `![${safeAlt}](<${pathOrDataUrl.replace(/>/g, '%3E')}>)`;

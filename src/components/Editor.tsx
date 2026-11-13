@@ -15,11 +15,24 @@ import { EditorState, Text } from '@codemirror/state';
 import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
 import { createMarkdownEditingKeymap } from '@/lib/editorKeymap';
+import { createTypewriterExtension } from '@/lib/typewriterMode';
+import { createFocusModeExtension } from '@/lib/focusMode';
+import { createSearchMatchCountExtension } from '@/lib/searchMatchCount';
+import {
+  isSingleUrl,
+  isTableRowLine,
+  linkifySelection,
+  parseHtmlTable,
+  rowsToMarkdownTable,
+} from '@/lib/markdownTable';
 import { filterImageFiles } from '@/lib/imageAssets';
 import {
-  SerializedEditorState,
+  cachedEditorStateIds,
+  dropCachedEditorState,
+  getCachedEditorState,
   restoreEditorInitialState,
   serializeEditorState,
+  setCachedEditorState,
 } from '@/lib/editorStateCache';
 import { useI18n } from '@/i18n';
 
@@ -49,6 +62,12 @@ interface EditorProps {
   tabSize?: number;
   wordWrap?: boolean;
   lineNumbers?: boolean;
+  /** Browser spell checking of the text being edited. */
+  spellcheck?: boolean;
+  /** Keep the line being edited vertically centred. */
+  typewriterMode?: boolean;
+  /** Dim paragraphs other than the active block. */
+  focusMode?: boolean;
   /** Identity of the document currently shown. Switching it restores that
    *  document's own undo history / selection instead of replacing the text. */
   docId?: string;
@@ -59,22 +78,7 @@ interface EditorProps {
   onImageFiles?: (files: File[], position: number) => void;
 }
 
-/**
- * Module-level (not component state) so a cached document keeps its undo
- * history across view-mode switches that unmount the editor entirely, e.g.
- * edit -> read -> edit.
- */
-const stateCache = new Map<string, SerializedEditorState>();
-
-/** Releases the cached editor state of a document that was closed for good. */
-export function dropCachedEditorState(docId: string): void {
-  stateCache.delete(docId);
-}
-
-/** Ids of every document that still has cached editor state. */
-export function cachedEditorStateIds(): string[] {
-  return Array.from(stateCache.keys());
-}
+export { cachedEditorStateIds, dropCachedEditorState };
 
 /**
  * Hoisted to module scope (instead of an inline JSX object literal) so the
@@ -122,6 +126,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       tabSize = 2,
       wordWrap = true,
       lineNumbers = true,
+      spellcheck = false,
+      typewriterMode = false,
+      focusMode = false,
       docId,
       initialCursorLine = 1,
       initialCursorCol = 1,
@@ -152,6 +159,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     const extensions = useMemo(() => {
       const ext = [
         createMarkdownEditingKeymap({ t, language }),
+        createSearchMatchCountExtension(),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
         EditorState.tabSize.of(tabSize),
         indentUnit.of(' '.repeat(tabSize)),
@@ -173,12 +181,62 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             }
           },
           paste: (event, view) => {
+            const clipboard = event.clipboardData;
+            if (!clipboard) return;
+
+            const selection = view.state.selection.main;
+
+            // A table copied from Excel / Word / a web page becomes a Markdown
+            // table. Checked before images because Excel also puts a PNG
+            // snapshot of the cells on the clipboard. Pasting into an existing
+            // table row stays plain text.
+            const html = clipboard.getData('text/html');
+            const tableRows =
+              html && !isTableRowLine(view.state.doc.lineAt(selection.from).text)
+                ? parseHtmlTable(html)
+                : null;
+            const table = tableRows ? rowsToMarkdownTable(tableRows) : '';
+            if (table) {
+              event.preventDefault();
+              const fromLine = view.state.doc.lineAt(selection.from);
+              const toLine = view.state.doc.lineAt(selection.to);
+              const prefix = selection.from > fromLine.from ? '\n\n' : '';
+              const suffix = selection.to < toLine.to ? '\n\n' : '';
+              const insert = `${prefix}${table}${suffix}`;
+              view.dispatch({
+                changes: { from: selection.from, to: selection.to, insert },
+                selection: { anchor: selection.from + insert.length },
+                scrollIntoView: true,
+                userEvent: 'input.paste',
+              });
+              return;
+            }
+
             const handler = onImageFilesRef.current;
-            if (!handler) return;
-            const images = filterImageFiles(event.clipboardData?.files || []);
-            if (images.length === 0) return;
-            event.preventDefault();
-            handler(images, view.state.selection.main.from);
+            if (handler) {
+              const images = filterImageFiles(clipboard.files || []);
+              if (images.length > 0) {
+                event.preventDefault();
+                handler(images, selection.from);
+                return;
+              }
+            }
+
+            // A URL pasted over selected text becomes a Markdown link.
+            const pastedText = clipboard.getData('text/plain');
+            if (!selection.empty && isSingleUrl(pastedText)) {
+              const selected = view.state.sliceDoc(selection.from, selection.to);
+              if (!selected.includes('\n')) {
+                event.preventDefault();
+                const insert = linkifySelection(selected, pastedText);
+                view.dispatch({
+                  changes: { from: selection.from, to: selection.to, insert },
+                  selection: { anchor: selection.from + insert.length },
+                  scrollIntoView: true,
+                  userEvent: 'input.paste',
+                });
+              }
+            }
           },
           dragover: (event) => {
             if (onImageFilesRef.current && event.dataTransfer?.types.includes('Files')) {
@@ -203,8 +261,20 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         ext.push(EditorView.lineWrapping);
       }
 
+      if (spellcheck) {
+        ext.push(EditorView.contentAttributes.of({ spellcheck: 'true' }));
+      }
+
+      if (typewriterMode) {
+        ext.push(createTypewriterExtension());
+      }
+
+      if (focusMode) {
+        ext.push(createFocusModeExtension());
+      }
+
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap, t, language]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, t, language]);
 
     /**
      * Editor state to start this document from.
@@ -220,7 +290,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
      * (via `key`), this component instance survives a tab switch.
      */
     const initialState = useMemo(
-      () => (docId ? restoreEditorInitialState(stateCache.get(docId), value) : undefined),
+      () => (docId ? restoreEditorInitialState(getCachedEditorState(docId), value) : undefined),
       // eslint-disable-next-line react-hooks/exhaustive-deps
       [docId]
     );
@@ -253,11 +323,12 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
 
     useEffect(() => {
       const leavingDocId = docId;
+      const states = latestStatesRef.current;
       return () => {
         if (!leavingDocId) return;
-        const snapshot = latestStatesRef.current.get(leavingDocId);
-        latestStatesRef.current.delete(leavingDocId);
-        if (snapshot) stateCache.set(leavingDocId, serializeEditorState(snapshot));
+        const snapshot = states.get(leavingDocId);
+        states.delete(leavingDocId);
+        if (snapshot) setCachedEditorState(leavingDocId, serializeEditorState(snapshot));
       };
     }, [docId]);
 

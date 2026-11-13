@@ -1,17 +1,22 @@
-import React, { useState, useRef, useMemo, useEffect, useCallback } from 'react';
+import React, {
+  Suspense,
+  lazy,
+  useState,
+  useRef,
+  useMemo,
+  useEffect,
+  useCallback,
+  useDeferredValue,
+} from 'react';
 import { TitleBar } from '@/components/TitleBar';
 import { TabBar } from '@/components/TabBar';
 import { Toolbar } from '@/components/Toolbar';
 import { Sidebar } from '@/components/Sidebar';
-import { Editor, EditorHandle, cachedEditorStateIds, dropCachedEditorState } from '@/components/Editor';
-import { Preview, PreviewHandle } from '@/components/Preview';
+import type { EditorHandle } from '@/components/Editor';
+import type { PreviewHandle } from '@/components/Preview';
 import { StatusBar } from '@/components/StatusBar';
 import { SplitPane } from '@/components/SplitPane';
 import { ConfirmModal } from '@/components/ConfirmModal';
-import { CompareModal } from '@/components/CompareModal';
-import { DiffView } from '@/components/DiffView';
-import { ShortcutsModal } from '@/components/ShortcutsModal';
-import { SettingsModal } from '@/components/SettingsModal';
 import { UpdateInstallOverlay } from '@/components/AppUpdateSection';
 import { ToastContainer } from '@/components/ToastContainer';
 
@@ -22,37 +27,44 @@ import { useDocuments } from '@/hooks/useDocuments';
 import { useAppUpdater } from '@/hooks/useAppUpdater';
 import { useKeyboardShortcuts } from '@/hooks/useKeyboardShortcuts';
 import { useExportDocument } from '@/hooks/useExportDocument';
+import { usePaneScrollSync } from '@/hooks/usePaneScrollSync';
+import { useWindowFileDrop } from '@/hooks/useWindowFileDrop';
+import { useImageAssetInsertion } from '@/hooks/useImageAssetInsertion';
 import { I18nProvider, useI18n } from '@/i18n';
 
+import { cachedEditorStateIds, dropCachedEditorState } from '@/lib/editorStateCache';
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
-import { ViewMode, HeadingItem, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
+import { ViewMode, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { isTauri, subscribeOpenFiles, drainPendingOpenFiles, showInFolder, openExternalUrl, setWindowTheme, writeBinaryFile } from '@/lib/native';
+import { showInFolder, openExternalUrl, setWindowTheme } from '@/lib/native';
 import { resolveDocumentLink } from '@/lib/documentLinks';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
 import { cycleTabIndex } from '@/lib/tabNavigation';
-import {
-  createImageAssetName,
-  createImageMarkdown,
-  getImageAltFromName,
-  getImageAssetDestination,
-} from '@/lib/imageAssets';
-import { createFileCoordinator } from '@/lib/fileCoordinator';
+
+const LazyEditor = lazy(() =>
+  import('@/components/Editor').then((m) => ({ default: m.Editor }))
+);
+const LazyPreview = lazy(() =>
+  import('@/components/Preview').then((m) => ({ default: m.Preview }))
+);
+const LazyDiffView = lazy(() =>
+  import('@/components/DiffView').then((m) => ({ default: m.DiffView }))
+);
+const LazySettingsModal = lazy(() =>
+  import('@/components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
+const LazyShortcutsModal = lazy(() =>
+  import('@/components/ShortcutsModal').then((m) => ({ default: m.ShortcutsModal }))
+);
+const LazyCompareModal = lazy(() =>
+  import('@/components/CompareModal').then((m) => ({ default: m.CompareModal }))
+);
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
 const STORAGE_SPLIT_RATIO_KEY = 'markdown_editor_split_ratio';
-
-function readFileAsDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(String(reader.result || ''));
-    reader.onerror = () => reject(reader.error || new Error('Failed to read image'));
-    reader.readAsDataURL(file);
-  });
-}
 
 interface AppContentProps {
   settings: EditorSettings;
@@ -65,7 +77,6 @@ const AppContent: React.FC<AppContentProps> = ({
   updateSetting,
   resetSettings,
 }) => {
-  // Stable callback for theme bridge to prevent unnecessary listener/effect churn
   const handleThemeChange = useCallback(
     (newTheme: ThemeMode) => {
       updateSetting('theme', newTheme);
@@ -73,21 +84,15 @@ const AppContent: React.FC<AppContentProps> = ({
     [updateSetting]
   );
 
-  // Theme hook
   const { theme, setTheme, isDark } = useTheme(settings.theme, handleThemeChange);
 
-  // Keep the native window chrome (title bar + native min/max/close buttons) in
-  // step with the in-app theme. Without this Windows keeps a light caption in
-  // dark mode, which is the main visual mismatch between OS chrome and app UI.
   useEffect(() => {
     void setWindowTheme(theme);
   }, [theme]);
 
-  // Toast hook
   const { toasts, showToast, removeToast } = useToast();
   const { t } = useI18n();
 
-  // Documents manager hook
   const {
     tabs,
     activeTabId,
@@ -104,6 +109,11 @@ const AppContent: React.FC<AppContentProps> = ({
     openDocument,
     openFilesByPaths,
     openFileByPath,
+    openRecentFile,
+    openDroppedDocument,
+    reopenClosedFile,
+    recentFiles,
+    clearRecentFiles,
     saveActiveDocument,
     saveDocumentTab,
     requestCloseTab,
@@ -116,7 +126,7 @@ const AppContent: React.FC<AppContentProps> = ({
     prepareForAppUpdate,
     confirmDialog,
     setConfirmDialog,
-  } = useDocuments(showToast, settings.restoreSession, settings.startupView);
+  } = useDocuments(showToast, settings.restoreSession, settings.startupView, settings.autoSave);
 
   const updater = useAppUpdater(showToast);
   const handleBeforeUpdateInstall = useCallback(async () => {
@@ -126,75 +136,72 @@ const AppContent: React.FC<AppContentProps> = ({
   }, [prepareForAppUpdate, showToast, t]);
 
   const [linkAnchor, setLinkAnchor] = useState<{ path: string; anchor: string } | null>(null);
-  const handleOpenLink = useCallback(async (href: string) => {
-    try {
-      const target = resolveDocumentLink(href, activeTab?.filePath);
-      if (!target) { await openExternalUrl(href); return; }
-      if (await openFileByPath(target.path)) {
-        setLinkAnchor(target);
+  const handleOpenLink = useCallback(
+    async (href: string) => {
+      try {
+        const target = resolveDocumentLink(href, activeTab?.filePath);
+        if (!target) {
+          await openExternalUrl(href);
+          return;
+        }
+        if (await openFileByPath(target.path)) {
+          setLinkAnchor(target);
+        }
+      } catch (error) {
+        showToast(String(error instanceof Error ? error.message : error), 'error');
       }
-    } catch (error) {
-      showToast(String(error instanceof Error ? error.message : error), 'error');
-    }
-  }, [activeTab?.filePath, openFileByPath, showToast]);
+    },
+    [activeTab?.filePath, openFileByPath, showToast]
+  );
 
-  // Document export hook
   const {
     isExporting,
     exportingType,
     exportWord,
     exportPdf,
     exportHtml,
-  } = useExportDocument(activeTab, showToast);
+    copyRichText,
+  } = useExportDocument(activeTab, showToast, { embedImages: settings.exportEmbedImages });
 
-  // Last-used view mode, tracked live so the 'remember-last' default keeps
-  // following the user's most recent explicit switch during the session.
   const [lastUsedViewMode, setLastUsedViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(STORAGE_VIEW_MODE_KEY) as ViewMode | null;
     return saved === 'edit' || saved === 'split' || saved === 'read' ? saved : 'split';
   });
 
-  // Default open mode for tabs without an explicit per-tab override. A
-  // configured mode (edit / split / read) applies immediately — including to
-  // documents opened later — while 'remember-last' tracks the last-used mode.
   const defaultViewMode: ViewMode =
     settings.startupView !== 'remember-last' ? settings.startupView : lastUsedViewMode;
-
-  // View mode is independent per tab: tabs that were never switched explicitly
-  // fall back to the default open mode.
   const viewMode: ViewMode = activeTab?.viewMode ?? defaultViewMode;
+
+  const editorRef = useRef<EditorHandle>(null);
+  const previewRef = useRef<PreviewHandle>(null);
+
+  const {
+    prepareModeSwitchLineSync,
+    handleSelectHeading,
+    handleEditorScroll,
+    handlePreviewScroll,
+  } = usePaneScrollSync({
+    tabs,
+    activeTabId,
+    viewMode,
+    editorRef,
+    previewRef,
+    updateScrollPositions,
+    flushSession,
+  });
 
   const setViewMode = useCallback(
     (mode: ViewMode) => {
-      // Remember as the global last-used mode (default for new tabs on next launch)
       localStorage.setItem(STORAGE_VIEW_MODE_KEY, mode);
       setLastUsedViewMode(mode);
-      // Apply to the active tab only, leaving other tabs' modes untouched
       if (activeTabId) {
-        if (mode !== viewMode) {
-          // Capture the current reading position as a source line so the new
-          // view mode continues from exactly the same position (no jumping).
-          // Read from the pane the user is actually looking at: the preview
-          // in read mode (or when heading into read mode from split, where
-          // the preview may have scrolled independently of the editor),
-          // otherwise the editor.
-          const pos =
-            viewMode === 'read' || (viewMode === 'split' && mode === 'read')
-              ? previewRef.current?.getTopSourceLine()
-              : editorRef.current?.getTopVisibleLine();
-          pendingLineSyncRef.current = {
-            tabId: activeTabId,
-            line: pos?.line ?? 1,
-            fraction: pos?.fraction ?? 0,
-          };
-        }
+        prepareModeSwitchLineSync(mode);
         updateViewMode(activeTabId, mode);
       }
     },
-    [activeTabId, viewMode, updateViewMode]
+    [activeTabId, prepareModeSwitchLineSync, updateViewMode]
   );
 
-  // Sidebar open/collapse state
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_SIDEBAR_KEY);
     return saved !== null ? saved === 'true' : true;
@@ -204,11 +211,12 @@ const AppContent: React.FC<AppContentProps> = ({
     const saved = Number.parseFloat(localStorage.getItem(STORAGE_SPLIT_RATIO_KEY) || '');
     return Number.isFinite(saved) ? clampRatio(saved) : 0.5;
   });
+
   const handleSplitRatioCommit = useCallback((ratio: number) => {
     try {
       localStorage.setItem(STORAGE_SPLIT_RATIO_KEY, String(ratio));
     } catch {
-      // A layout preference is non-critical; ignore storage failures.
+      // layout preference is non-critical
     }
   }, []);
 
@@ -224,44 +232,20 @@ const AppContent: React.FC<AppContentProps> = ({
     setIsSidebarOpen(false);
   }, []);
 
-  // Modals state & stable handlers
   const [isShortcutsModalOpen, setIsShortcutsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
 
-  const handleOpenSettings = useCallback(() => {
-    setIsSettingsModalOpen(true);
-  }, []);
+  const handleOpenSettings = useCallback(() => setIsSettingsModalOpen(true), []);
+  const handleCloseSettings = useCallback(() => setIsSettingsModalOpen(false), []);
+  const handleToggleSettings = useCallback(() => setIsSettingsModalOpen((prev) => !prev), []);
 
-  const handleCloseSettings = useCallback(() => {
-    setIsSettingsModalOpen(false);
-  }, []);
+  const handleOpenShortcuts = useCallback(() => setIsShortcutsModalOpen(true), []);
+  const handleCloseShortcuts = useCallback(() => setIsShortcutsModalOpen(false), []);
+  const handleToggleShortcuts = useCallback(() => setIsShortcutsModalOpen((prev) => !prev), []);
 
-  const handleToggleSettings = useCallback(() => {
-    setIsSettingsModalOpen((prev) => !prev);
-  }, []);
-
-  const handleOpenShortcuts = useCallback(() => {
-    setIsShortcutsModalOpen(true);
-  }, []);
-
-  const handleCloseShortcuts = useCallback(() => {
-    setIsShortcutsModalOpen(false);
-  }, []);
-
-  const handleToggleShortcuts = useCallback(() => {
-    setIsShortcutsModalOpen((prev) => !prev);
-  }, []);
-
-  // Compare (diff) modal handlers
-  const handleOpenCompare = useCallback(() => {
-    setIsCompareModalOpen(true);
-  }, []);
-
-  const handleCloseCompare = useCallback(() => {
-    setIsCompareModalOpen(false);
-  }, []);
-
+  const handleOpenCompare = useCallback(() => setIsCompareModalOpen(true), []);
+  const handleCloseCompare = useCallback(() => setIsCompareModalOpen(false), []);
   const handleConfirmCompare = useCallback(
     (leftId: string, rightId: string) => {
       createDiffTab(leftId, rightId);
@@ -270,13 +254,10 @@ const AppContent: React.FC<AppContentProps> = ({
     [createDiffTab]
   );
 
-  // Candidate documents for comparison (diff tabs cannot be compared)
   const docTabs = useMemo(() => tabs.filter((tab) => tab.kind !== 'diff'), [tabs]);
   const defaultCompareLeftId =
     activeTab && activeTab.kind !== 'diff' ? activeTab.id : undefined;
 
-  // Resolve one side of a diff tab against its live source tab, falling back
-  // to the captured snapshot (read-only) once the source tab is closed.
   const resolveDiffSide = useCallback(
     (ref: DiffSideRef) => {
       const source = tabs.find((tab) => tab.id === ref.tabId);
@@ -284,44 +265,40 @@ const AppContent: React.FC<AppContentProps> = ({
         title: ref.title,
         content: source ? source.content : ref.snapshot,
         readOnly: !source,
-        onChange: source
-          ? (value: string) => updateContent(source.id, value)
-          : undefined,
+        onChange: source ? (value: string) => updateContent(source.id, value) : undefined,
       };
     },
     [tabs, updateContent]
   );
 
-  // Stable document action handlers
-  const handleNewTab = useCallback(() => {
-    createNewTab();
-  }, [createNewTab]);
-
+  const handleNewTab = useCallback(() => createNewTab(), [createNewTab]);
   const handleSave = useCallback(() => {
-    saveActiveDocument(false);
+    void saveActiveDocument(false);
   }, [saveActiveDocument]);
-
   const handleSaveAs = useCallback(() => {
-    saveActiveDocument(true);
+    void saveActiveDocument(true);
   }, [saveActiveDocument]);
-
   const handleCloseActiveTab = useCallback(() => {
-    if (activeTabId) {
-      requestCloseTab(activeTabId);
-    }
+    if (activeTabId) requestCloseTab(activeTabId);
   }, [activeTabId, requestCloseTab]);
 
   const handleCancelConfirm = useCallback(() => {
     confirmDialog.onCancel?.();
     setConfirmDialog((prev) => ({ ...prev, isOpen: false }));
-  }, [confirmDialog.onCancel, setConfirmDialog]);
+  }, [confirmDialog, setConfirmDialog]);
 
-  // Editor and Preview refs
-  const editorRef = useRef<EditorHandle>(null);
-  const previewRef = useRef<PreviewHandle>(null);
   useEffect(() => {
-    if (!linkAnchor || !activeTab || activeTab.filePath?.replace(/\\/g, '/').toLowerCase() !== linkAnchor.path.toLowerCase()) return;
-    if (viewMode === 'edit') { updateViewMode(activeTab.id, 'read'); return; }
+    if (
+      !linkAnchor ||
+      !activeTab ||
+      activeTab.filePath?.replace(/\\/g, '/').toLowerCase() !== linkAnchor.path.toLowerCase()
+    ) {
+      return;
+    }
+    if (viewMode === 'edit') {
+      updateViewMode(activeTab.id, 'read');
+      return;
+    }
     let inner = 0;
     const outer = requestAnimationFrame(() => {
       inner = requestAnimationFrame(() => {
@@ -329,137 +306,17 @@ const AppContent: React.FC<AppContentProps> = ({
         setLinkAnchor(null);
       });
     });
-    return () => { cancelAnimationFrame(outer); cancelAnimationFrame(inner); };
+    return () => {
+      cancelAnimationFrame(outer);
+      cancelAnimationFrame(inner);
+    };
   }, [linkAnchor, activeTab, viewMode, updateViewMode]);
 
-  // Sync scroll lock to prevent feedback loop
-  const isSyncingScroll = useRef(false);
-
-  // Latest tab list / active tab id in refs for effect-time lookups
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
-  // Per-tab scroll positions (editor + preview), recorded continuously on scroll
-  // events so tab switches never lose reading progress even mid-frame.
-  const scrollPositionsRef = useRef(new Map<string, { editor: number; preview: number }>());
-
-  // Pending cross-mode scroll translation (source line based), set by setViewMode
-  // right before a mode switch and consumed by the restore effect below.
-  const pendingLineSyncRef = useRef<{ tabId: string; line: number; fraction: number } | null>(null);
-
-  const recordEditorScroll = useCallback((top: number) => {
-    const id = activeTabIdRef.current;
-    if (!id) return;
-    const entry = scrollPositionsRef.current.get(id) ?? { editor: 0, preview: 0 };
-    entry.editor = top;
-    scrollPositionsRef.current.set(id, entry);
-  }, []);
-
-  const recordPreviewScroll = useCallback((top: number) => {
-    const id = activeTabIdRef.current;
-    if (!id) return;
-    const entry = scrollPositionsRef.current.get(id) ?? { editor: 0, preview: 0 };
-    entry.preview = top;
-    scrollPositionsRef.current.set(id, entry);
-  }, []);
-
-  // Save / restore per-tab scroll positions on tab switch or view-mode change
-  const prevScrollTabIdRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const prevTabId = prevScrollTabIdRef.current;
-
-    // Persist the previous tab's latest positions into its tab record (session)
-    if (prevTabId && prevTabId !== activeTabId) {
-      const prev = scrollPositionsRef.current.get(prevTabId);
-      if (prev) {
-        updateScrollPositions(prevTabId, prev.editor, prev.preview);
-      }
-      // Prune entries belonging to closed tabs
-      const openIds = new Set(tabsRef.current.map((t) => t.id));
-      for (const key of scrollPositionsRef.current.keys()) {
-        if (!openIds.has(key)) {
-          scrollPositionsRef.current.delete(key);
-        }
-      }
-    }
-    prevScrollTabIdRef.current = activeTabId;
-
-    if (!activeTabId) return;
-
-    // Same tab, view mode just switched: translate the reading position by
-    // source line so the new mode continues from exactly the same position.
-    const pending = pendingLineSyncRef.current;
-    pendingLineSyncRef.current = null;
-    if (pending && pending.tabId === activeTabId && prevTabId === activeTabId) {
-      isSyncingScroll.current = true;
-      const raf = requestAnimationFrame(() => {
-        if (viewMode !== 'read') {
-          editorRef.current?.scrollToLine(pending.line, pending.fraction);
-        }
-        if (viewMode !== 'edit') {
-          previewRef.current?.scrollToSourceLine(pending.line, pending.fraction);
-        }
-        setTimeout(() => {
-          isSyncingScroll.current = false;
-        }, 100);
-      });
-      return () => cancelAnimationFrame(raf);
-    }
-
-    // Resolve target positions: in-session map first, then persisted tab record
-    const fromMap = scrollPositionsRef.current.get(activeTabId);
-    const tabRecord = tabsRef.current.find((t) => t.id === activeTabId);
-    const editorTop = fromMap?.editor ?? tabRecord?.scrollPosition ?? 0;
-    const previewTop = fromMap?.preview ?? tabRecord?.previewScrollPosition ?? 0;
-    scrollPositionsRef.current.set(activeTabId, { editor: editorTop, preview: previewTop });
-
-    // Restore after the panes (re)mount; hold the sync lock so the programmatic
-    // restore does not trigger the split-scroll synchronization.
-    isSyncingScroll.current = true;
-    const raf = requestAnimationFrame(() => {
-      if (viewMode !== 'read') {
-        editorRef.current?.setScrollTop(editorTop);
-      }
-      if (viewMode !== 'edit') {
-        previewRef.current?.setScrollTop(previewTop);
-      }
-      setTimeout(() => {
-        isSyncingScroll.current = false;
-      }, 100);
-    });
-    return () => cancelAnimationFrame(raf);
-  }, [activeTabId, viewMode, updateScrollPositions]);
-
-  // Flush the active tab's scroll positions into the persisted session on unload
-  useEffect(() => {
-    const flush = () => {
-      const id = activeTabIdRef.current;
-      if (id) {
-        const pos = scrollPositionsRef.current.get(id);
-        if (pos) {
-          updateScrollPositions(id, pos.editor, pos.preview);
-        }
-      }
-      // The scroll write above is itself debounced; force it out together with
-      // any other pending session change before the window goes away.
-      flushSession();
-    };
-    window.addEventListener('beforeunload', flush);
-    window.addEventListener('pagehide', flush);
-    return () => {
-      window.removeEventListener('beforeunload', flush);
-      window.removeEventListener('pagehide', flush);
-    };
-  }, [flushSession, updateScrollPositions]);
-
-  /**
-   * Release cached editor state for tabs that no longer exist. Without this the
-   * cache would hold the full undo history of every document ever opened in the
-   * session, which grows without bound.
-   */
   useEffect(() => {
     const liveIds = new Set(tabs.map((tab) => tab.id));
     for (const id of cachedEditorStateIds()) {
@@ -467,14 +324,13 @@ const AppContent: React.FC<AppContentProps> = ({
     }
   }, [tabs]);
 
-  // External file modification detection: poll while visible + on window focus
   const checkExternalChangesRef = useRef(checkExternalChanges);
   checkExternalChangesRef.current = checkExternalChanges;
 
   useEffect(() => {
     const run = () => {
       if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
-      checkExternalChangesRef.current();
+      void checkExternalChangesRef.current();
     };
     const timer = setInterval(run, 3000);
     window.addEventListener('focus', run);
@@ -484,7 +340,6 @@ const AppContent: React.FC<AppContentProps> = ({
     };
   }, []);
 
-  // Auto-collapse sidebar and use a single pane on small screens
   const [isNarrowViewport, setIsNarrowViewport] = useState(() => window.innerWidth < 768);
   useEffect(() => {
     const handleResize = () => {
@@ -498,39 +353,35 @@ const AppContent: React.FC<AppContentProps> = ({
     return () => window.removeEventListener('resize', handleResize);
   }, [isSidebarOpen]);
 
-  const openFilesByPathsRef = useRef(openFilesByPaths);
-  openFilesByPathsRef.current = openFilesByPaths;
+  useWindowFileDrop({
+    openFilesByPaths,
+    openDroppedDocument,
+    showToast,
+  });
 
-  // Handle cold-start, runtime file association opens, window restore, and suspension recovery
-  useEffect(() => {
-    const coordinator = createFileCoordinator({
-      drainPendingFiles: drainPendingOpenFiles,
-      onFilesReceived: (paths) => openFilesByPathsRef.current(paths),
-      isTauri,
-      subscribeOpenFiles,
-      pollIntervalMs: 2000,
-    });
+  const handleOpenRecent = useCallback(
+    (path: string) => {
+      void openRecentFile(path);
+    },
+    [openRecentFile]
+  );
 
-    coordinator.start();
+  const handleReopenClosed = useCallback(() => {
+    void reopenClosedFile();
+  }, [reopenClosedFile]);
 
-    return () => {
-      coordinator.stop();
-    };
-  }, []);
-
-  // Extract headings outline from active document content
+  const deferredActiveContent = useDeferredValue(activeTab?.content);
   const headings = useMemo(() => {
-    if (!activeTab) return [];
-    return extractOutline(activeTab.content);
-  }, [activeTab?.content]);
+    if (deferredActiveContent === undefined) return [];
+    return extractOutline(deferredActiveContent);
+  }, [deferredActiveContent]);
 
-  // Calculate statistics from active document content
   const stats = useMemo(() => {
-    if (!activeTab) {
+    if (deferredActiveContent === undefined) {
       return { words: 0, chars: 0, charsNoSpaces: 0, lines: 0, readingTimeMinutes: 0 };
     }
-    return calculateStats(activeTab.content);
-  }, [activeTab?.content]);
+    return calculateStats(deferredActiveContent);
+  }, [deferredActiveContent]);
 
   const handleCycleTab = useCallback(
     (direction: 1 | -1) => {
@@ -545,8 +396,6 @@ const AppContent: React.FC<AppContentProps> = ({
   const handleNextTab = useCallback(() => handleCycleTab(1), [handleCycleTab]);
   const handlePreviousTab = useCallback(() => handleCycleTab(-1), [handleCycleTab]);
 
-  // Keyboard shortcuts integration. Disabled while a modal owns the keyboard so
-  // Ctrl+N / Ctrl+W cannot tear down the document behind an open dialog.
   const isModalOpen =
     isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || confirmDialog.isOpen;
 
@@ -562,73 +411,13 @@ const AppContent: React.FC<AppContentProps> = ({
     onToggleSettingsModal: handleToggleSettings,
     onNextTab: handleNextTab,
     onPreviousTab: handlePreviousTab,
+    onReopenClosed: handleReopenClosed,
     enabled: !isModalOpen,
   });
 
-  // Handle heading selection from outline
-  const handleSelectHeading = useCallback(
-    (heading: HeadingItem) => {
-      isSyncingScroll.current = true;
-      if (viewMode === 'edit' || viewMode === 'split') {
-        editorRef.current?.jumpToLine(heading.line);
-      }
-      if (viewMode === 'read' || viewMode === 'split') {
-        previewRef.current?.scrollToAnchor(heading.slug, heading.line);
-      }
-      setTimeout(() => {
-        isSyncingScroll.current = false;
-      }, 300);
-    },
-    [viewMode]
-  );
-
-  // Handle toolbar action formatting
   const handleToolbarAction = useCallback((action: MarkdownAction) => {
-    if (editorRef.current) {
-      editorRef.current.applyAction(action);
-    }
+    editorRef.current?.applyAction(action);
   }, []);
-
-  // Synchronized scroll between the two panes in split mode, anchored on
-  // source line numbers so both stay aligned even when rendered heights
-  // differ significantly (images, code blocks, tables...). The sync lock
-  // prevents the programmatic scroll of the target pane from echoing back
-  // as a reverse sync (feedback loop).
-  const handleEditorScroll = useCallback(
-    (scrollTop: number) => {
-      recordEditorScroll(scrollTop);
-      if (viewMode !== 'split' || isSyncingScroll.current) return;
-      const pos = editorRef.current?.getTopVisibleLine();
-      if (pos) {
-        isSyncingScroll.current = true;
-        previewRef.current?.scrollToSourceLine(pos.line, pos.fraction);
-        setTimeout(() => {
-          isSyncingScroll.current = false;
-        }, 50);
-      }
-    },
-    [viewMode, recordEditorScroll]
-  );
-
-  // Reverse direction: preview scroll drives the editor. The lock window is
-  // longer because the editor's programmatic scroll settles over several
-  // frames (CodeMirror lazy height measurement); late settle events must not
-  // echo back and yank the preview away from the user's position.
-  const handlePreviewScroll = useCallback(
-    (scrollTop: number) => {
-      recordPreviewScroll(scrollTop);
-      if (viewMode !== 'split' || isSyncingScroll.current) return;
-      const pos = previewRef.current?.getTopSourceLine();
-      if (pos) {
-        isSyncingScroll.current = true;
-        editorRef.current?.scrollToLine(pos.line, pos.fraction);
-        setTimeout(() => {
-          isSyncingScroll.current = false;
-        }, 250);
-      }
-    },
-    [viewMode, recordPreviewScroll]
-  );
 
   const handleCursorChange = useCallback(
     (line: number, col: number) => {
@@ -639,10 +428,6 @@ const AppContent: React.FC<AppContentProps> = ({
     [activeTabId, updateCursor]
   );
 
-  // Clicking a task-list checkbox in the preview writes the flipped `- [ ]`
-  // marker back into the source document of the active tab. The preview only
-  // reports the source line; the toggle is applied to the live content here so
-  // it cannot act on a stale (deferred) render.
   const handleToggleTask = useCallback(
     (line: number) => {
       const tabId = activeTabIdRef.current;
@@ -651,81 +436,17 @@ const AppContent: React.FC<AppContentProps> = ({
       const next = toggleTaskCheckboxAtLine(current.content, line);
       if (next !== null) updateContent(current.id, next);
     },
-    // Reads tab state through refs so the callback stays stable across
-    // keystrokes and does not defeat Preview's memoisation.
     [updateContent]
   );
 
-  /**
-   * Saves pasted/dropped images next to a saved desktop document and inserts
-   * relative Markdown links. Unsaved documents and the browser build embed a
-   * data URL instead, so the image never points at a transient clipboard file.
-   */
-  const handleImageFiles = useCallback(
-    async (files: File[], position: number) => {
-      const docId = activeTabIdRef.current;
-      const document = tabsRef.current.find((tab) => tab.id === docId);
-      if (!document || document.kind === 'diff' || files.length === 0) return;
+  const { handleImageFilesForEditor } = useImageAssetInsertion({
+    tabs,
+    activeTabId,
+    editorRef,
+    updateContent,
+    showToast,
+  });
 
-      const canUseAssets =
-        isTauri() && Boolean(document.filePath) && !document.filePath!.startsWith('browser://');
-      const snippets: string[] = [];
-      let lastError = '';
-
-      for (const file of files) {
-        try {
-          const alt = getImageAltFromName(file.name, t('markdown.imageAlt'));
-          if (canUseAssets) {
-            const destination = getImageAssetDestination(
-              document.filePath!,
-              createImageAssetName(file)
-            );
-            const bytes = new Uint8Array(await file.arrayBuffer());
-            await writeBinaryFile(destination.absolutePath, bytes);
-            snippets.push(createImageMarkdown(destination.markdownPath, alt));
-          } else {
-            snippets.push(createImageMarkdown(await readFileAsDataUrl(file), alt));
-          }
-        } catch (error) {
-          lastError = error instanceof Error ? error.message : String(error);
-        }
-      }
-
-      if (snippets.length > 0) {
-        // Re-read the document after async file I/O. If the user switched tabs,
-        // update the original tab rather than inserting into the visible one.
-        const latest = tabsRef.current.find((tab) => tab.id === docId);
-        if (latest) {
-          const at = Math.max(0, Math.min(position, latest.content.length));
-          const prefix = at > 0 && latest.content[at - 1] !== '\n' ? '\n\n' : '';
-          const suffix = at < latest.content.length && latest.content[at] !== '\n' ? '\n\n' : '';
-          const insertion = `${prefix}${snippets.join('\n\n')}${suffix}`;
-
-          if (activeTabIdRef.current === docId && editorRef.current) {
-            editorRef.current.insertText(insertion, at);
-          } else {
-            updateContent(docId, latest.content.slice(0, at) + insertion + latest.content.slice(at));
-          }
-          showToast(t('toasts.imageInserted', { count: snippets.length }), 'success');
-        }
-      }
-
-      if (lastError) {
-        showToast(t('toasts.imageInsertFailed', { error: lastError }), 'error');
-      }
-    },
-    [showToast, t, updateContent]
-  );
-
-  const handleImageFilesForEditor = useCallback(
-    (files: File[], position: number) => {
-      void handleImageFiles(files, position);
-    },
-    [handleImageFiles]
-  );
-
-  // Stable identity so <Editor> does not re-dispatch StateEffect.reconfigure on
-  // every parent render (see BASE_BASIC_SETUP in Editor.tsx).
   const handleEditorChange = useCallback(
     (val: string) => {
       if (activeTabId) {
@@ -735,8 +456,8 @@ const AppContent: React.FC<AppContentProps> = ({
     [activeTabId, updateContent]
   );
 
-  const editorContent = (
-    <Editor
+  const renderEditor = () => (
+    <LazyEditor
       ref={editorRef}
       docId={activeTab?.id}
       initialCursorLine={activeTab?.cursorLine}
@@ -752,11 +473,14 @@ const AppContent: React.FC<AppContentProps> = ({
       tabSize={settings.tabSize}
       wordWrap={settings.wordWrap}
       lineNumbers={settings.lineNumbers}
+      spellcheck={settings.spellcheck}
+      typewriterMode={settings.typewriterMode}
+      focusMode={settings.focusMode}
     />
   );
 
-  const previewContent = (
-    <Preview
+  const renderPreview = () => (
+    <LazyPreview
       onOpenLink={handleOpenLink}
       onToggleTask={handleToggleTask}
       ref={previewRef}
@@ -769,7 +493,6 @@ const AppContent: React.FC<AppContentProps> = ({
 
   return (
     <div className="flex flex-col h-screen w-screen overflow-hidden bg-app text-slate-900 dark:text-slate-100 font-sans">
-      {/* 1. TitleBar & Quick Controls */}
       <TitleBar
         activeTab={activeTab}
         viewMode={viewMode}
@@ -785,14 +508,17 @@ const AppContent: React.FC<AppContentProps> = ({
         onExportWord={exportWord}
         onExportPdf={exportPdf}
         onExportHtml={exportHtml}
+        onCopyRichText={copyRichText}
         isExporting={isExporting}
         exportingType={exportingType}
         onOpenShortcuts={handleOpenShortcuts}
         onOpenSettings={handleOpenSettings}
         onCompare={handleOpenCompare}
+        recentFiles={recentFiles}
+        onOpenRecent={handleOpenRecent}
+        onClearRecent={clearRecentFiles}
       />
 
-      {/* 2. TabBar (Multi-document tabs) */}
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}
@@ -819,14 +545,11 @@ const AppContent: React.FC<AppContentProps> = ({
         showToast={showToast}
       />
 
-      {/* 3. Toolbar (Markdown insertion ribbon) */}
       {viewMode !== 'read' && activeTab?.kind !== 'diff' && (
         <Toolbar onAction={handleToolbarAction} disabled={!activeTab} />
       )}
 
-      {/* 4. Main Body: Sidebar + Editor + Preview */}
       <div className="flex-1 flex overflow-hidden relative">
-        {/* Left Outline Sidebar (not applicable to diff tabs) */}
         {activeTab?.kind !== 'diff' && (
           <Sidebar
             headings={headings}
@@ -837,62 +560,67 @@ const AppContent: React.FC<AppContentProps> = ({
           />
         )}
 
-        {/* Central Workspace */}
         <main className="flex-1 flex overflow-hidden relative bg-workspace">
-          {activeTab?.kind === 'diff' && activeTab.diffRefs ? (
-            (() => {
-              const left = resolveDiffSide(activeTab.diffRefs!.left);
-              const right = resolveDiffSide(activeTab.diffRefs!.right);
-              return (
-                <DiffView
-                  key={activeTab.id}
-                  leftTitle={left.title}
-                  rightTitle={right.title}
-                  leftDoc={left.content}
-                  rightDoc={right.content}
-                  leftReadOnly={left.readOnly}
-                  rightReadOnly={right.readOnly}
-                  onChangeLeft={left.onChange}
-                  onChangeRight={right.onChange}
-                  isDark={isDark}
-                  fontSize={settings.fontSize}
-                  lineHeight={settings.lineHeight}
-                  tabSize={settings.tabSize}
-                  wordWrap={settings.wordWrap}
-                  lineNumbers={settings.lineNumbers}
-                />
-              );
-            })()
-          ) : viewMode === 'split' && !isNarrowViewport ? (
-            <SplitPane
-              ratio={splitRatio}
-              onRatioChange={setSplitRatio}
-              onRatioCommit={handleSplitRatioCommit}
-              separatorLabel={t('splitPane.resize')}
-              left={<div className="h-full min-w-0 overflow-hidden">{editorContent}</div>}
-              right={
-                <div className="h-full min-w-0 overflow-hidden bg-app">
-                  {previewContent}
-                </div>
-              }
-            />
-          ) : (
-            <>
-              {/* Edit mode, or split mode collapsed to one pane on narrow windows */}
-              {(viewMode === 'edit' || viewMode === 'split') && (
-                <div className="h-full w-full overflow-hidden">{editorContent}</div>
-              )}
-              {viewMode === 'read' && (
-                <div className="h-full w-full overflow-hidden bg-app">
-                  {previewContent}
-                </div>
-              )}
-            </>
-          )}
+          <Suspense fallback={<div className="h-full w-full bg-workspace" />}>
+            {activeTab?.kind === 'diff' && activeTab.diffRefs ? (
+              (() => {
+                const left = resolveDiffSide(activeTab.diffRefs.left);
+                const right = resolveDiffSide(activeTab.diffRefs.right);
+                return (
+                  <LazyDiffView
+                    key={activeTab.id}
+                    leftTitle={left.title}
+                    rightTitle={right.title}
+                    leftDoc={left.content}
+                    rightDoc={right.content}
+                    leftReadOnly={left.readOnly}
+                    rightReadOnly={right.readOnly}
+                    onChangeLeft={left.onChange}
+                    onChangeRight={right.onChange}
+                    isDark={isDark}
+                    fontSize={settings.fontSize}
+                    lineHeight={settings.lineHeight}
+                    tabSize={settings.tabSize}
+                    wordWrap={settings.wordWrap}
+                    lineNumbers={settings.lineNumbers}
+                  />
+                );
+              })()
+            ) : viewMode === 'split' && !isNarrowViewport ? (
+              <SplitPane
+                ratio={splitRatio}
+                onRatioChange={setSplitRatio}
+                onRatioCommit={handleSplitRatioCommit}
+                separatorLabel={t('splitPane.resize')}
+                left={
+                  <div className="h-full min-w-0 overflow-hidden">
+                    <Suspense fallback={<div className="h-full w-full bg-workspace" />}>
+                      {renderEditor()}
+                    </Suspense>
+                  </div>
+                }
+                right={
+                  <div className="h-full min-w-0 overflow-hidden bg-app">
+                    <Suspense fallback={<div className="h-full w-full bg-app" />}>
+                      {renderPreview()}
+                    </Suspense>
+                  </div>
+                }
+              />
+            ) : (
+              <>
+                {(viewMode === 'edit' || viewMode === 'split') && (
+                  <div className="h-full w-full overflow-hidden">{renderEditor()}</div>
+                )}
+                {viewMode === 'read' && (
+                  <div className="h-full w-full overflow-hidden bg-app">{renderPreview()}</div>
+                )}
+              </>
+            )}
+          </Suspense>
         </main>
       </div>
 
-      {/* 5. Bottom StatusBar */}
       <StatusBar
         stats={stats}
         cursorLine={activeTab?.cursorLine || 1}
@@ -901,7 +629,6 @@ const AppContent: React.FC<AppContentProps> = ({
         viewMode={viewMode}
       />
 
-      {/* 6. Modals and Floating Elements */}
       <ConfirmModal
         isOpen={confirmDialog.isOpen}
         title={confirmDialog.title}
@@ -915,29 +642,38 @@ const AppContent: React.FC<AppContentProps> = ({
         onCancel={handleCancelConfirm}
       />
 
-      <ShortcutsModal
-        isOpen={isShortcutsModalOpen}
-        onClose={handleCloseShortcuts}
-      />
+      {isShortcutsModalOpen && (
+        <Suspense fallback={null}>
+          <LazyShortcutsModal isOpen={isShortcutsModalOpen} onClose={handleCloseShortcuts} />
+        </Suspense>
+      )}
 
-      <CompareModal
-        isOpen={isCompareModalOpen}
-        docTabs={docTabs}
-        defaultLeftId={defaultCompareLeftId}
-        onConfirm={handleConfirmCompare}
-        onCancel={handleCloseCompare}
-      />
+      {isCompareModalOpen && (
+        <Suspense fallback={null}>
+          <LazyCompareModal
+            isOpen={isCompareModalOpen}
+            docTabs={docTabs}
+            defaultLeftId={defaultCompareLeftId}
+            onConfirm={handleConfirmCompare}
+            onCancel={handleCloseCompare}
+          />
+        </Suspense>
+      )}
 
-      <SettingsModal
-        isOpen={isSettingsModalOpen}
-        onClose={handleCloseSettings}
-        settings={settings}
-        onUpdateSetting={updateSetting}
-        onResetSettings={resetSettings}
-        showToast={showToast}
-        updater={updater}
-        onBeforeUpdateInstall={handleBeforeUpdateInstall}
-      />
+      {isSettingsModalOpen && (
+        <Suspense fallback={null}>
+          <LazySettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={handleCloseSettings}
+            settings={settings}
+            onUpdateSetting={updateSetting}
+            onResetSettings={resetSettings}
+            showToast={showToast}
+            updater={updater}
+            onBeforeUpdateInstall={handleBeforeUpdateInstall}
+          />
+        </Suspense>
+      )}
 
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
       <UpdateInstallOverlay state={updater.state} />

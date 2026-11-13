@@ -86,6 +86,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         { key: 'Ctrl + S', desc: t('shortcutsModal.saveFile') },
         { key: 'Ctrl + Shift + S', desc: t('shortcutsModal.saveAsFile') },
         { key: 'Ctrl + W', desc: t('shortcutsModal.closeTab') },
+        { key: 'Ctrl + Shift + T', desc: t('shortcutsModal.reopenClosedTab') },
         { key: 'Ctrl + Tab / Ctrl + PageDown', desc: t('shortcutsModal.nextTab') },
         { key: 'Ctrl + Shift + Tab / Ctrl + PageUp', desc: t('shortcutsModal.previousTab') },
       ],

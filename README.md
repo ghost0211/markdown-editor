@@ -27,6 +27,8 @@
    - 工具栏快捷插入：粗体、斜体、删除线、引用块、行内代码、多语言代码块、无序/有序/任务列表、超链接、图片、表格与分割线。
    - 智能选区包裹与光标自动定位，支持 `Ctrl+B` / `Ctrl+I` / `Ctrl+K` 格式化快捷键。
    - 列表回车自动续行、有序列表自动递增、任务列表新项自动恢复未勾选；空列表项回车退出列表。
+   - **表格智能编辑与智能粘贴**：表格内按 `Tab` / `Shift+Tab` 切换单元格并自动对齐列宽（支持中英文混排等宽计算，末尾按 `Tab` 自动新增行）；从 Excel / Word / 网页粘贴表格自动转为对齐的 GFM 表格；选中文本后粘贴 URL 自动生成 `[文本](链接)`。
+   - **查找计数、拼写检查、打字机模式与专注模式**：`Ctrl+F` 查找栏实时显示当前位置与总匹配数（如 `2 / 15`）；偏好设置支持开启系统拼写检查、打字机模式（光标行垂直居中）与专注模式（弱化非当前编辑段落）。
    - 支持粘贴或拖入图片：已保存文档自动写入旁边 `assets/` 并插入相对链接，未保存文档与 Web 模式使用内嵌图片。
 
 4. **原生级文件系统能力**：
@@ -38,7 +40,8 @@
 5. **专业 Word (.docx)、PDF (.pdf) & HTML (.html) 文档导出**：
    - **Word (.docx) 导出**：基于 OOXML 工业标准（`docx` + AST 转换），自动将 Markdown 转换为排版精良的 Word 文档。完整支持内置 Heading 1~6（原生支持 Word 导航窗格与目录生成）、A4 纸张与标准边距、微软雅黑中文字体、列表与嵌套多级列表（原生编号系统）、待办任务复选框、GFM 复杂表格（双重 DXA 列宽与表头底色）、等宽代码块及引用块。
    - **PDF (.pdf) 导出**：基于系统内置 **Microsoft Edge Headless** 引擎生成高质量矢量/文本型 PDF（非 Canvas 模糊截图或简易拼接）。内置 A4 打印样式、智能分页防断裂控制（`break-inside: avoid` / `break-after: avoid`）、代码语法高亮与中文无损字体栈。
-   - **HTML (.html) 导出**：一键生成内嵌 CSS 样式的响应式独立单页 HTML（无需外部样式表依赖），完美支持移动端与桌面端自适应排版及 A4 打印样式。
+   - **HTML (.html) 导出**：一键生成内嵌 CSS 样式的响应式独立单页 HTML（无需外部样式表依赖），完美支持移动端与桌面端自适应排版及 A4 打印样式；可在偏好设置中开启「HTML 导出时内嵌图片」，将本地图片以 base64 内嵌生成单文件，关闭时保持按路径引用。
+   - **复制为富文本**：导出菜单支持一键将文档复制为带内联样式的富文本 HTML，可直接粘贴到邮件、Word 或微信公众号编辑器中并保留标题、表格、代码块与 Callout 配色。
    - **严格环境安全与 XSS 净化**：
      - PDF 与 HTML 转换期间严格通过 `rehype-sanitize` 进行 XSS 防护，禁止任意不可信脚本（`<script>`）、`<style>` 注入、`<iframe>`、`<object>`、`<embed>`、`<form>` 与内联事件（`onerror` 等）。
      - 绝对超链接协议严格白名单限制为 `http`、`https` 与 `mailto`，绝对图片协议严格限制为 `http` 与 `https`；同时安全保留页内锚点跳转（如 `#heading`）与安全相对图片引用（如 `./assets/preview.png`），拦截任意 `javascript:`、`file:`、`data:` 等危险协议。
@@ -61,6 +64,9 @@
      - 启动与唤起参数严格过滤为已存在的支持扩展名文件；文件读取阶段由 `read_text_file` 进行 UTF-8 编码校验并实现单文件错误隔离，单个损坏或非 UTF-8 文件失败时给出友好提示，绝不影响后续有效文件的批量打开。
    - 采用碰撞免疫的文档 ID 生成策略（优先 `crypto.randomUUID`），安全还原持久化会话。
    - 未保存修改实时展示脏状态标记（未保存圆点）。
+   - **自动保存（可选）**：在「偏好设置 → 启动与会话」开启后，已有文件路径的文档会在停止输入约 1.5 秒或窗口失焦时静默写回磁盘；未命名文档不受影响。若磁盘文件已被外部修改则不会覆盖，而是交由外部修改对话框处理。
+   - **最近文件**：标题栏「打开」旁的下拉菜单列出最近打开/保存的 10 个文件，已不存在的文件会在点击后自动移除；`Ctrl + Shift + T` 可重新打开最近关闭的文件。
+   - **拖拽打开**：把 `.md` / `.markdown` / `.mdown` / `.mkd` / `.txt` 文件拖进窗口即可新建标签打开（WebView 无法获得拖入文件的真实路径，因此以未保存文档打开，保存时需另存为）。
    - 标签栏支持横向平滑滚动与鼠标中键一键关闭。
 
 7. **智能文档大纲（TOC）**：
@@ -69,8 +75,10 @@
    - 点击大纲条目：在编辑/分屏模式下精确跳转至 CodeMirror 对应行；在阅读/分屏模式下平滑滚动至预览锚点。
 
 8. **GFM 富文本渲染与安全防护**：
-   - 全面支持 GitHub Flavored Markdown（表格对齐、可点击待办任务复选框、删除线、自动链接等）。
-   - 支持 KaTeX 行内/块级数学公式与 Mermaid 图表预览。
+   - 全面支持 GitHub Flavored Markdown（表格对齐、可点击待办任务复选框、删除线、自动链接、脚注跳转与回跳等）。
+   - 支持 **GitHub 风格 Callout 提示块**（`> [!NOTE]` / `TIP` / `IMPORTANT` / `WARNING` / `CAUTION`），预览、HTML/PDF 导出、Word 导出与富文本复制均同步适配。
+   - 支持 **YAML / TOML Front Matter**：自动识别文档前置元数据，大纲自动跳过元数据注释与分隔线，预览支持一键折叠/展开高亮卡片，导出时自动剔除元数据。
+   - 支持 KaTeX 行内/块级数学公式与 Mermaid 图表预览（Mermaid 图表支持一键导出 **SVG** 矢量图与 **2x 高清 PNG** 图片）；预览区图片支持点击全屏灯箱放大查看。
    - 代码块语法高亮（Rust、TypeScript、JavaScript、Python、CSS、HTML、JSON 等）。
    - 代码块顶部包含语言标签与「一键复制代码」按钮。
    - **XSS 安全防护**：默认拦截危险原生 HTML 注入，保证本地应用与文档浏览安全。
@@ -79,7 +87,8 @@
 
 9. **明暗双主题与个性化偏好持久化**：
    - 浅色模式 / 深色模式 / 跟随系统主题，全 UI 与代码编辑器深度适配。
-   - 本地持久化记忆用户偏好（语言设置、主题设置、视图模式、侧边栏开关、打开的标签页会话）。
+   - **本地持久化与无限容量会话存储**：桌面端将多标签会话原子化写入 Tauri 原生应用数据目录（`app_data_dir/session_v1.json`），彻底突破浏览器 `localStorage` ~5 MB 配额限制，并支持从旧版 `localStorage` 会话无损自动迁移（Web 开发模式自动降级回退至 `localStorage`）。
+   - **大文件与首屏性能优化**：通过路由/视图级按需懒加载与 Vite Vendor 分包大幅压缩首屏入口体积，CodeMirror 多语言解析器与 KaTeX 数学管线按需启用；针对超长 Markdown 文档内置安全分块渐进渲染与自适应输入防抖，万行级文档依然保持流畅输入与精准行号同步。
 
 10. **全功能精致偏好设置中心（Settings Modal）**：
    - **顶部快速唤出**：TitleBar 帮助按钮旁专属齿轮图标，支持全局快捷键 `Ctrl + ,` 随时唤起，无任何 Emoji，全 Lucide 矢量图标适配。
@@ -130,6 +139,7 @@
 | `Ctrl + S` | 快速保存当前文档 |
 | `Ctrl + Shift + S` | 当前文档另存为... |
 | `Ctrl + W` | 关闭当前标签页（若有未保存修改将弹出确认） |
+| `Ctrl + Shift + T` | 重新打开最近关闭的文件 |
 | `Ctrl + 1` | 切换至 **纯编辑模式** |
 | `Ctrl + 2` | 切换至 **双栏分屏模式** |
 | `Ctrl + 3` | 切换至 **纯阅读模式** |
@@ -210,11 +220,16 @@ npm run tauri build
 项目集成了 Vitest 与 Cargo 单元测试，涵盖国际化字典完备性与插值、偏好设置校验与迁移、文档工具（ID 生成、路径规范化、导出默认文件名计算）、Word OOXML 生成结构、PDF 打印 HTML 与 XSS 安全过滤、HTML 独立单页生成与本地 Base URL 强化解析、外链安全白名单校验、大纲解析、标题 Slug 生成、中英文分词统计等核心模块：
 
 ```bash
+# 代码规范检查 (ESLint) 与类型检查
+npm run lint
+npm run typecheck
+
 # 执行前端测试
 npm test -- --run
 
-# 执行 Rust 后端测试
-cd src-tauri && cargo test && cd ..
+# 执行 Rust 后端 Clippy 与单元测试
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+cd src-tauri && cargo test --locked && cd ..
 ```
 
 ---
@@ -229,7 +244,11 @@ markdown-editor/
 │   ├── tauri.conf.json       # Tauri 窗口、CSP 与打包配置
 │   ├── icons/                # Windows/Mac/Linux 桌面应用图标
 │   └── src/
-│       ├── lib.rs            # Rust 原生命令 (read/write/dialogs/export_pdf/opener)
+│       ├── lib.rs            # Tauri 应用初始化与插件/命令注册入口
+│       ├── commands.rs       # Tauri IPC 命令层 (读写/对话框/主题/外链/会话)
+│       ├── path_utils.rs     # 路径规范化、扩展名校验与待打开文件队列
+│       ├── pdf_export.rs     # Headless Edge PDF 导出与文件头校验
+│       ├── session_store.rs  # 应用数据目录原子化会话持久化存储
 │       └── main.rs           # Windows 进程入口
 ├── src/                      # 前端 React + TypeScript 源码
 │   ├── components/           # UI 界面组件

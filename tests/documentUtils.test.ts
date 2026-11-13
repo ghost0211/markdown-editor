@@ -12,6 +12,8 @@ import {
   closeTabsToTheRightState,
   closeSavedTabsState,
   createDiffTabState,
+  decideAutoSave,
+  isAutoSaveEligible,
 } from '../src/lib/documentUtils';
 import { DocumentTab } from '../src/types';
 
@@ -392,5 +394,48 @@ describe('documentUtils', () => {
       const result = closeSavedTabsState([tab1, tab2]);
       expect(result.map((t) => t.id)).toEqual(['tab1', 'tab2']);
     });
+  });
+});
+
+describe('auto save decisions', () => {
+  const tab = (overrides: Partial<DocumentTab> = {}): DocumentTab => ({
+    id: 't1',
+    title: 'a.md',
+    filePath: 'C:\\docs\\a.md',
+    content: 'new',
+    savedContent: 'old',
+    isDirty: true,
+    cursorLine: 1,
+    cursorCol: 1,
+    fileMtime: 100,
+    ...overrides,
+  });
+
+  it('only considers dirty tabs backed by a real file', () => {
+    expect(isAutoSaveEligible(tab())).toBe(true);
+    expect(isAutoSaveEligible(undefined)).toBe(false);
+    expect(isAutoSaveEligible(tab({ isDirty: false }))).toBe(false);
+    expect(isAutoSaveEligible(tab({ filePath: null }))).toBe(false);
+    expect(isAutoSaveEligible(tab({ filePath: '  ' }))).toBe(false);
+    expect(isAutoSaveEligible(tab({ filePath: 'browser://a.md' }))).toBe(false);
+    expect(isAutoSaveEligible(tab({ kind: 'diff' }))).toBe(false);
+  });
+
+  it('saves only while the disk mtime still matches the known baseline', () => {
+    expect(decideAutoSave(tab(), 100)).toBe(true);
+  });
+
+  it('never overwrites a file that changed on disk', () => {
+    expect(decideAutoSave(tab(), 250)).toBe(false);
+  });
+
+  it('skips when the mtime is unknown on either side', () => {
+    expect(decideAutoSave(tab(), null)).toBe(false);
+    expect(decideAutoSave(tab({ fileMtime: undefined }), 100)).toBe(false);
+  });
+
+  it('skips tabs that were saved or closed while the mtime was being read', () => {
+    expect(decideAutoSave(tab({ isDirty: false }), 100)).toBe(false);
+    expect(decideAutoSave(undefined, 100)).toBe(false);
   });
 });

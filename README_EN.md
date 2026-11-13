@@ -27,6 +27,8 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Toolbar formatting shortcuts: Bold, Italic, Strikethrough, Blockquote, Inline Code, Multi-Language Code Blocks, Unordered/Ordered/Task Lists, Links, Images, Tables, and Horizontal Rules.
    - Smart selection wrapping and cursor positioning, with `Ctrl+B` / `Ctrl+I` / `Ctrl+K` formatting shortcuts.
    - Enter continues lists, increments ordered items and resets task items to unchecked; Enter on an empty item exits the list.
+   - **Smart Table Editing & Smart Paste**: `Tab` / `Shift+Tab` inside GFM tables navigates between cells and auto-aligns column widths (CJK-aware, appending a new row when tabbing past the end); pasting tables from Excel / Word / web pages converts them into aligned Markdown tables; pasting a URL onto selected text creates `[text](url)`.
+   - **Match Counter, Spell Check, Typewriter & Focus Modes**: `Ctrl+F` displays live `current / total` match counts; Preferences offers toggles for system Spell Check, Typewriter Mode (keeps active line vertically centered), and Focus Mode (dims surrounding paragraphs).
    - Paste or drop images: saved desktop documents copy them into a sibling `assets/` directory with relative links; unsaved documents and Web mode embed them.
 
 4. **Native File System Capabilities**:
@@ -38,7 +40,8 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 5. **Professional Word (.docx), PDF (.pdf) & HTML (.html) Document Export**:
    - **Word (.docx) Export**: Built upon OOXML standards (`docx` + AST translation), transforming Markdown into formatted Word documents with Heading 1-6 styles (native Word navigation pane integration), A4 page geometry, standard margins, Microsoft YaHei typography, nested lists/task lists, GFM tables with dual DXA column widths, and styled blockquotes/code blocks.
    - **PDF (.pdf) Export**: Powered by system-native **Headless Microsoft Edge**, generating vector/text PDFs with A4 print styling, smart pagination break control (`break-inside: avoid` / `break-after: avoid`), syntax highlighting, and lossless font stacks.
-   - **HTML (.html) Export**: Generates standalone single-page HTML with embedded CSS and syntax highlighting (no external stylesheet dependencies required), supporting responsive desktop/mobile viewports and A4 print styles.
+   - **HTML (.html) Export**: Generates standalone single-page HTML with embedded CSS and syntax highlighting (no external stylesheet dependencies required), supporting responsive desktop/mobile viewports and A4 print styles. An optional Preferences toggle can inline local images as base64 data URLs for single-file sharing.
+   - **Copy as Rich Text**: One-click copy of sanitized, inline-styled HTML from the Export menu for pasting directly into email clients, Word, or rich-text CMS editors while preserving headings, tables, code blocks, and callout colors.
    - **Strict Security & XSS Sanitization**:
      - HTML and PDF pipelines strictly utilize `rehype-sanitize` to eliminate XSS risks, stripping `<script>`, `<style>` injections, `<iframe>`, `<object>`, `<embed>`, `<form>`, and inline event handlers (e.g. `onerror`).
      - Absolute hyperlink protocols are strictly restricted to `http`, `https`, and `mailto`; absolute image protocols are restricted to `http` and `https`. Safe relative image references (e.g. `./assets/preview.png`) and in-page hash anchors (e.g. `#section`) are retained, while blocking dangerous protocols like `javascript:`, `file:`, and `data:`.
@@ -51,6 +54,9 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 
 6. **Multi-Tab Workspace & Windows File Associations**:
    - Open, switch, and close multiple documents in tabs with dirty state indicators.
+- **Auto Save (optional)**: When enabled in Preferences → Startup & Session, documents that already have a file are silently written back about 1.5 s after you stop typing or when the window loses focus. Untitled documents are never touched, and a file that changed on disk is never overwritten (the external-change dialog decides instead).
+- **Recent Files**: A dropdown next to Open lists the 10 most recently opened/saved files (missing files are removed when clicked); `Ctrl + Shift + T` reopens the last closed file.
+- **Drag & Drop to Open**: Drop `.md` / `.markdown` / `.mdown` / `.mkd` / `.txt` files onto the window to open them in new tabs. The webview does not expose a dropped file's real path, so they open as unsaved documents and the first save asks for a location.
    - **Windows Native File Associations & Single-Instance Architecture**:
      - NSIS installer registers candidate associations for `.md`, `.markdown`, `.mdown`, `.mkd`, and `.txt` via `bundle.fileAssociations`.
      - Integrates `tauri-plugin-single-instance`: CLI arguments open files directly on cold start; opening files while running activates the existing window and opens the file in a new tab.
@@ -67,8 +73,10 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Two-way navigation: jumps to CodeMirror lines in Edit/Split modes and scrolls to preview anchors in Preview mode.
 
 8. **GFM Rich-Text Rendering & Security Sandbox**:
-   - Full GitHub Flavored Markdown support (tables, clickable task lists, strikethrough, autolinks).
-   - KaTeX inline/block math and Mermaid diagram previews.
+   - Full GitHub Flavored Markdown support (tables, clickable task lists, strikethrough, autolinks, and footnotes).
+   - **GitHub-Style Callouts** (`> [!NOTE]`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`) across Preview, HTML/PDF/Word exports, and Rich Text copy.
+   - **YAML / TOML Front Matter**: Recognizes leading metadata blocks, excludes front matter comments/fences from the TOC outline, renders a collapsible metadata card in Preview, and omits raw metadata from exported documents.
+   - KaTeX inline/block math and Mermaid diagram previews (with one-click **SVG** and **2x PNG** diagram export), plus click-to-zoom image lightbox in Preview.
    - Code syntax highlighting (Rust, TypeScript, JavaScript, Python, CSS, HTML, JSON, etc.) with language tags and copy-to-clipboard buttons.
    - **XSS Sandbox**: Blocks dangerous raw HTML injections.
    - **Protocol Whitelist**: Restricts external links strictly to `http`, `https`, and `mailto`, opening safely in the default system browser.
@@ -76,7 +84,8 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 
 9. **Light & Dark Theme Customization**:
    - Light, Dark, and System appearance modes adapting the entire UI and editor.
-   - Persistent settings storage for theme, language, view mode, sidebar state, and open tab sessions.
+   - **Native App-Data Session Persistence**: Desktop builds atomically persist multi-tab sessions into Tauri's native `app_data_dir/session_v1.json`, removing the ~5 MB WebView `localStorage` ceiling while automatically migrating legacy `localStorage` sessions on first launch (with seamless `localStorage` fallback in Web mode).
+   - **Bundle Splitting & Large-Document Performance**: Heavy editor/preview/modal modules and vendor chunks (`katex`, `highlight.js`, `codemirror`, `docx`, `mermaid`) load on demand, math AST plugins are bypassed on math-free content, and large documents use fence-safe progressive block chunking with adaptive typing debounce.
 
 10. **Comprehensive Preferences Modal (Settings)**:
    - **Quick Access**: Dedicated gear button in the TitleBar and global shortcut `Ctrl + ,`.
@@ -125,6 +134,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 | `Ctrl + S` | Save current document | Global |
 | `Ctrl + Shift + S` | Save current document As... | Global |
 | `Ctrl + W` | Close current tab (confirms if unsaved) | Global |
+| `Ctrl + Shift + T` | Reopen last closed file | Global |
 | `Ctrl + 1` | Switch to **Editor Only** view | Global |
 | `Ctrl + 2` | Switch to **Split View** | Global |
 | `Ctrl + 3` | Switch to **Preview Only** view | Global |
@@ -205,11 +215,16 @@ The desktop app checks for signed updates after startup and in Preferences → S
 Comprehensive Vitest and Cargo test suites cover i18n dictionaries, settings persistence/migration, document utilities, OOXML Word generation, PDF printing, standalone HTML generation with hardened base URLs, external link security, outline extraction, and statistics:
 
 ```bash
+# Lint & TypeScript check
+npm run lint
+npm run typecheck
+
 # Run frontend test suite
 npm test -- --run
 
-# Run backend Rust test suite
-cd src-tauri && cargo test && cd ..
+# Run backend Rust clippy & test suite
+cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
+cd src-tauri && cargo test --locked && cd ..
 ```
 
 ---
@@ -224,7 +239,11 @@ markdown-editor/
 │   ├── tauri.conf.json       # Tauri window, CSP, and bundle config
 │   ├── icons/                # Desktop application icons
 │   └── src/
-│       ├── lib.rs            # Rust commands (read/write/dialogs/export_pdf/opener)
+│       ├── lib.rs            # Tauri app builder & plugin/command registration
+│       ├── commands.rs       # Tauri IPC command handlers
+│       ├── path_utils.rs     # Path normalization, extension whitelist & queue
+│       ├── pdf_export.rs     # Headless Edge PDF export & PDF validation
+│       ├── session_store.rs  # Atomic app-data session file store
 │       └── main.rs           # Windows process entry point
 ├── src/                      # Frontend React + TypeScript source
 │   ├── components/           # UI Components

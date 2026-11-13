@@ -10,11 +10,18 @@ export interface UseExportDocumentResult {
   exportWord: () => Promise<void>;
   exportPdf: () => Promise<void>;
   exportHtml: () => Promise<void>;
+  copyRichText: () => Promise<void>;
+}
+
+export interface UseExportDocumentOptions {
+  /** Inline local images as data URLs in the exported HTML. */
+  embedImages?: boolean;
 }
 
 export function useExportDocument(
   activeTab: DocumentTab | undefined,
-  showToast: (message: string, type?: ToastType, duration?: number) => string
+  showToast: (message: string, type?: ToastType, duration?: number) => string,
+  { embedImages = false }: UseExportDocumentOptions = {}
 ): UseExportDocumentResult {
   const { t, language } = useI18n();
   const [isExporting, setIsExporting] = useState(false);
@@ -37,7 +44,7 @@ export function useExportDocument(
       showToast(t('toasts.exportingWord'), 'info', 2000);
 
       const { exportMarkdownToDocx } = await import('@/lib/export/docxExporter');
-      const docxBytes = await exportMarkdownToDocx(activeTab.content, activeTab.title);
+      const docxBytes = await exportMarkdownToDocx(activeTab.content, activeTab.title, language);
       await writeBinaryFile(targetPath, docxBytes);
 
       if (targetPath.startsWith('browser://')) {
@@ -52,7 +59,7 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, isExporting, showToast, t]);
+  }, [activeTab, isExporting, language, showToast, t]);
 
   const exportPdf = useCallback(async () => {
     if (!activeTab || isExporting) return;
@@ -110,6 +117,11 @@ export function useExportDocument(
       showToast(t('toasts.exportingHtml'), 'info', 2000);
 
       const { exportMarkdownToHtml } = await import('@/lib/export/htmlExporter');
+      const resolveImage = embedImages
+        ? await (
+            await import('@/lib/export/embedImages')
+          ).createLocalImageResolver(activeTab.filePath)
+        : undefined;
       await exportMarkdownToHtml(
         activeTab.content,
         activeTab.title,
@@ -117,6 +129,7 @@ export function useExportDocument(
         {
           sourceFilePath: activeTab.filePath || undefined,
           lang: language,
+          resolveImage,
         }
       );
 
@@ -132,7 +145,20 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, isExporting, language, showToast, t]);
+  }, [activeTab, embedImages, isExporting, language, showToast, t]);
+
+  const copyRichText = useCallback(async () => {
+    if (!activeTab) return;
+    try {
+      const { buildRichTextHtml, copyHtmlToClipboard } = await import('@/lib/export/richText');
+      const html = await buildRichTextHtml(activeTab.content, language);
+      await copyHtmlToClipboard(html, activeTab.content);
+      showToast(t('toasts.richTextCopied'), 'success', 3000);
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || 'Copy failed';
+      showToast(t('toasts.richTextCopyFailed', { error: msg }), 'error', 5000);
+    }
+  }, [activeTab, language, showToast, t]);
 
   return {
     isExporting,
@@ -140,5 +166,6 @@ export function useExportDocument(
     exportWord,
     exportPdf,
     exportHtml,
+    copyRichText,
   };
 }

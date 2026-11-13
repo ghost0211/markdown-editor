@@ -1,5 +1,6 @@
 import GithubSlugger, { slug } from 'github-slugger';
 import { HeadingItem } from '@/types';
+import { getFrontMatterEndLine } from '@/lib/frontMatter';
 
 /**
  * Strips markdown inline formatting (bold, italic, links, images, code ticks, html tags, escaped characters)
@@ -70,7 +71,10 @@ export function extractOutline(markdown: string): HeadingItem[] {
   let inCodeBlock = false;
   let codeBlockDelimiter = '';
 
-  for (let i = 0; i < lines.length; i++) {
+  // YAML front matter is metadata: its lines (`# comment`, `---`) are not headings.
+  const frontMatterEnd = getFrontMatterEndLine(markdown);
+
+  for (let i = frontMatterEnd; i < lines.length; i++) {
     const line = lines[i];
     const trimmed = line.trim();
 

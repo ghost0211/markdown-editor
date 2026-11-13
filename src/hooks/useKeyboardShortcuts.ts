@@ -14,6 +14,7 @@ interface KeyboardShortcutsOptions {
   onToggleSettingsModal?: () => void;
   onNextTab?: () => void;
   onPreviousTab?: () => void;
+  onReopenClosed?: () => void;
   /**
    * When false, document-level shortcuts (Ctrl+N / Ctrl+W / ...) are ignored.
    * Used while a modal dialog owns the keyboard, so typing inside a dialog can
@@ -34,6 +35,7 @@ export function useKeyboardShortcuts({
   onToggleSettingsModal,
   onNextTab,
   onPreviousTab,
+  onReopenClosed,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -76,6 +78,13 @@ export function useKeyboardShortcuts({
       if (isCtrlOrMeta && e.shiftKey && (e.key === 's' || e.key === 'S')) {
         e.preventDefault();
         onSaveAs();
+        return;
+      }
+
+      // Ctrl + Shift + T: Reopen last closed file
+      if (isCtrlOrMeta && e.shiftKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        onReopenClosed?.();
         return;
       }
 
@@ -150,6 +159,7 @@ export function useKeyboardShortcuts({
     onToggleSettingsModal,
     onNextTab,
     onPreviousTab,
+    onReopenClosed,
     enabled,
   ]);
 }

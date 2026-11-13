@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useI18n } from '@/i18n';
-import { Check, Copy, AlertCircle, Eye, Code as CodeIcon } from 'lucide-react';
+import { Check, Copy, AlertCircle, Eye, Code as CodeIcon, Download } from 'lucide-react';
+import { exportMermaidPng, exportMermaidSvg } from '@/lib/export/mermaidExporter';
 
 export interface MermaidBlockProps {
   className?: string;
@@ -111,6 +112,7 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
   const { t } = useI18n();
   const isDark = useIsDarkMode();
   const [copied, setCopied] = useState(false);
+  const [exportedFormat, setExportedFormat] = useState<'svg' | 'png' | null>(null);
   const [showSource, setShowSource] = useState(false);
 
   const [renderState, setRenderState] = useState<MermaidRenderState>({ status: 'idle' });
@@ -131,6 +133,32 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
       // ignore clipboard failures
     }
   }, [rawCode]);
+
+  const handleExportSvg = useCallback(async () => {
+    if (!renderState.svg) return;
+    try {
+      const saved = await exportMermaidSvg(renderState.svg);
+      if (saved) {
+        setExportedFormat('svg');
+        setTimeout(() => setExportedFormat((cur) => (cur === 'svg' ? null : cur)), 2000);
+      }
+    } catch (err) {
+      console.warn('导出 Mermaid SVG 失败:', err);
+    }
+  }, [renderState.svg]);
+
+  const handleExportPng = useCallback(async () => {
+    if (!renderState.svg) return;
+    try {
+      const saved = await exportMermaidPng(renderState.svg, isDark);
+      if (saved) {
+        setExportedFormat('png');
+        setTimeout(() => setExportedFormat((cur) => (cur === 'png' ? null : cur)), 2000);
+      }
+    } catch (err) {
+      console.warn('导出 Mermaid PNG 失败:', err);
+    }
+  }, [renderState.svg, isDark]);
 
   useEffect(() => {
     let isCancelled = false;
@@ -233,6 +261,48 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
           )}
         </div>
         <div className="flex items-center space-x-1">
+          {renderState.status === 'success' && renderState.svg && (
+            <>
+              <button
+                type="button"
+                onClick={handleExportSvg}
+                title={t('preview.exportSvg')}
+                aria-label={t('preview.exportSvg')}
+                className="flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors text-[11px]"
+              >
+                {exportedFormat === 'svg' ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    <span className="text-emerald-500">{t('preview.exportedLabel')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3 h-3" />
+                    <span>SVG</span>
+                  </>
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={handleExportPng}
+                title={t('preview.exportPng')}
+                aria-label={t('preview.exportPng')}
+                className="flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors text-[11px]"
+              >
+                {exportedFormat === 'png' ? (
+                  <>
+                    <Check className="w-3 h-3 text-emerald-500" />
+                    <span className="text-emerald-500">{t('preview.exportedLabel')}</span>
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-3 h-3" />
+                    <span>PNG</span>
+                  </>
+                )}
+              </button>
+            </>
+          )}
           {renderState.status === 'success' && (
             <button
               type="button"

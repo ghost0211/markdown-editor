@@ -23,6 +23,11 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   lineNumbers: true,
   restoreSession: true,
   startupView: 'remember-last',
+  autoSave: false,
+  spellcheck: false,
+  typewriterMode: false,
+  focusMode: false,
+  exportEmbedImages: false,
 };
 
 /**
@@ -98,6 +103,22 @@ export function validateSettings(raw: unknown): EditorSettings {
     startupView = obj.startupView;
   }
 
+  // 9. Auto Save: boolean (opt-in; overwriting files silently must be a choice)
+  const autoSave =
+    typeof obj.autoSave === 'boolean' ? obj.autoSave : DEFAULT_SETTINGS.autoSave;
+
+  const spellcheck =
+    typeof obj.spellcheck === 'boolean' ? obj.spellcheck : DEFAULT_SETTINGS.spellcheck;
+  const typewriterMode =
+    typeof obj.typewriterMode === 'boolean' ? obj.typewriterMode : DEFAULT_SETTINGS.typewriterMode;
+  const focusMode =
+    typeof obj.focusMode === 'boolean' ? obj.focusMode : DEFAULT_SETTINGS.focusMode;
+
+  const exportEmbedImages =
+    typeof obj.exportEmbedImages === 'boolean'
+      ? obj.exportEmbedImages
+      : DEFAULT_SETTINGS.exportEmbedImages;
+
   return {
     version: 1,
     language,
@@ -109,6 +130,11 @@ export function validateSettings(raw: unknown): EditorSettings {
     lineNumbers,
     restoreSession,
     startupView,
+    autoSave,
+    spellcheck,
+    typewriterMode,
+    focusMode,
+    exportEmbedImages,
   };
 }
 

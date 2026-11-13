@@ -1,6 +1,8 @@
 import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
+import remarkFrontmatter from 'remark-frontmatter';
+import { transformCallouts } from '@/lib/remarkCallouts';
 import {
   Document,
   Paragraph,
@@ -70,6 +72,7 @@ export function isValidDocxHyperlink(urlStr?: string | null): boolean {
   }
 
   // Reject ASCII control characters
+  // eslint-disable-next-line no-control-regex
   if (/[\u0000-\u001F\u007F]/.test(trimmed)) {
     return false;
   }
@@ -702,9 +705,17 @@ function convertBlockNode(
  */
 export async function exportMarkdownToDocx(
   markdown: string,
-  title: string
+  title: string,
+  lang?: string
 ): Promise<Uint8Array> {
-  const tree = unified().use(remarkParse).use(remarkGfm).parse(markdown) as Root;
+  // Front matter parses to a `yaml` node, which convertBlockNode ignores, so
+  // the metadata block never reaches the document body.
+  const tree = unified()
+    .use(remarkParse)
+    .use(remarkGfm)
+    .use(remarkFrontmatter, ['yaml', 'toml'])
+    .parse(markdown) as Root;
+  transformCallouts(tree, lang);
 
   const children: (Paragraph | Table)[] = [];
   for (const node of tree.children) {

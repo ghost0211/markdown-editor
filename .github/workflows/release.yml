@@ -26,6 +26,18 @@ jobs:
         with:
           ref: ${{ inputs.tag || github.ref }}
 
+      - name: Extract release notes from annotated tag
+        id: notes
+        shell: bash
+        run: |
+          git fetch --force origin "refs/tags/${RELEASE_TAG}:refs/tags/${RELEASE_TAG}"
+          NOTES=$(git tag -l --format='%(contents)' "$RELEASE_TAG")
+          {
+            echo "body<<__RELEASE_NOTES_EOF__"
+            echo "$NOTES"
+            echo "__RELEASE_NOTES_EOF__"
+          } >> "$GITHUB_OUTPUT"
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22
@@ -73,6 +85,7 @@ jobs:
         with:
           tagName: ${{ env.RELEASE_TAG }}
           releaseName: 'MarkdownEditor ${{ env.RELEASE_TAG }}'
+          releaseBody: ${{ steps.notes.outputs.body }}
           releaseDraft: false
           prerelease: ${{ contains(env.RELEASE_TAG, '-') }}
           generateReleaseNotes: true

@@ -677,7 +677,7 @@ describe('Document Open & File Association Logic', () => {
     });
 
     it('should gracefully no-op in browser mode without polling or errors', async () => {
-      let isTauriEnv = false;
+      const isTauriEnv = false;
       let drainCalled = false;
 
       const coordinator = createFileCoordinator({

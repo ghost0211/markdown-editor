@@ -15,7 +15,7 @@ function deferred<T>() {
 
 function setup(enabled = true) {
   const update: PendingUpdate = {
-    version: '1.7.0', currentVersion: APP_VERSION, body: 'Formula rendering improvements',
+    version: '1.9.0', currentVersion: APP_VERSION, body: 'Formula rendering improvements',
     download: vi.fn().mockResolvedValue(undefined),
     install: vi.fn().mockResolvedValue(undefined),
     close: vi.fn().mockResolvedValue(undefined),
@@ -59,7 +59,7 @@ describe('application updater', () => {
     request.resolve(update);
     expect(await first).toBe(true);
     expect(backend.check).toHaveBeenCalledTimes(1);
-    expect(updater.getSnapshot()).toMatchObject({ status: 'available', version: '1.7.0' });
+    expect(updater.getSnapshot()).toMatchObject({ status: 'available', version: '1.9.0' });
     await updater.check();
     expect(update.close).toHaveBeenCalledTimes(1);
   });
@@ -213,7 +213,7 @@ describe('update settings interface', () => {
   });
 
   it('escapes release notes and offers a separate install button only after a verified download', () => {
-    const available = render({ status: 'available', version: '1.7.0', notes: '<script>alert(1)</script>' });
+    const available = render({ status: 'available', version: '1.9.0', notes: '<script>alert(1)</script>' });
     expect(available).toContain('&lt;script&gt;');
     expect(available).not.toContain('>保存并安装更新<');
     expect(render({ status: 'downloaded' })).toContain('>保存并安装更新<');
