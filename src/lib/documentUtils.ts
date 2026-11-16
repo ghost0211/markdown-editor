@@ -76,23 +76,57 @@ export function normalizePathKey(filePath?: string | null): string {
   return normalized.toLowerCase();
 }
 
+/** File formats the export pipeline can produce. */
+export type ExportFilenameFormat = 'docx' | 'pdf' | 'html' | 'xmd';
+
 /**
  * Computes default export filename for a document given its title and target format.
- * Strips existing markdown/document extensions (.md, .markdown, .mdown, .mkd, .txt, .docx, .pdf, .html, .htm)
+ * Strips existing markdown/document extensions (.md, .markdown, .mdown, .mkd, .txt, .docx, .pdf, .html, .htm, .xmd)
  * and appends the target format extension.
  */
 export function getExportFilename(
   title?: string | null,
-  format: 'docx' | 'pdf' | 'html' = 'docx'
+  format: ExportFilenameFormat = 'docx'
 ): string {
   if (!title || !title.trim()) {
     return `未命名.${format}`;
   }
   const cleanTitle = title
     .trim()
-    .replace(/\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm)$/i, '')
+    .replace(/\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm|xmd)$/i, '')
     .trim();
   return `${cleanTitle || '未命名'}.${format}`;
+}
+
+/**
+ * Ensures an export destination carries the required extension.
+ *
+ * A user can type any file name into the export dialog; a `.xmd` bundle must
+ * never be written without its extension (and must never end up as the source
+ * `.md` file). Existing matching extensions are preserved verbatim.
+ */
+export function ensureExportPathExtension(targetPath: string, extension: string): string {
+  const trimmed = targetPath.trim();
+  const ext = extension.trim().replace(/^\.+/, '');
+  if (!trimmed || !ext) return trimmed;
+  if (trimmed.toLowerCase().endsWith(`.${ext.toLowerCase()}`)) {
+    return trimmed;
+  }
+  return `${trimmed}.${ext}`;
+}
+
+/**
+ * Whether writing `targetPath` would overwrite the document the export was
+ * generated from. Comparison reuses path normalization so Windows
+ * case-insensitivity and mixed separators are handled.
+ */
+export function isExportTargetSameAsSource(
+  targetPath: string | null | undefined,
+  sourceFilePath?: string | null
+): boolean {
+  const target = normalizePathKey(targetPath);
+  const source = normalizePathKey(sourceFilePath);
+  return target !== '' && target === source;
 }
 
 export interface OpenOrFocusResult {

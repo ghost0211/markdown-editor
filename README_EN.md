@@ -10,7 +10,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 ## ✨ Key Features & Highlights
 
 1. **Refined Windows Desktop Layout**:
-   - Top title and quick action bar (New, Open, Save, Save As, Export Word/PDF/HTML, View Switching, Theme Toggle, Preferences, Keyboard Shortcuts Help).
+   - Top title and quick action bar (New, Open, Save, Save As, Export Word/PDF/HTML/XMD, View Switching, Theme Toggle, Preferences, Keyboard Shortcuts Help).
    - Smart left-hand Table of Contents (TOC) outline supporting H1-H6 heading hierarchy parsing and instant navigation.
    - Central multi-view workspace supporting three modes: **Editor Only**, **Split View**, and **Preview Only**. The split divider supports pointer dragging and keyboard resizing, with a persisted ratio.
    - Immersive bottom status bar: Real-time word count (smart detection of Chinese characters and English words), character count, line count, cursor position (Ln/Col), dirty save status, and estimated reading time.
@@ -37,16 +37,17 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - **Unsaved Changes Protection**: Graceful confirmation dialogs when closing dirty tabs; snapshot-based save state preventing race conditions during typing.
    - **Universal Compatibility**: In pure browser preview environments, automatically falls back to standard browser file reading and Blob downloads without crashing.
 
-5. **Professional Word (.docx), PDF (.pdf) & HTML (.html) Document Export**:
+5. **Professional Word (.docx), PDF (.pdf), HTML (.html) & XMD (.xmd) Document Export**:
    - **Word (.docx) Export**: Built upon OOXML standards (`docx` + AST translation), transforming Markdown into formatted Word documents with Heading 1-6 styles (native Word navigation pane integration), A4 page geometry, standard margins, Microsoft YaHei typography, nested lists/task lists, GFM tables with dual DXA column widths, and styled blockquotes/code blocks.
    - **PDF (.pdf) Export**: Powered by system-native **Headless Microsoft Edge**, generating vector/text PDFs with A4 print styling, smart pagination break control (`break-inside: avoid` / `break-after: avoid`), syntax highlighting, and lossless font stacks.
    - **HTML (.html) Export**: Generates standalone single-page HTML with embedded CSS and syntax highlighting (no external stylesheet dependencies required), supporting responsive desktop/mobile viewports and A4 print styles. An optional Preferences toggle can inline local images as base64 data URLs for single-file sharing.
+   - **XMD (.xmd) Export**: Packages editable Markdown, images and linked local attachments into one ZIP container, rewrites references to internal relative paths and deduplicates repeated sources. Supports local/remote/pasted and HTML images; unavailable resources fail clearly rather than producing a broken package. Export-only for now: extract with a ZIP tool to read the Markdown. See the [XMD v1 format specification (Chinese)](docs/xmd-format.md).
    - **Copy as Rich Text**: One-click copy of sanitized, inline-styled HTML from the Export menu for pasting directly into email clients, Word, or rich-text CMS editors while preserving headings, tables, code blocks, and callout colors.
    - **Strict Security & XSS Sanitization**:
      - HTML and PDF pipelines strictly utilize `rehype-sanitize` to eliminate XSS risks, stripping `<script>`, `<style>` injections, `<iframe>`, `<object>`, `<embed>`, `<form>`, and inline event handlers (e.g. `onerror`).
      - Absolute hyperlink protocols are strictly restricted to `http`, `https`, and `mailto`; absolute image protocols are restricted to `http` and `https`. Safe relative image references (e.g. `./assets/preview.png`) and in-page hash anchors (e.g. `#section`) are retained, while blocking dangerous protocols like `javascript:`, `file:`, and `data:`.
    - **UTF-8 Encoding & Meta Tags**: Exported HTML files include `<meta charset="utf-8">` and viewport meta declarations, dynamically adapting `<html lang="zh-CN">` or `<html lang="en-US">` according to current UI language.
-   - **Hardened Local Base URL & Image References**: Automatically computes a valid, hardened `<base href="file:///...">` from local Markdown source paths, supporting Windows drive letters, Unicode/spaces, `#` and `?` characters, POSIX absolute paths, and UNC network shares. **Note: Images are referenced via relative/absolute URLs or online links, not embedded as binary bundled archive packages (Images are referenced, not embedded)**.
+   - **Hardened Local Base URL & Image References**: Automatically computes a valid, hardened `<base href="file:///...">` from local Markdown source paths, supporting Windows drive letters, Unicode/spaces, `#` and `?` characters, POSIX absolute paths, and UNC network shares. **PDF and HTML without image embedding still reference image paths/URLs. Use XMD export to bundle Markdown and binary resources into a portable archive**.
    - **Universal Compatibility & Graceful Fallbacks**:
      - Desktop environment automatically discovers Microsoft Edge installations across standard system paths (`Program Files (x86)`, `Program Files`, `LOCALAPPDATA`, `PATH`), utilizing isolated temp profiles and native file copy mechanisms supporting Chinese characters and spaces.
      - Web browser preview mode falls back seamlessly: Word and HTML download as standard Blobs (HTML using `text/html;charset=utf-8` MIME preserving Unicode content), while PDF opens the browser print preview.
@@ -75,7 +76,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 8. **GFM Rich-Text Rendering & Security Sandbox**:
    - Full GitHub Flavored Markdown support (tables, clickable task lists, strikethrough, autolinks, and footnotes).
    - **GitHub-Style Callouts** (`> [!NOTE]`, `TIP`, `IMPORTANT`, `WARNING`, `CAUTION`) across Preview, HTML/PDF/Word exports, and Rich Text copy.
-   - **YAML / TOML Front Matter**: Recognizes leading metadata blocks, excludes front matter comments/fences from the TOC outline, renders a collapsible metadata card in Preview, and omits raw metadata from exported documents.
+   - **YAML / TOML Front Matter**: Recognizes leading metadata blocks, excludes front matter comments/fences from the TOC outline, renders a collapsible metadata card in Preview, and omits raw metadata from rendered exports (XMD preserves the original Markdown metadata).
    - KaTeX inline/block math and Mermaid diagram previews (with one-click **SVG** and **2x PNG** diagram export), plus click-to-zoom image lightbox in Preview.
    - Code syntax highlighting (Rust, TypeScript, JavaScript, Python, CSS, HTML, JSON, etc.) with language tags and copy-to-clipboard buttons.
    - **XSS Sandbox**: Blocks dangerous raw HTML injections.

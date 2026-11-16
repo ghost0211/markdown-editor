@@ -160,6 +160,7 @@ const AppContent: React.FC<AppContentProps> = ({
     exportWord,
     exportPdf,
     exportHtml,
+    exportXmd,
     copyRichText,
   } = useExportDocument(activeTab, showToast, { embedImages: settings.exportEmbedImages });
 
@@ -508,6 +509,7 @@ const AppContent: React.FC<AppContentProps> = ({
         onExportWord={exportWord}
         onExportPdf={exportPdf}
         onExportHtml={exportHtml}
+        onExportXmd={exportXmd}
         onCopyRichText={copyRichText}
         isExporting={isExporting}
         exportingType={exportingType}

@@ -10,7 +10,7 @@
 ## ✨ 核心功能与亮点
 
 1. **精美 Windows 桌面布局**：
-   - 顶部标题与快速操作栏（新建/打开/保存/另存为/导出 Word、PDF 与 HTML/视图切换/主题切换/偏好设置/快捷键帮助）。
+   - 顶部标题与快速操作栏（新建/打开/保存/另存为/导出 Word、PDF、HTML 与 XMD/视图切换/主题切换/偏好设置/快捷键帮助）。
    - 左侧智能文档大纲（TOC），支持 H1-H6 目录树解析与快速跳转。
    - 中央工作区，支持三种视图切换：**纯编辑模式**、**双栏分屏模式**、**纯阅读模式**；双栏分隔线支持鼠标拖拽与键盘调整，比例自动记忆。
    - 底部沉浸式状态栏：实时显示字数（中文字符与英文单词智能统计）、字符数、行数、光标行列（Ln/Col）、保存状态及预估阅读时间。
@@ -37,16 +37,17 @@
    - **未保存修改保护**：关闭含有未保存修改的标签页或批量关闭其他标签页时，提供优雅的二次确认对话框；保存操作采用快照比对机制，写盘期间继续输入亦能精确保持脏标记与用户最新内容。
    - **全环境兼容**：在非 Tauri 的纯浏览器开发模式下，自动降级为浏览器文件读取与 Blob 下载，不会崩溃。
 
-5. **专业 Word (.docx)、PDF (.pdf) & HTML (.html) 文档导出**：
+5. **专业 Word (.docx)、PDF (.pdf)、HTML (.html) 与 XMD (.xmd) 文档导出**：
    - **Word (.docx) 导出**：基于 OOXML 工业标准（`docx` + AST 转换），自动将 Markdown 转换为排版精良的 Word 文档。完整支持内置 Heading 1~6（原生支持 Word 导航窗格与目录生成）、A4 纸张与标准边距、微软雅黑中文字体、列表与嵌套多级列表（原生编号系统）、待办任务复选框、GFM 复杂表格（双重 DXA 列宽与表头底色）、等宽代码块及引用块。
    - **PDF (.pdf) 导出**：基于系统内置 **Microsoft Edge Headless** 引擎生成高质量矢量/文本型 PDF（非 Canvas 模糊截图或简易拼接）。内置 A4 打印样式、智能分页防断裂控制（`break-inside: avoid` / `break-after: avoid`）、代码语法高亮与中文无损字体栈。
    - **HTML (.html) 导出**：一键生成内嵌 CSS 样式的响应式独立单页 HTML（无需外部样式表依赖），完美支持移动端与桌面端自适应排版及 A4 打印样式；可在偏好设置中开启「HTML 导出时内嵌图片」，将本地图片以 base64 内嵌生成单文件，关闭时保持按路径引用。
+   - **XMD (.xmd) 导出**：将可编辑 Markdown 正文、图片和正文链接的本地附件打包为单个 ZIP 容器，自动改写为包内相对引用并去重。支持本地、网络、粘贴内嵌图片和 HTML 图片；资源缺失时明确报错，不静默生成缺图包。当前仅支持导出，可用 ZIP 工具解压后打开正文；详见 [XMD v1 格式说明](docs/xmd-format.md)。
    - **复制为富文本**：导出菜单支持一键将文档复制为带内联样式的富文本 HTML，可直接粘贴到邮件、Word 或微信公众号编辑器中并保留标题、表格、代码块与 Callout 配色。
    - **严格环境安全与 XSS 净化**：
      - PDF 与 HTML 转换期间严格通过 `rehype-sanitize` 进行 XSS 防护，禁止任意不可信脚本（`<script>`）、`<style>` 注入、`<iframe>`、`<object>`、`<embed>`、`<form>` 与内联事件（`onerror` 等）。
      - 绝对超链接协议严格白名单限制为 `http`、`https` 与 `mailto`，绝对图片协议严格限制为 `http` 与 `https`；同时安全保留页内锚点跳转（如 `#heading`）与安全相对图片引用（如 `./assets/preview.png`），拦截任意 `javascript:`、`file:`、`data:` 等危险协议。
    - **UTF-8 编码与 Meta 声明**：导出的 HTML 严格声明 `<meta charset="utf-8">` 与视口 `<meta name="viewport">`，并根据当前界面语言动态适配 `<html lang="zh-CN">` 或 `<html lang="en-US">`。
-   - **本地基准路径与图片引用说明**：自动根据本地 Markdown 源文件目录生成安全规范的 `<base href="file:///...">`，支持 Windows 盘符、Unicode/空格、`#` 与 `?` 特殊字符、POSIX 绝对路径及 UNC 网络共享路径；**图片采用相对或绝对路径/网络链接引用，而非作为二进制文件包打包内嵌（Images are referenced, not embedded）**。
+   - **本地基准路径与图片引用说明**：自动根据本地 Markdown 源文件目录生成安全规范的 `<base href="file:///...">`，支持 Windows 盘符、Unicode/空格、`#` 与 `?` 特殊字符、POSIX 绝对路径及 UNC 网络共享路径；**PDF 及未启用内嵌图片的 HTML 仍按路径或网络地址引用图片；若需要把正文与图片二进制资源一起打包，请使用 XMD 导出**。
    - **全环境兼容与优雅降级**：
      - 桌面环境下自动检测 Windows Edge 多路常见安装路径（`Program Files (x86)`、`Program Files`、`LOCALAPPDATA`、`PATH` 等），安全采用隔离临时工作区渲染、落盘稳定性轮询校验与 Rust 原生文件复制机制，完美支持包含中文与空格的任意目标路径。
      - 浏览器纯 Web 预览环境下，Word 与 HTML 自动降级为标准 Blob 文件下载（HTML 采用 `text/html;charset=utf-8` MIME 并保持完整 Unicode 内容），PDF 自动打开浏览器打印友好页面，体验无缝一致。
@@ -77,7 +78,7 @@
 8. **GFM 富文本渲染与安全防护**：
    - 全面支持 GitHub Flavored Markdown（表格对齐、可点击待办任务复选框、删除线、自动链接、脚注跳转与回跳等）。
    - 支持 **GitHub 风格 Callout 提示块**（`> [!NOTE]` / `TIP` / `IMPORTANT` / `WARNING` / `CAUTION`），预览、HTML/PDF 导出、Word 导出与富文本复制均同步适配。
-   - 支持 **YAML / TOML Front Matter**：自动识别文档前置元数据，大纲自动跳过元数据注释与分隔线，预览支持一键折叠/展开高亮卡片，导出时自动剔除元数据。
+   - 支持 **YAML / TOML Front Matter**：自动识别文档前置元数据，大纲自动跳过元数据注释与分隔线，预览支持一键折叠/展开高亮卡片，排版格式导出时自动剔除元数据（XMD 保留 Markdown 原始元数据）。
    - 支持 KaTeX 行内/块级数学公式与 Mermaid 图表预览（Mermaid 图表支持一键导出 **SVG** 矢量图与 **2x 高清 PNG** 图片）；预览区图片支持点击全屏灯箱放大查看。
    - 代码块语法高亮（Rust、TypeScript、JavaScript、Python、CSS、HTML、JSON 等）。
    - 代码块顶部包含语言标签与「一键复制代码」按钮。

@@ -2,10 +2,14 @@ import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import { OpenFileResult } from '@/types';
 import { t, getCurrentLanguage } from '@/i18n';
+import { ensureExportPathExtension } from '@/lib/documentUtils';
 
 export const ALLOWED_EXTERNAL_PROTOCOLS = new Set(['http:', 'https:', 'mailto:']);
 
-export type ExportFormat = 'docx' | 'pdf' | 'html' | 'svg' | 'png';
+/** MIME type of an .xmd bundle (Markdown document + zipped image resources). */
+export const XMD_MIME_TYPE = 'application/vnd.xmd+zip';
+
+export type ExportFormat = 'docx' | 'pdf' | 'html' | 'svg' | 'png' | 'xmd';
 
 /**
  * Opens Windows Default Apps settings page (ms-settings:defaultapps).
@@ -136,6 +140,100 @@ export async function readBinaryFile(path: string): Promise<Uint8Array> {
 }
 
 /**
+ * Fetches a remote image for an .xmd bundle.
+ *
+ * In Tauri the request is proxied through the Rust `fetch_xmd_image` command,
+ * because the desktop webview CSP forbids cross-origin browser fetches. The Web
+ * fallback is a plain no-credentials fetch used by the browser build.
+ */
+export async function fetchXmdImage(
+  url: string
+): Promise<{ data: Uint8Array; contentType: string }> {
+  const trimmed = typeof url === 'string' ? url.trim() : '';
+  if (!trimmed) {
+    throw new Error('网络图片地址为空');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error(`无效的网络图片地址: ${trimmed}`);
+  }
+  const protocol = parsed.protocol.toLowerCase();
+  if (protocol !== 'http:' && protocol !== 'https:') {
+    throw new Error(`不支持的网络图片协议: ${parsed.protocol}`);
+  }
+
+  if (isTauri()) {
+    try {
+      const res = await invoke<{
+        data: number[];
+        contentType?: string;
+        content_type?: string;
+      }>('fetch_xmd_image', { url: trimmed });
+      if (!res || !Array.isArray(res.data)) {
+        throw new Error('网络图片数据格式错误');
+      }
+      return {
+        data: new Uint8Array(res.data),
+        contentType: res.contentType || res.content_type || '',
+      };
+    } catch (err: unknown) {
+      const msg =
+        typeof err === 'string' ? err : (err as Error)?.message || '获取网络图片失败';
+      throw new Error(msg, { cause: err });
+    }
+  }
+
+  if (typeof fetch !== 'function') {
+    throw new Error('当前环境不支持获取网络图片');
+  }
+
+  try {
+    const signal =
+      typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function'
+        ? AbortSignal.timeout(30000)
+        : undefined;
+    const response = await fetch(trimmed, {
+      credentials: 'omit',
+      referrerPolicy: 'no-referrer',
+      signal,
+    });
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status} ${response.statusText}`.trim());
+    }
+    return {
+      data: new Uint8Array(await response.arrayBuffer()),
+      contentType: response.headers.get('content-type') || '',
+    };
+  } catch (err: unknown) {
+    const msg =
+      typeof err === 'string' ? err : (err as Error)?.message || '获取网络图片失败';
+    throw new Error(msg, { cause: err });
+  }
+}
+
+/**
+ * Reads an XMD resource (image/attachment) as raw bytes through the native
+ * command. The Rust side pre-checks the 32 MiB limit *before* reading, so a
+ * huge local file is never loaded speculatively, and only explicit local paths
+ * are accepted. Web builds cannot read by path and fail fast.
+ */
+export async function readXmdResource(path: string): Promise<Uint8Array> {
+  if (!isTauri()) {
+    throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
+  }
+  try {
+    const raw = await invoke<ArrayBuffer>('read_xmd_resource', { path });
+    return new Uint8Array(raw);
+  } catch (err: unknown) {
+    const msg = typeof err === 'string' ? err : (err as Error)?.message || '读取资源文件失败';
+    throw new Error(msg, { cause: err });
+  }
+}
+
+/**
  * Returns the file's last-modified time in milliseconds since the Unix epoch.
  * Returns null in Web mode or on error (e.g. file deleted), allowing callers
  * to treat it as "unknown" without throwing.
@@ -191,12 +289,40 @@ export async function writeHtmlFile(path: string, content: string): Promise<void
   }
 }
 
+/** Size of the little-endian u32 path-length header in the `write_xmd_file` frame. */
+const XMD_WRITE_FRAME_HEADER_BYTES = 4;
+
+/**
+ * Builds the raw binary frame accepted by the native `write_xmd_file` command:
+ * 4-byte little-endian u32 path byte length, the UTF-8 path, then the ZIP bytes.
+ * Sending one raw IPC body keeps the ZIP out of JSON serialization.
+ */
+function buildXmdWriteFrame(path: string, data: Uint8Array): Uint8Array {
+  const pathBytes = new TextEncoder().encode(path);
+  const frame = new Uint8Array(
+    XMD_WRITE_FRAME_HEADER_BYTES + pathBytes.length + data.length
+  );
+  new DataView(frame.buffer).setUint32(0, pathBytes.length, true);
+  frame.set(pathBytes, XMD_WRITE_FRAME_HEADER_BYTES);
+  frame.set(data, XMD_WRITE_FRAME_HEADER_BYTES + pathBytes.length);
+  return frame;
+}
+
 /**
  * Writes binary content (e.g. .docx buffer) to a file.
+ *
+ * `.xmd` bundles on desktop go through the dedicated raw `write_xmd_file`
+ * command (length-prefixed path + ZIP bytes) so large archives never pass
+ * through JSON arrays; every other format keeps the existing behavior.
  */
 export async function writeBinaryFile(path: string, data: Uint8Array | number[]): Promise<void> {
   if (isTauri()) {
     try {
+      if (path.toLowerCase().endsWith('.xmd')) {
+        const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
+        await invoke('write_xmd_file', buildXmdWriteFrame(path, bytes));
+        return;
+      }
       const payload = data instanceof Uint8Array ? Array.from(data) : data;
       await invoke('write_binary_file', { path, data: payload });
     } catch (err: unknown) {
@@ -206,7 +332,9 @@ export async function writeBinaryFile(path: string, data: Uint8Array | number[])
   } else {
     // Web fallback: Trigger browser file download with appropriate mime
     const lower = path.toLowerCase();
-    const mimeType = lower.endsWith('.docx')
+    const mimeType = lower.endsWith('.xmd')
+      ? XMD_MIME_TYPE
+      : lower.endsWith('.docx')
       ? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
       : lower.endsWith('.pdf')
       ? 'application/pdf'
@@ -323,7 +451,7 @@ export async function exportFileDialog(
     if (typeof window === 'undefined') return null;
     const lang = getCurrentLanguage();
     const base = (defaultName || t(lang, 'common.untitled')).replace(
-      /\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm|svg|png)$/i,
+      /\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm|svg|png|xmd)$/i,
       ''
     );
     const promptName = `${base}.${format}`;
@@ -332,6 +460,13 @@ export async function exportFileDialog(
       promptName
     );
     if (!name) return null;
+    if (format === 'xmd') {
+      // An XMD bundle must always land on `.xmd`; a typed source extension
+      // (e.g. `notes.md`) is replaced rather than producing `notes.md.xmd`,
+      // which also guarantees the Markdown source is never overwritten.
+      const cleanName = name.replace(/\.(md|markdown|mdown|mkd|txt|docx|pdf|html|htm)$/i, '');
+      return `browser://${ensureExportPathExtension(cleanName, 'xmd')}`;
+    }
     const finalName = name.toLowerCase().endsWith(`.${format}`) ? name : `${name}.${format}`;
     return `browser://${finalName}`;
   }

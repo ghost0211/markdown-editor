@@ -2,7 +2,7 @@ use crate::path_utils::{strip_text_extensions, OpenFileResponse, PendingOpenFile
 use crate::pdf_export::export_pdf_from_html_sync;
 use crate::session_store::{clear_session_in_dir, read_session_from_dir, write_session_to_dir};
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tauri::Manager;
 
 /// Maps a frontend theme preference onto a window theme.
@@ -151,28 +151,58 @@ pub fn save_file_dialog(default_name: Option<String>) -> Result<Option<String>, 
     }
 }
 
+/// Resolves the dialog filter label, canonical extension, and window title for
+/// an export format. Kept pure so every supported format (including `.xmd`) is
+/// unit-testable without opening a native save dialog.
+fn export_format_spec(format: &str) -> Option<(&'static str, &'static str, &'static str)> {
+    match format.to_lowercase().as_str() {
+        "docx" => Some(("Word 文档 (*.docx)", "docx", "导出 Word 文档")),
+        "pdf" => Some(("PDF 文档 (*.pdf)", "pdf", "导出 PDF 文档")),
+        "html" => Some(("HTML 网页 (*.html)", "html", "导出 HTML 网页")),
+        "svg" => Some(("SVG 矢量图 (*.svg)", "svg", "导出 SVG 图表")),
+        "png" => Some(("PNG 图片 (*.png)", "png", "导出 PNG 图表")),
+        // Single-file Markdown bundle: document text + referenced image assets.
+        "xmd" => Some(("XMD 文档 (*.xmd)", "xmd", "导出 XMD 文档")),
+        _ => None,
+    }
+}
+
+/// Builds the file name pre-filled in the export dialog: strips any existing
+/// document/export extension (so `notes.md` becomes `notes.xmd`, never
+/// `notes.md.xmd`) and appends the canonical export extension.
+fn export_dialog_default_name(default_name: Option<String>, ext: &str) -> String {
+    let base_name = default_name.unwrap_or_else(|| "未命名".to_string());
+    let stripped = strip_text_extensions(&base_name);
+    if stripped.to_lowercase().ends_with(&format!(".{}", ext)) {
+        stripped
+    } else {
+        format!("{}.{}", stripped, ext)
+    }
+}
+
+/// Enforces the canonical export extension on the path chosen in the save
+/// dialog. A mismatched extension is replaced (`report.md` → `report.xmd`), so
+/// an export can never write over the Markdown source it came from.
+fn ensure_export_extension(path: PathBuf, ext: &str) -> PathBuf {
+    let current_ext = path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if current_ext.eq_ignore_ascii_case(ext) {
+        path
+    } else {
+        let mut final_path = path;
+        final_path.set_extension(ext);
+        final_path
+    }
+}
+
 #[tauri::command]
 pub fn export_file_dialog(
     format: String,
     default_name: Option<String>,
 ) -> Result<Option<String>, String> {
-    let lower_format = format.to_lowercase();
-    let (filter_name, ext, title) = match lower_format.as_str() {
-        "docx" => ("Word 文档 (*.docx)", "docx", "导出 Word 文档"),
-        "pdf" => ("PDF 文档 (*.pdf)", "pdf", "导出 PDF 文档"),
-        "html" => ("HTML 网页 (*.html)", "html", "导出 HTML 网页"),
-        "svg" => ("SVG 矢量图 (*.svg)", "svg", "导出 SVG 图表"),
-        "png" => ("PNG 图片 (*.png)", "png", "导出 PNG 图表"),
-        _ => return Err(format!("不支持的导出格式: {}", format)),
-    };
+    let (filter_name, ext, title) = export_format_spec(&format)
+        .ok_or_else(|| format!("不支持的导出格式: {}", format))?;
 
-    let base_name = default_name.unwrap_or_else(|| "未命名".to_string());
-    let stripped = strip_text_extensions(&base_name);
-    let final_default_name = if stripped.to_lowercase().ends_with(&format!(".{}", ext)) {
-        stripped
-    } else {
-        format!("{}.{}", stripped, ext)
-    };
+    let final_default_name = export_dialog_default_name(default_name, ext);
 
     let dialog = rfd::FileDialog::new()
         .add_filter(filter_name, &[ext])
@@ -180,17 +210,11 @@ pub fn export_file_dialog(
         .set_file_name(&final_default_name);
 
     match dialog.save_file() {
-        Some(path_buf) => {
-            let mut final_path = path_buf;
-            let current_ext = final_path
-                .extension()
-                .and_then(|e| e.to_str())
-                .unwrap_or("");
-            if !current_ext.eq_ignore_ascii_case(ext) {
-                final_path.set_extension(ext);
-            }
-            Ok(Some(final_path.to_string_lossy().to_string()))
-        }
+        Some(path_buf) => Ok(Some(
+            ensure_export_extension(path_buf, ext)
+                .to_string_lossy()
+                .to_string(),
+        )),
         None => Ok(None),
     }
 }
@@ -376,6 +400,77 @@ mod tests {
         assert!(export_file_dialog("md".to_string(), None).is_err());
         assert!(export_file_dialog("json".to_string(), None).is_err());
         assert!(export_file_dialog("".to_string(), None).is_err());
+    }
+
+    #[test]
+    fn test_export_format_spec_supports_xmd() {
+        let (filter, ext, title) = export_format_spec("xmd").expect("xmd must be supported");
+        assert_eq!(ext, "xmd");
+        assert!(filter.contains("xmd"));
+        assert!(title.contains("XMD"));
+
+        // Format matching is case-insensitive, like the other export formats.
+        assert_eq!(export_format_spec("XMD").map(|spec| spec.1), Some("xmd"));
+        assert_eq!(export_format_spec("Xmd").map(|spec| spec.1), Some("xmd"));
+
+        // Markdown sources remain non-export formats.
+        assert!(export_format_spec("md").is_none());
+        assert!(export_format_spec("markdown").is_none());
+    }
+
+    #[test]
+    fn test_xmd_export_dialog_default_name() {
+        assert_eq!(export_dialog_default_name(None, "xmd"), "未命名.xmd");
+        assert_eq!(
+            export_dialog_default_name(Some("Report.md".to_string()), "xmd"),
+            "Report.xmd"
+        );
+        assert_eq!(
+            export_dialog_default_name(Some("Report.markdown".to_string()), "xmd"),
+            "Report.xmd"
+        );
+        assert_eq!(
+            export_dialog_default_name(Some("Report.xmd".to_string()), "xmd"),
+            "Report.xmd"
+        );
+        assert_eq!(
+            export_dialog_default_name(Some("Report.XMD".to_string()), "xmd"),
+            "Report.XMD"
+        );
+        assert_eq!(
+            export_dialog_default_name(Some("archive.tar.gz".to_string()), "xmd"),
+            "archive.tar.gz.xmd"
+        );
+    }
+
+    #[test]
+    fn test_ensure_export_extension_for_xmd() {
+        // A typed Markdown name is rewritten, never overwritten as `.md`.
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report.md"), "xmd"),
+            PathBuf::from("report.xmd")
+        );
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report.txt"), "xmd"),
+            PathBuf::from("report.xmd")
+        );
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report.xmd"), "xmd"),
+            PathBuf::from("report.xmd")
+        );
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report.XMD"), "xmd"),
+            PathBuf::from("report.XMD")
+        );
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report"), "xmd"),
+            PathBuf::from("report.xmd")
+        );
+        // Existing non-xmd export behavior is unchanged.
+        assert_eq!(
+            ensure_export_extension(PathBuf::from("report.md"), "docx"),
+            PathBuf::from("report.docx")
+        );
     }
 
     #[test]

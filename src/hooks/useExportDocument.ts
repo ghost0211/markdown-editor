@@ -1,15 +1,20 @@
 import { useState, useCallback } from 'react';
 import { DocumentTab, ToastType } from '@/types';
 import { exportFileDialog, writeBinaryFile } from '@/lib/native';
-import { getExportFilename } from '@/lib/documentUtils';
+import {
+  ensureExportPathExtension,
+  getExportFilename,
+  isExportTargetSameAsSource,
+} from '@/lib/documentUtils';
 import { useI18n } from '@/i18n';
 
 export interface UseExportDocumentResult {
   isExporting: boolean;
-  exportingType: 'docx' | 'pdf' | 'html' | null;
+  exportingType: 'docx' | 'pdf' | 'html' | 'xmd' | null;
   exportWord: () => Promise<void>;
   exportPdf: () => Promise<void>;
   exportHtml: () => Promise<void>;
+  exportXmd: () => Promise<void>;
   copyRichText: () => Promise<void>;
 }
 
@@ -25,7 +30,7 @@ export function useExportDocument(
 ): UseExportDocumentResult {
   const { t, language } = useI18n();
   const [isExporting, setIsExporting] = useState(false);
-  const [exportingType, setExportingType] = useState<'docx' | 'pdf' | 'html' | null>(null);
+  const [exportingType, setExportingType] = useState<'docx' | 'pdf' | 'html' | 'xmd' | null>(null);
 
   const exportWord = useCallback(async () => {
     if (!activeTab || isExporting) return;
@@ -147,6 +152,49 @@ export function useExportDocument(
     }
   }, [activeTab, embedImages, isExporting, language, showToast, t]);
 
+  const exportXmd = useCallback(async () => {
+    if (!activeTab || isExporting) return;
+
+    try {
+      const defaultName = getExportFilename(activeTab.title, 'xmd');
+      const chosenPath = await exportFileDialog('xmd', defaultName);
+
+      // User canceled dialog
+      if (!chosenPath) {
+        return;
+      }
+
+      // Guarantee the bundle keeps its .xmd extension even if the dialog
+      // returned a bare name, then refuse to overwrite the source Markdown file.
+      const targetPath = ensureExportPathExtension(chosenPath, 'xmd');
+      if (isExportTargetSameAsSource(targetPath, activeTab.filePath)) {
+        throw new Error(t('toasts.xmdSourceOverwriteBlocked'));
+      }
+
+      setIsExporting(true);
+      setExportingType('xmd');
+      showToast(t('toasts.exportingXmd'), 'info', 2000);
+
+      const { exportMarkdownToXmd } = await import('@/lib/export/xmdExporter');
+      const xmdBytes = await exportMarkdownToXmd(activeTab.content, activeTab.title, {
+        sourceFilePath: activeTab.filePath || null,
+      });
+      await writeBinaryFile(targetPath, xmdBytes);
+
+      if (targetPath.startsWith('browser://')) {
+        showToast(t('toasts.xmdDownloadStarted'), 'success', 3000);
+      } else {
+        showToast(t('toasts.xmdExportSuccess', { path: targetPath }), 'success', 4000);
+      }
+    } catch (err: unknown) {
+      const msg = typeof err === 'string' ? err : (err as Error)?.message || 'Export failed';
+      showToast(t('toasts.xmdExportFailed', { error: msg }), 'error', 5000);
+    } finally {
+      setIsExporting(false);
+      setExportingType(null);
+    }
+  }, [activeTab, isExporting, showToast, t]);
+
   const copyRichText = useCallback(async () => {
     if (!activeTab) return;
     try {
@@ -166,6 +214,7 @@ export function useExportDocument(
     exportWord,
     exportPdf,
     exportHtml,
+    exportXmd,
     copyRichText,
   };
 }

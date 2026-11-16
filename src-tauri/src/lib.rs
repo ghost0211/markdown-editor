@@ -2,6 +2,7 @@ pub mod commands;
 pub mod path_utils;
 pub mod pdf_export;
 pub mod session_store;
+pub mod xmd_export;
 
 pub use path_utils::{
     canonicalize_path, enqueue_pending_paths, filter_and_normalize_paths,
@@ -60,6 +61,9 @@ pub fn run() {
             commands::open_file_dialog,
             commands::save_file_dialog,
             commands::export_file_dialog,
+            xmd_export::fetch_xmd_image,
+            xmd_export::read_xmd_resource,
+            xmd_export::write_xmd_file,
             commands::export_pdf_from_html,
             commands::open_url,
             commands::open_windows_default_apps_settings,

@@ -19,6 +19,7 @@ import {
   FileType,
   FileCode,
   ClipboardCopy,
+  FileArchive,
   Settings,
 } from 'lucide-react';
 import { ThemeMode, ViewMode, DocumentTab } from '@/types';
@@ -41,9 +42,10 @@ interface TitleBarProps {
   onExportWord: () => void;
   onExportPdf: () => void;
   onExportHtml: () => void;
+  onExportXmd?: () => void;
   onCopyRichText?: () => void;
   isExporting?: boolean;
-  exportingType?: 'docx' | 'pdf' | 'html' | null;
+  exportingType?: 'docx' | 'pdf' | 'html' | 'xmd' | null;
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   onCompare?: () => void;
@@ -67,6 +69,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onExportWord,
   onExportPdf,
   onExportHtml,
+  onExportXmd,
   onCopyRichText,
   isExporting = false,
   exportingType = null,
@@ -419,6 +422,31 @@ export const TitleBar: React.FC<TitleBarProps> = ({
                   <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportHtmlDesc')}</span>
                 </div>
               </button>
+
+              {onExportXmd && (
+                <>
+                  <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
+
+                  <button
+                    type="button"
+                    role="menuitem"
+                    onClick={() => {
+                      setIsExportMenuOpen(false);
+                      onExportXmd();
+                    }}
+                    title={t('titleBar.exportXmdDesc')}
+                    className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
+                  >
+                    <div className="w-6 h-6 rounded bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center text-violet-600 dark:text-violet-400">
+                      <FileArchive className="w-3.5 h-3.5" />
+                    </div>
+                    <div className="flex flex-col">
+                      <span className="text-xs">{t('titleBar.exportXmd')}</span>
+                      <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportXmdDesc')}</span>
+                    </div>
+                  </button>
+                </>
+              )}
 
               {onCopyRichText && (
                 <>
