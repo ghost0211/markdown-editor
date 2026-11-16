@@ -100,8 +100,8 @@ pub fn write_binary_file(path: String, data: Vec<u8>) -> Result<(), String> {
 pub fn open_file_dialog() -> Result<Option<OpenFileResponse>, String> {
     let file = rfd::FileDialog::new()
         .add_filter(
-            "Markdown / Text Files",
-            &["md", "markdown", "mdown", "mkd", "txt"],
+            "Markdown / Text / XMD Files",
+            &["md", "markdown", "mdown", "mkd", "txt", "xmd"],
         )
         .add_filter("All Files", &["*"])
         .set_title("打开 Markdown 文档")
@@ -114,6 +114,12 @@ pub fn open_file_dialog() -> Result<Option<OpenFileResponse>, String> {
                 .file_name()
                 .map(|n| n.to_string_lossy().to_string())
                 .unwrap_or_else(|| "Untitled.md".to_string());
+
+            // XMD is a ZIP container; the frontend reads raw bytes through the
+            // bounded native command and safely resolves bundled resources.
+            if path_buf.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("xmd")).unwrap_or(false) {
+                return Ok(Some(OpenFileResponse { path: path_str, name: file_name, content: String::new() }));
+            }
 
             match fs::read_to_string(&path_buf) {
                 Ok(content) => Ok(Some(OpenFileResponse {
@@ -137,16 +143,18 @@ pub fn open_file_dialog() -> Result<Option<OpenFileResponse>, String> {
 #[tauri::command]
 pub fn save_file_dialog(default_name: Option<String>) -> Result<Option<String>, String> {
     let file_name = default_name.unwrap_or_else(|| "未命名.md".to_string());
+    let is_xmd = file_name.to_ascii_lowercase().ends_with(".xmd");
 
     let dialog = rfd::FileDialog::new()
         .add_filter("Markdown File (*.md)", &["md"])
         .add_filter("Text File (*.txt)", &["txt"])
+        .add_filter("XMD Markdown Bundle (*.xmd)", &["xmd"])
         .add_filter("All Files", &["*"])
         .set_title("保存 Markdown 文档")
         .set_file_name(&file_name);
 
     match dialog.save_file() {
-        Some(path_buf) => Ok(Some(path_buf.to_string_lossy().to_string())),
+        Some(path_buf) => Ok(Some(if is_xmd { ensure_export_extension(path_buf, "xmd") } else { path_buf }.to_string_lossy().to_string())),
         None => Ok(None),
     }
 }

@@ -24,14 +24,23 @@ describe('document links', () => {
     expect(() => resolveDocumentLink('test.md', null)).toThrow('保存');
     expect(() => resolveDocumentLink('test.md', 'browser://index.md')).toThrow('保存');
   });
-  it('allows raster data URLs only for image sources', () => {
+  it('keeps raster image data and routes package links through inert download handling', () => {
     const data = 'data:image/png;base64,iVBORw0KGgo=';
     const html = renderToStaticMarkup(
-      <Markdown urlTransform={documentUrlTransform}>{`![embedded](<${data}>) [unsafe](${data})`}</Markdown>
+      <Markdown urlTransform={documentUrlTransform}>{`![embedded](<${data}>) [download](${data}) [unsafe](data:text/html;base64,PHNjcmlwdD4=)`}</Markdown>
     );
     expect(html).toContain(`src="${data}"`);
-    expect(html).not.toContain(`href="${data}"`);
+    expect(html).toContain(`href="${data}"`);
+    // The Preview anchor always downloads as application/octet-stream.
+    expect(documentUrlTransform('data:text/html;base64,PHNjcmlwdD4=', 'href')).toContain('data:text/html');
+    expect(documentUrlTransform('javascript:alert(1)', 'href')).toBe('');
   });
+  it('allows bundled SVG only as a non-scripting image source', () => {
+    const data = 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=';
+    expect(documentUrlTransform(data, 'src')).toBe(data);
+    expect(documentUrlTransform('data:image/svg+xml,%3Cscript%3E', 'src')).toBe('');
+  });
+
   it('renders local destinations while blocking executable schemes', () => {
     const html = renderToStaticMarkup(<Markdown urlTransform={documentUrlTransform}>{'[local](file:///D:/docs/a.md) [relative](../中文.md) [unsafe](javascript:alert)'}</Markdown>);
     expect(html).toContain('href="file:///D:/docs/a.md"');

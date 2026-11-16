@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react';
 import { drainPendingOpenFiles, isTauri, subscribeOpenFiles } from '@/lib/native';
 import { createFileCoordinator } from '@/lib/fileCoordinator';
 import { dragCarriesFiles, filterMarkdownFiles, MAX_DROPPED_FILE_BYTES } from '@/lib/dropFiles';
+import { MAX_XMD_FILE_BYTES } from '@/lib/xmd';
 import { filterImageFiles } from '@/lib/imageAssets';
 import { useI18n } from '@/i18n';
 
@@ -69,12 +70,16 @@ export function useWindowFileDrop({
 
       void (async () => {
         for (const file of mdFiles) {
-          if (file.size > MAX_DROPPED_FILE_BYTES) {
+          const isXmd = file.name.toLowerCase().endsWith('.xmd');
+          if (file.size > (isXmd ? MAX_XMD_FILE_BYTES : MAX_DROPPED_FILE_BYTES)) {
             showToastRef.current(tRef.current('toasts.dropTooLarge', { name: file.name }), 'warning');
             continue;
           }
           try {
-            openDroppedDocumentRef.current(file.name, await file.text());
+            const content = isXmd
+              ? await (await import('@/lib/xmd')).importXmd(new Uint8Array(await file.arrayBuffer()))
+              : await file.text();
+            openDroppedDocumentRef.current(file.name, content);
           } catch (error) {
             const message = error instanceof Error ? error.message : String(error);
             showToastRef.current(

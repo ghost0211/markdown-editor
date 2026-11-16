@@ -1,17 +1,20 @@
 import JSZip from 'jszip';
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import remarkFrontmatter from 'remark-frontmatter';
-import remarkMath from 'remark-math';
-import { parse, postprocess, preprocess } from 'micromark';
-import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
-import type { Nodes, Definition } from 'mdast';
 import { resolveDocumentLink } from '@/lib/documentLinks';
-import { mimeTypeForPath } from '@/lib/export/embedImages';
 import { isTauri, readXmdResource, fetchXmdImage } from '@/lib/native';
+import {
+  isLocalDestination,
+  isPackagedLinkDestination,
+  mediaTypeForPackagePath,
+  scanXmdReferences,
+  XMD_ASSET_DIRECTORY,
+  XMD_DOCUMENT_FILE,
+  XMD_MANIFEST_FILE,
+  XMD_VERSION,
+  type XmdManifest,
+  type XmdSourceSpan,
+} from '@/lib/xmdPackage';
 
-export const XMD_VERSION = 1;
+export { XMD_VERSION, type XmdManifest, type XmdManifestResource } from '@/lib/xmdPackage';
 export const MAX_XMD_RESOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_XMD_TOTAL_BYTES = 128 * 1024 * 1024;
 export const MAX_XMD_RESOURCES = 2048;
@@ -27,27 +30,6 @@ export interface XmdExportOptions {
   loadResource?: (source: string) => Promise<XmdResourceData>;
 }
 
-export interface XmdManifest {
-  format: 'xmd';
-  version: 1;
-  entry: 'document.md';
-  title: string;
-  resources: { path: string; mediaType: string; size: number }[];
-}
-
-interface Destination {
-  start: number;
-  end: number;
-}
-
-interface ResourceUse {
-  source: string;
-  image: boolean;
-  /** May represent a Markdown destination, or a complete HTML attribute. */
-  target: Destination;
-  attribute?: { value: string; start: number; end: number };
-}
-
 const EXTENSION_BY_MIME: Record<string, string> = {
   'image/png': 'png',
   'image/jpeg': 'jpg',
@@ -60,7 +42,28 @@ const EXTENSION_BY_MIME: Record<string, string> = {
   'image/svg+xml': 'svg',
   'image/tiff': 'tiff',
   'image/apng': 'apng',
+  'application/pdf': 'pdf',
+  'application/zip': 'zip',
+  'application/json': 'json',
+  'text/plain': 'txt',
+  'text/markdown': 'md',
+  'audio/mpeg': 'mp3',
+  'video/mp4': 'mp4',
 };
+
+/**
+ * Portable extension for an attachment MIME type. Re-exported `data:` URLs
+ * (for example an imported PDF) carry no path, so only the MIME type can name
+ * the asset; unknown/opaque types fall back to `.bin`.
+ */
+function extensionForMediaType(mediaType: string): string | undefined {
+  const known = EXTENSION_BY_MIME[mediaType];
+  if (known) return known;
+  const subtype = mediaType.split('/')[1]?.split(';')[0]?.trim().toLowerCase();
+  if (!subtype || subtype === 'octet-stream') return undefined;
+  const cleaned = subtype.replace(/^x-/, '').replace(/^vnd\.[^.]*\./, '').split('+')[0];
+  return /^[a-z\d]{1,10}$/.test(cleaned) ? cleaned : undefined;
+}
 
 function extensionForSource(source: string): string | undefined {
   // A resolved filesystem path can contain literal # and ? (percent-decoded
@@ -73,129 +76,7 @@ function mediaTypeForSource(source: string): string {
   const extension = extensionForSource(source);
   if (extension === 'tif' || extension === 'tiff') return 'image/tiff';
   if (extension === 'apng') return 'image/apng';
-  return mimeTypeForPath(`resource.${extension || 'bin'}`);
-}
-
-function localDestination(source: string): boolean {
-  return !source.startsWith('#') && !/^(?![a-z]:[/\\])[a-z][a-z\d+.-]*:/i.test(source);
-}
-
-function walk(node: Nodes, visit: (node: Nodes) => void): void {
-  visit(node);
-  if ('children' in node) for (const child of node.children) walk(child, visit);
-}
-
-/** Read srcset URL spans without mistaking commas inside data URLs for separators. */
-function srcsetUrls(value: string): { source: string; start: number; end: number }[] {
-  const urls: ReturnType<typeof srcsetUrls> = [];
-  let index = 0;
-  while (index < value.length) {
-    while (/[\s,]/.test(value[index] || '') && index < value.length) index++;
-    const start = index;
-    while (index < value.length && !/\s/.test(value[index])) index++;
-    let end = index;
-    while (end > start && value[end - 1] === ',') end--;
-    if (end > start) urls.push({ source: value.slice(start, end), start, end });
-    if (end !== index) continue;
-    // Ignore descriptors (e.g. 1x, 640w), up to the next candidate.
-    while (index < value.length && value[index] !== ',') index++;
-    if (index < value.length) index++;
-  }
-  return urls;
-}
-
-function htmlImages(raw: string, offset: number): ResourceUse[] {
-  const uses: ResourceUse[] = [];
-  const fragment = parseFragment(raw, { sourceCodeLocationInfo: true });
-  function visit(node: DefaultTreeAdapterMap['node']): void {
-    if ('tagName' in node && (node.tagName === 'img' || node.tagName === 'source')) {
-      for (const attribute of node.attrs) {
-        if (attribute.name !== 'src' && attribute.name !== 'srcset') continue;
-        // <source src> belongs to audio/video, whereas picture candidates use
-        // srcset. XMD v1 does not recursively bundle audio/video dependencies.
-        if (node.tagName === 'source' && attribute.name === 'src') continue;
-        const location = node.sourceCodeLocation?.attrs?.[attribute.name];
-        if (!location) continue;
-        const target = { start: offset + location.startOffset, end: offset + location.endOffset };
-        const spans = attribute.name === 'srcset'
-          ? srcsetUrls(attribute.value)
-          : [{ source: attribute.value, start: 0, end: attribute.value.length }];
-        for (const span of spans) {
-          uses.push({ source: span.source, image: true, target, attribute: { value: attribute.value, ...span } });
-        }
-      }
-    }
-    if ('childNodes' in node) for (const child of node.childNodes) visit(child);
-  }
-  visit(fragment);
-  return uses;
-}
-
-/** Parse real syntax nodes, not a regex over code samples, comments or front matter. */
-function collectResourceUses(markdown: string): ResourceUse[] {
-  const processor = unified().use(remarkParse).use(remarkGfm).use(remarkMath)
-    .use(remarkFrontmatter, ['yaml', 'toml']).freeze();
-  // micromark strips a leading BOM before assigning offsets. Retain that BOM
-  // in document.md, but parse/slice a consistently BOM-free view and rebase.
-  const bomOffset = markdown.startsWith('\uFEFF') ? 1 : 0;
-  markdown = markdown.slice(bomOffset);
-  const tree = processor.parse(markdown);
-  const events = postprocess(parse({ extensions: processor.data('micromarkExtensions') || [] })
-    .document().write(preprocess()(markdown, undefined, true)));
-  const destinations: Destination[] = [];
-  for (const [kind, token] of events) {
-    if (kind === 'enter' && (token.type === 'resourceDestinationString' || token.type === 'definitionDestinationString')) {
-      destinations.push({ start: token.start.offset, end: token.end.offset });
-    }
-  }
-
-  destinations.sort((a, b) => a.start - b.start);
-
-  const definitions = new Map<string, Definition>();
-  walk(tree, (node) => {
-    if (node.type === 'definition' && !definitions.has(node.identifier)) definitions.set(node.identifier, node);
-  });
-  const targets = new Map<Definition, boolean>();
-  const uses: ResourceUse[] = [];
-  function add(node: Nodes & { url: string }, image: boolean): void {
-    const start = node.position?.start.offset;
-    const end = node.position?.end.offset;
-    if (start === undefined || end === undefined) return;
-    // A link label can contain an image; its own destination comes last.
-    let low = 0;
-    let high = destinations.length;
-    while (low < high) {
-      const middle = (low + high) >>> 1;
-      if (destinations[middle].start < end) low = middle + 1;
-      else high = middle;
-    }
-    const candidate = destinations[low - 1];
-    const target = candidate && candidate.start >= start && candidate.end <= end ? candidate : undefined;
-    if (!target) {
-      if (image) throw new Error('图片地址为空 / Empty image destination');
-      return;
-    }
-    uses.push({ source: node.url, image, target });
-  }
-  walk(tree, (node) => {
-    if (node.type === 'image') add(node, true);
-    if (node.type === 'link' && (localDestination(node.url) || /^file:\/\//i.test(node.url))) add(node, false);
-    if (node.type === 'imageReference' || node.type === 'linkReference') {
-      const definition = definitions.get(node.identifier);
-      if (definition) targets.set(definition, Boolean(targets.get(definition)) || node.type === 'imageReference');
-    }
-    if (node.type === 'html' && node.position?.start.offset !== undefined && node.position.end.offset !== undefined) {
-      const offset = node.position.start.offset;
-      uses.push(...htmlImages(markdown.slice(offset, node.position.end.offset), offset));
-    }
-  });
-  for (const [definition, image] of targets) {
-    if (image || localDestination(definition.url) || /^file:\/\//i.test(definition.url)) add(definition, image);
-  }
-  return uses.map((use) => ({
-    ...use,
-    target: { start: use.target.start + bomOffset, end: use.target.end + bomOffset },
-  })).sort((a, b) => a.target.start - b.target.start);
+  return mediaTypeForPackagePath(`resource.${extension || 'bin'}`);
 }
 
 function resolveResource(source: string, sourceFilePath?: string | null): { key: string; suffix: string } {
@@ -209,8 +90,16 @@ function resolveResource(source: string, sourceFilePath?: string | null): { key:
     url.hash = '';
     return { key: url.href, suffix };
   }
-  if (/^data:/i.test(source)) return { key: source, suffix: '' };
-  if (!localDestination(source) && !/^file:\/\//i.test(source)) {
+  // An imported attachment/image is a `data:` URL that may carry a `#fragment`.
+  // The fragment is not part of the payload, so split it before decoding and
+  // carry it over to the rewritten package path.
+  if (/^data:/i.test(source)) {
+    const hash = source.indexOf('#');
+    return hash === -1
+      ? { key: source, suffix: '' }
+      : { key: source.slice(0, hash), suffix: source.slice(hash) };
+  }
+  if (!isLocalDestination(source) && !/^file:\/\//i.test(source)) {
     throw new Error('不支持的资源协议 / Unsupported resource protocol');
   }
   const resolved = resolveDocumentLink(source.replace(/%(?![\da-f]{2})/gi, '%25'), sourceFilePath);
@@ -304,19 +193,28 @@ export async function exportMarkdownToXmd(
   options: XmdExportOptions = {}
 ): Promise<Uint8Array> {
   const zip = new JSZip();
-  const manifest: XmdManifest = { format: 'xmd', version: XMD_VERSION, entry: 'document.md', title, resources: [] };
+  const manifest: XmdManifest = {
+    format: 'xmd', version: XMD_VERSION, entry: XMD_DOCUMENT_FILE, title, resources: [],
+  };
   const resources = new Map<string, { path: string; mediaType: string }>();
   const edits = new Map<number, { end: number; value: string }>();
-  const attributes = new Map<number, { target: Destination; value: string; edits: { start: number; end: number; value: string }[] }>();
+  const attributes = new Map<number, { target: XmdSourceSpan; value: string; edits: { from: number; to: number; value: string }[] }>();
   let totalBytes = new TextEncoder().encode(markdown).length;
   if (totalBytes > MAX_XMD_TOTAL_BYTES) throw new Error('文档超过 128 MiB / Document exceeds 128 MiB');
 
-  for (const use of collectResourceUses(markdown)) {
+  const scan = scanXmdReferences(markdown);
+  if (scan.hasEmptyImage) throw new Error('图片地址为空 / Empty image destination');
+
+  for (const use of scan.references) {
+    // Anchors stay inline; only destinations the package can own are collected.
+    // `data:` links are included so a re-export of an imported bundle keeps
+    // attachment bytes in `assets/` instead of growing document.md.
+    if (!use.source || use.source.startsWith('#')) {
+      if (use.image) throw new Error('图片地址为空或仅为锚点 / Image destination is empty or anchor-only');
+      continue;
+    }
+    if (!use.image && !isPackagedLinkDestination(use.source)) continue;
     try {
-      if (!use.source || use.source.startsWith('#')) {
-        if (use.image) throw new Error('图片地址为空或仅为锚点 / Image destination is empty or anchor-only');
-        continue;
-      }
       const { key, suffix } = resolveResource(use.source, options.sourceFilePath);
       let resource = resources.get(key);
       if (!resource) {
@@ -326,8 +224,8 @@ export async function exportMarkdownToXmd(
         totalBytes += data.bytes.length;
         if (totalBytes > MAX_XMD_TOTAL_BYTES) throw new Error('资源总大小超过 128 MiB / Package content exceeds 128 MiB');
         const mediaType = data.mediaType?.split(';')[0].trim().toLowerCase() || mediaTypeForSource(key);
-        const extension = EXTENSION_BY_MIME[mediaType] || extensionForSource(key) || 'bin';
-        const path = `assets/${String(resources.size + 1).padStart(4, '0')}.${extension}`;
+        const extension = extensionForMediaType(mediaType) || extensionForSource(key) || 'bin';
+        const path = `${XMD_ASSET_DIRECTORY}/${String(resources.size + 1).padStart(4, '0')}.${extension}`;
         resource = { path, mediaType };
         resources.set(key, resource);
         zip.file(path, data.bytes);
@@ -341,15 +239,15 @@ export async function exportMarkdownToXmd(
       // HTML; this also keeps reference definitions and srcset values valid.
       const value = resource.path + suffix.replace(/[()<>\\\s"']/g,
         (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
-      if (use.attribute) {
-        let attribute = attributes.get(use.target.start);
+      if (use.html) {
+        let attribute = attributes.get(use.target.from);
         if (!attribute) {
-          attribute = { target: use.target, value: use.attribute.value, edits: [] };
-          attributes.set(use.target.start, attribute);
+          attribute = { target: use.target, value: use.html.value, edits: [] };
+          attributes.set(use.target.from, attribute);
         }
-        attribute.edits.push({ start: use.attribute.start, end: use.attribute.end, value });
+        attribute.edits.push({ from: use.html.from, to: use.html.to, value });
       } else {
-        edits.set(use.target.start, { end: use.target.end, value });
+        edits.set(use.target.from, { end: use.target.to, value });
       }
     } catch (error) {
       const description = error instanceof Error ? error.message : String(error);
@@ -359,11 +257,14 @@ export async function exportMarkdownToXmd(
   }
   for (const { target, value, edits: attributeEdits } of attributes.values()) {
     let rewritten = value;
-    for (const edit of attributeEdits.sort((a, b) => b.start - a.start)) {
-      rewritten = rewritten.slice(0, edit.start) + edit.value + rewritten.slice(edit.end);
+    for (const edit of attributeEdits.sort((a, b) => b.from - a.from)) {
+      rewritten = rewritten.slice(0, edit.from) + edit.value + rewritten.slice(edit.to);
     }
-    const name = markdown.slice(target.start, target.end).split(/[\s=]/)[0];
-    edits.set(target.start, { end: target.end, value: `${name}="${rewritten.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"` });
+    const name = markdown.slice(target.from, target.to).split(/[\s=]/)[0];
+    edits.set(target.from, {
+      end: target.to,
+      value: `${name}="${rewritten.replace(/&/g, '&amp;').replace(/"/g, '&quot;')}"`,
+    });
   }
   // Build once instead of copying the entire document for every image (which
   // becomes quadratic for long documents with thousands of references).
@@ -374,7 +275,7 @@ export async function exportMarkdownToXmd(
     cursor = edit.end;
   }
   pieces.push(markdown.slice(cursor));
-  zip.file('document.md', pieces.join(''));
-  zip.file('manifest.json', JSON.stringify(manifest, null, 2) + '\n');
+  zip.file(XMD_DOCUMENT_FILE, pieces.join(''));
+  zip.file(XMD_MANIFEST_FILE, JSON.stringify(manifest, null, 2) + '\n');
   return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
 }

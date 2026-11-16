@@ -18,6 +18,7 @@ import { createMarkdownEditingKeymap } from '@/lib/editorKeymap';
 import { createTypewriterExtension } from '@/lib/typewriterMode';
 import { createFocusModeExtension } from '@/lib/focusMode';
 import { createSearchMatchCountExtension } from '@/lib/searchMatchCount';
+import { createImageAddressExtension, safeImageInsertionPosition } from '@/lib/imageAddressExtension';
 import {
   isSingleUrl,
   isTableRowLine,
@@ -161,6 +162,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         createMarkdownEditingKeymap({ t, language }),
         createSearchMatchCountExtension(),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
+        createImageAddressExtension({
+          embedded: t('editor.embeddedImage'),
+          address: t('editor.imageAddress'),
+          hint: t('editor.imageAddressHint'),
+          edit: t('editor.editImageAddress'),
+          copy: t('editor.copyImageAddress'),
+          copied: t('editor.imageAddressCopied'),
+          copyFailed: t('editor.imageAddressCopyFailed'),
+          apply: t('editor.applyImageAddress'),
+          close: t('editor.closeImageAddress'),
+          invalid: t('editor.invalidImageAddress'),
+        }),
         EditorState.tabSize.of(tabSize),
         indentUnit.of(' '.repeat(tabSize)),
         EditorView.theme({
@@ -217,13 +230,24 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
               const images = filterImageFiles(clipboard.files || []);
               if (images.length > 0) {
                 event.preventDefault();
-                handler(images, selection.from);
+                handler(images, safeImageInsertionPosition(view.state, selection.from));
                 return;
               }
             }
 
-            // A URL pasted over selected text becomes a Markdown link.
+            // Plain-text paste bypasses CodeMirror's inputHandler. Keep it out
+            // of hidden image URLs just like typing and pasted image files.
             const pastedText = clipboard.getData('text/plain');
+            const safePosition = safeImageInsertionPosition(view.state, selection.from);
+            if (selection.empty && safePosition !== selection.from && pastedText) {
+              event.preventDefault();
+              const line = view.state.doc.lineAt(safePosition);
+              const insert = `${safePosition === line.to ? '\n\n' : ''}${pastedText}`;
+              view.dispatch({ changes: { from: safePosition, insert },
+                selection: { anchor: safePosition + insert.length }, userEvent: 'input.paste' });
+              return;
+            }
+            // A URL pasted over selected text becomes a Markdown link.
             if (!selection.empty && isSingleUrl(pastedText)) {
               const selected = view.state.sliceDoc(selection.from, selection.to);
               if (!selected.includes('\n')) {
@@ -253,7 +277,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
               const position =
                 view.posAtCoords({ x: event.clientX, y: event.clientY }) ??
                 view.state.selection.main.from;
-              handler(images, position);
+              handler(images, safeImageInsertionPosition(view.state, position));
               return true;
             }
             // Never let CodeMirror's built-in FileReader insert dropped OS files
@@ -381,7 +405,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         insertText: (text: string, position?: number) => {
           const view = cmRef.current?.view;
           if (!view || !text) return;
-          const at = Math.max(0, Math.min(position ?? view.state.selection.main.from, view.state.doc.length));
+          const at = safeImageInsertionPosition(view.state,
+            Math.max(0, Math.min(position ?? view.state.selection.main.from, view.state.doc.length)));
           view.dispatch({
             changes: { from: at, to: at, insert: text },
             selection: { anchor: at + text.length },

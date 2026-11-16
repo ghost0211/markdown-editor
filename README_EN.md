@@ -30,6 +30,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - **Smart Table Editing & Smart Paste**: `Tab` / `Shift+Tab` inside GFM tables navigates between cells and auto-aligns column widths (CJK-aware, appending a new row when tabbing past the end); pasting tables from Excel / Word / web pages converts them into aligned Markdown tables; pasting a URL onto selected text creates `[text](url)`.
    - **Match Counter, Spell Check, Typewriter & Focus Modes**: `Ctrl+F` displays live `current / total` match counts; Preferences offers toggles for system Spell Check, Typewriter Mode (keeps active line vertically centered), and Focus Mode (dims surrounding paragraphs).
    - Paste or drop images: saved desktop documents copy them into a sibling `assets/` directory with relative links; unsaved documents and Web mode embed them.
+   - **Compact image addresses**: the editor displays image URLs as short paths, with Base64 payloads shown as `Embedded image/filename` instead of filling the document. Hover to inspect/copy the full address; click or press `Ctrl+Enter` beside it to edit. Saved/copied Markdown and XMD exports retain the actual source URL, including for previously inserted images.
 
 4. **Native File System Capabilities**:
    - Powered by a Rust backend integrating `rfd` native file dialogs and `std::fs` for sub-millisecond file operations.
@@ -37,11 +38,11 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - **Unsaved Changes Protection**: Graceful confirmation dialogs when closing dirty tabs; snapshot-based save state preventing race conditions during typing.
    - **Universal Compatibility**: In pure browser preview environments, automatically falls back to standard browser file reading and Blob downloads without crashing.
 
-5. **Professional Word (.docx), PDF (.pdf), HTML (.html) & XMD (.xmd) Document Export**:
+5. **Professional Word/PDF/HTML Export & XMD (.xmd) Documents**:
    - **Word (.docx) Export**: Built upon OOXML standards (`docx` + AST translation), transforming Markdown into formatted Word documents with Heading 1-6 styles (native Word navigation pane integration), A4 page geometry, standard margins, Microsoft YaHei typography, nested lists/task lists, GFM tables with dual DXA column widths, and styled blockquotes/code blocks.
    - **PDF (.pdf) Export**: Powered by system-native **Headless Microsoft Edge**, generating vector/text PDFs with A4 print styling, smart pagination break control (`break-inside: avoid` / `break-after: avoid`), syntax highlighting, and lossless font stacks.
    - **HTML (.html) Export**: Generates standalone single-page HTML with embedded CSS and syntax highlighting (no external stylesheet dependencies required), supporting responsive desktop/mobile viewports and A4 print styles. An optional Preferences toggle can inline local images as base64 data URLs for single-file sharing.
-   - **XMD (.xmd) Export**: Packages editable Markdown, images and linked local attachments into one ZIP container, rewrites references to internal relative paths and deduplicates repeated sources. Supports local/remote/pasted and HTML images; unavailable resources fail clearly rather than producing a broken package. Export-only for now: extract with a ZIP tool to read the Markdown. See the [XMD v1 format specification (Chinese)](docs/xmd-format.md).
+   - **XMD (.xmd) Export**: Packages editable Markdown, images and linked local attachments into one ZIP container, rewrites references to internal relative paths and deduplicates repeated sources. Supports local/remote/pasted and HTML images; unavailable resources fail clearly rather than producing a broken package. XMD can be opened, edited and saved in place without losing bundled assets; attachments can be safely downloaded. ZIP extraction is also supported. See the [XMD v1 format specification (Chinese)](docs/xmd-format.md).
    - **Copy as Rich Text**: One-click copy of sanitized, inline-styled HTML from the Export menu for pasting directly into email clients, Word, or rich-text CMS editors while preserving headings, tables, code blocks, and callout colors.
    - **Strict Security & XSS Sanitization**:
      - HTML and PDF pipelines strictly utilize `rehype-sanitize` to eliminate XSS risks, stripping `<script>`, `<style>` injections, `<iframe>`, `<object>`, `<embed>`, `<form>`, and inline event handlers (e.g. `onerror`).
@@ -57,9 +58,9 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Open, switch, and close multiple documents in tabs with dirty state indicators.
 - **Auto Save (optional)**: When enabled in Preferences → Startup & Session, documents that already have a file are silently written back about 1.5 s after you stop typing or when the window loses focus. Untitled documents are never touched, and a file that changed on disk is never overwritten (the external-change dialog decides instead).
 - **Recent Files**: A dropdown next to Open lists the 10 most recently opened/saved files (missing files are removed when clicked); `Ctrl + Shift + T` reopens the last closed file.
-- **Drag & Drop to Open**: Drop `.md` / `.markdown` / `.mdown` / `.mkd` / `.txt` files onto the window to open them in new tabs. The webview does not expose a dropped file's real path, so they open as unsaved documents and the first save asks for a location.
+- **Drag & Drop to Open**: Drop `.md` / `.markdown` / `.mdown` / `.mkd` / `.txt` / `.xmd` files onto the window to open them in new tabs. The webview does not expose a dropped file's real path, so they open as unsaved documents and the first save asks for a location.
    - **Windows Native File Associations & Single-Instance Architecture**:
-     - NSIS installer registers candidate associations for `.md`, `.markdown`, `.mdown`, `.mkd`, and `.txt` via `bundle.fileAssociations`.
+     - NSIS installer registers candidate associations for `.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`, and `.xmd` via `bundle.fileAssociations`.
      - Integrates `tauri-plugin-single-instance`: CLI arguments open files directly on cold start; opening files while running activates the existing window and opens the file in a new tab.
      - Supports Windows and POSIX `file://` URLs with percent-encoded characters and spaces.
      - Multi-channel wake-up coordinator handles window focus, page visibility, and polling recovery.

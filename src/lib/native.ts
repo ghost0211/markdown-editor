@@ -111,6 +111,11 @@ export async function subscribeOpenFiles(
 export async function readTextFile(path: string): Promise<string> {
   if (isTauri()) {
     try {
+      if (path.toLowerCase().endsWith('.xmd')) {
+        const raw = await invoke<ArrayBuffer>('read_xmd_document', { path });
+        const { importXmd } = await import('@/lib/xmd');
+        return await importXmd(new Uint8Array(raw));
+      }
       return await invoke<string>('read_text_file', { path });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || '读取文件失败';
@@ -253,7 +258,16 @@ export async function getFileMtime(path: string): Promise<number | null> {
 /**
  * Writes UTF-8 content to a file.
  */
-export async function writeTextFile(path: string, content: string): Promise<void> {
+export async function writeTextFile(path: string, content: string, sourceFilePath?: string | null): Promise<void> {
+  if (path.toLowerCase().endsWith('.xmd')) {
+    const { exportMarkdownToXmd } = await import('@/lib/export/xmdExporter');
+    const title = path.replace(/\\/g, '/').split('/').pop() || 'document.xmd';
+    // Save As must resolve relative resources against the source document, not
+    // the new destination directory. Existing XMD saves pass the same path.
+    const bytes = await exportMarkdownToXmd(content, title, { sourceFilePath: sourceFilePath || path });
+    await writeBinaryFile(path, bytes);
+    return;
+  }
   if (isTauri()) {
     try {
       await invoke('write_text_file', { path, content });
@@ -366,7 +380,7 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
     return new Promise((resolve, reject) => {
       const input = document.createElement('input');
       input.type = 'file';
-      input.accept = '.md,.markdown,.mdown,.mkd,.txt';
+      input.accept = '.md,.markdown,.mdown,.mkd,.txt,.xmd';
       input.style.display = 'none';
 
       input.onchange = async () => {
@@ -377,7 +391,9 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
         }
 
         try {
-          const text = await file.text();
+          const text = file.name.toLowerCase().endsWith('.xmd')
+            ? await (await import('@/lib/xmd')).importXmd(new Uint8Array(await file.arrayBuffer()))
+            : await file.text();
           resolve({
             path: `browser://${file.name}`,
             name: file.name,

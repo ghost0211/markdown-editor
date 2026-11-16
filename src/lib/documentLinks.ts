@@ -3,11 +3,14 @@ import { defaultUrlTransform } from 'react-markdown';
 /** Preserve local file destinations without allowing executable URL schemes. */
 export function documentUrlTransform(url: string, key = ''): string {
   if (/^(?:[a-z]:[/\\]|file:\/\/)/i.test(url)) return url;
-  // Pasted/embedded images use data URLs in unsaved documents. Allow only
-  // inert raster image MIME types and only for `src`, never for links.
-  if (key === 'src' && /^data:image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon);base64,/i.test(url)) {
+  // Pasted/imported images use data URLs. SVG is permitted only as an `<img>`
+  // source (where scripting is disabled), never as a navigable link; links use
+  // the separate inert bundled-attachment download handler.
+  if (key === 'src' && /^data:image\/(?:png|jpe?g|gif|webp|bmp|avif|x-icon|svg\+xml);base64,/i.test(url)) {
     return url;
   }
+  // Imported XMD attachments are user-selected downloads, never navigation.
+  if (key === 'href' && /^data:[^,]+;base64,/i.test(url)) return url;
   return defaultUrlTransform(url);
 }
 

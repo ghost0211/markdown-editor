@@ -23,6 +23,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
+import { downloadBundledAttachment } from '@/lib/bundledAttachments';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
 import { useI18n } from '@/i18n';
@@ -917,6 +918,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
         ),
         a: ({ href, children, node: _node, ...props }) => {
           const isAnchor = href?.startsWith('#');
+          const isBundledAttachment = href?.startsWith('data:');
 
           const handleClick = (e: React.MouseEvent<HTMLAnchorElement>) => {
             if (isAnchor && href) {
@@ -924,6 +926,13 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
               const targetId = href.slice(1);
               if (targetId) {
                 scrollToTarget(targetId);
+              }
+            } else if (isBundledAttachment && href) {
+              e.preventDefault();
+              try {
+                downloadBundledAttachment(href, typeof children === 'string' ? children : 'attachment.bin');
+              } catch (error) {
+                console.warn('无法下载包内附件:', error);
               }
             } else if (href) {
               e.preventDefault();
@@ -937,6 +946,8 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
             <a
               href={href}
               onClick={handleClick}
+              onAuxClick={isBundledAttachment ? (event) => event.preventDefault() : undefined}
+              download={isBundledAttachment ? true : undefined}
               className="text-blue-600 dark:text-blue-400 underline underline-offset-2 hover:text-blue-800 dark:hover:text-blue-300 font-medium transition-colors cursor-pointer"
               {...props}
             >

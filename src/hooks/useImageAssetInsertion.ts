@@ -52,8 +52,11 @@ export function useImageAssetInsertion({
       const doc = tabsRef.current.find((tab) => tab.id === docId);
       if (!doc || doc.kind === 'diff' || files.length === 0) return;
 
+      // XMD owns its resources. Do not create a sibling assets/ directory when
+      // adding an image to an opened bundle; it is embedded on the next save.
       const canUseAssets =
-        isTauri() && Boolean(doc.filePath) && !doc.filePath!.startsWith('browser://');
+        isTauri() && Boolean(doc.filePath) && !doc.filePath!.startsWith('browser://')
+        && !doc.filePath!.toLowerCase().endsWith('.xmd');
       const snippets: string[] = [];
       let lastError = '';
 

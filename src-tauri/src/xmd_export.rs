@@ -32,23 +32,36 @@ fn validate_resource_size(size: u64) -> Result<(), String> {
     Ok(())
 }
 
-fn local_resource_bytes(path: &str) -> Result<Vec<u8>, String> {
-    let normalized = path.replace('\\', "/");
-    if normalized.starts_with("//") || normalized.starts_with("/??/") {
-        return Err("不支持网络共享资源 / Network share resources are not supported".into());
-    }
+fn read_bounded_file(path: &str, maximum: u64) -> Result<Vec<u8>, String> {
     let file = fs::File::open(path).map_err(|e| format!("读取资源失败 / Cannot read resource: {e}"))?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_file() {
         return Err("资源不是常规文件 / Resource is not a regular file".into());
     }
-    validate_resource_size(metadata.len())?;
+    if metadata.len() > maximum {
+        return Err("资源超过大小上限 / Resource exceeds size limit".into());
+    }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    // Enforce the limit even if the file grows between stat and read.
-    file.take(MAX_RESOURCE_BYTES as u64 + 1)
-        .read_to_end(&mut bytes).map_err(|e| e.to_string())?;
-    validate_resource_size(bytes.len() as u64)?;
+    file.take(maximum + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    if bytes.len() as u64 > maximum {
+        return Err("资源超过大小上限 / Resource exceeds size limit".into());
+    }
     Ok(bytes)
+}
+
+fn local_resource_bytes(path: &str) -> Result<Vec<u8>, String> {
+    let normalized = path.replace('\\', "/");
+    if normalized.starts_with("//") || normalized.starts_with("/??/") {
+        return Err("不支持网络共享资源 / Network share resources are not supported".into());
+    }
+    read_bounded_file(path, MAX_RESOURCE_BYTES as u64)
+        .map_err(|error| if error.contains("size limit") { "图片超过 32 MiB / Image exceeds 32 MiB".into() } else { error })
+}
+
+#[tauri::command]
+pub fn read_xmd_document(path: String) -> Result<Response, String> {
+    // 128 MiB decompressed body plus bounded ZIP headers and compression slack.
+    read_bounded_file(&path, 136 * 1024 * 1024).map(Response::new)
 }
 
 #[tauri::command]

@@ -2,7 +2,7 @@ import { useState, useCallback, useRef } from 'react';
 import { prepareDocumentsForUpdate } from '@/lib/appUpdateDocuments';
 import { DocumentTab, ConfirmDialogState, StartupViewMode, ViewMode } from '@/types';
 import { getWelcomeDocument } from '@/lib/defaultDocument';
-import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime } from '@/lib/native';
+import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime, isTauri } from '@/lib/native';
 import {
   getFileNameFromPath,
   normalizeLineEndings,
@@ -280,8 +280,10 @@ export function useDocuments(
     try {
       const fileRes = await openFileDialog();
       if (!fileRes) return;
+      const content = isTauri() && fileRes.path.toLowerCase().endsWith('.xmd')
+        ? await readTextFile(fileRes.path) : fileRes.content;
       const fileMtime = (await getFileMtime(fileRes.path)) ?? undefined;
-      openOrFocusDocument(fileRes.path, fileRes.content, fileRes.name, fileMtime);
+      openOrFocusDocument(fileRes.path, content, fileRes.name, fileMtime);
     } catch (err: unknown) {
       showToast((err as Error).message || t('toasts.openFailedGeneric'), 'error');
     }
@@ -347,7 +349,7 @@ export function useDocuments(
       const contentSnapshot = freshTab.content;
 
       try {
-        await writeTextFile(targetPath, contentSnapshot);
+        await writeTextFile(targetPath, contentSnapshot, tab.filePath);
         const fileMtime = (await getFileMtime(targetPath)) ?? undefined;
         const fileName = getFileNameFromPath(targetPath);
 

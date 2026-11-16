@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tauri::Url;
 
-pub const SUPPORTED_FILE_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd", "txt"];
+pub const SUPPORTED_FILE_EXTENSIONS: &[&str] = &["md", "markdown", "mdown", "mkd", "txt", "xmd"];
 
 #[derive(Default)]
 pub struct PendingOpenFiles(pub Mutex<Vec<String>>);
@@ -421,7 +421,7 @@ mod tests {
     fn test_supported_file_extensions_list() {
         assert_eq!(
             SUPPORTED_FILE_EXTENSIONS,
-            &["md", "markdown", "mdown", "mkd", "txt"]
+            &["md", "markdown", "mdown", "mkd", "txt", "xmd"]
         );
     }
 

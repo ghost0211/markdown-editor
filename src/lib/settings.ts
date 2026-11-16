@@ -9,7 +9,7 @@ export const SETTINGS_BOUNDS = {
   fontSize: { min: 11, max: 28, step: 1, default: 14 },
   lineHeight: { min: 1.2, max: 2.4, step: 0.1, default: 1.6 },
   tabSizeOptions: [2, 4, 8] as const,
-  supportedExtensions: ['.md', '.markdown', '.mdown', '.mkd', '.txt'] as const,
+  supportedExtensions: ['.md', '.markdown', '.mdown', '.mkd', '.txt', '.xmd'] as const,
 } as const;
 
 export const DEFAULT_SETTINGS: EditorSettings = {

@@ -63,6 +63,7 @@ pub fn run() {
             commands::export_file_dialog,
             xmd_export::fetch_xmd_image,
             xmd_export::read_xmd_resource,
+            xmd_export::read_xmd_document,
             xmd_export::write_xmd_file,
             commands::export_pdf_from_html,
             commands::open_url,
