@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateStats } from '../src/lib/stats';
+import { calculateStats, stripEmbeddedResourcePayloads } from '../src/lib/stats';
 
 describe('Text statistics calculation', () => {
   it('should handle empty text', () => {
@@ -46,5 +46,61 @@ Line 4`;
     const stats = calculateStats(text);
     expect(stats.lines).toBe(4);
     expect(stats.charsNoSpaces).toBe(text.replace(/\s/g, '').length);
+  });
+
+  it('excludes a multi-megabyte inline image from words, characters and reading time', () => {
+    const payload = 'A'.repeat(2 * 1024 * 1024);
+    const text = `# 图片\n\n正文\n\n![替代文本](<data:image/png;base64,${payload}>)`;
+    const stats = calculateStats(text);
+    expect(stats.words).toBe(8);
+    expect(stats.chars).toBeLessThan(256);
+    expect(stats.charsNoSpaces).toBeLessThan(100);
+    expect(stats.readingTimeMinutes).toBe(1);
+    expect(stats.lines).toBe(5);
+  });
+
+  it('keeps image alt text while removing the embedded destination', () => {
+    const text = '![中文说明](<data:image/png;base64,AAAA>)';
+    expect(stripEmbeddedResourcePayloads(text)).toBe('![中文说明](<>)');
+    expect(calculateStats(text).words).toBe(4);
+  });
+
+  it('excludes data URLs in reference-style images', () => {
+    const text = '![替代][图]\n\n[图]: <data:image/png;base64,AAAA>';
+    const stripped = stripEmbeddedResourcePayloads(text);
+    expect(stripped).toBe('![替代][图]\n\n[图]: <>');
+    expect(calculateStats(text).readingTimeMinutes).toBe(1);
+  });
+
+  it('also excludes an unused embedded definition without removing its label', () => {
+    const text = '# 正文\n\n[unused]: <data:image/png;base64,AAAA>';
+    expect(stripEmbeddedResourcePayloads(text)).toBe('# 正文\n\n[unused]: <>');
+  });
+
+  it('excludes HTML src and complete srcset payloads', () => {
+    const text = '<img alt="图片" src="data:image/png;base64,AAAA">\n<source srcset="data:image/png;base64,AAAA 1x, data:image/png;base64,BBBB 2x">';
+    const stripped = stripEmbeddedResourcePayloads(text);
+    expect(stripped).not.toContain('data:');
+    expect(stripped).toContain('alt="图片"');
+    expect(calculateStats(text).chars).toBeLessThan(100);
+  });
+
+  it('excludes embedded attachment links while preserving the download label', () => {
+    const text = '[下载附件](<data:application/pdf;base64,JVBERi0xLjc=>)';
+    expect(stripEmbeddedResourcePayloads(text)).toContain('下载附件');
+    expect(stripEmbeddedResourcePayloads(text)).not.toContain('JVBER');
+  });
+
+  it('does not mistake fenced or inline code samples for actual embedded images', () => {
+    const text = '```md\n[code]: <data:image/png;base64,AAAA>\n```\n\n`![示例](data:image/png;base64,AAAA)`';
+    expect(stripEmbeddedResourcePayloads(text)).toBe(text);
+  });
+
+  it('leaves ordinary text unchanged and preserves CRLF source line counts', () => {
+    const plain = 'Hello 世界\n\n正常正文';
+    expect(stripEmbeddedResourcePayloads(plain)).toBe(plain);
+    const text = '# 标题\r\n\r\n![图](<data:image/png;base64,AAAA>)';
+    expect(calculateStats(text).lines).toBe(3);
+    expect(stripEmbeddedResourcePayloads(text)).not.toContain('AAAA');
   });
 });

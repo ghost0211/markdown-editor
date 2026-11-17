@@ -73,10 +73,6 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <PanelLeft className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 px-1 mr-1 shrink-0">
-          <div className="w-6 h-6 rounded-md bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-600/15 font-bold text-[10px] tracking-tight">MD</div>
-          <span className="hidden xl:inline tracking-tight font-medium text-xs">Markdown Editor</span>
-        </div>
         <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
 
         <button type="button" onClick={onNew} title={t('titleBar.newDocTooltip')} aria-label={t('titleBar.newDocTooltip')} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">

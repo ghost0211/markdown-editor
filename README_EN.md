@@ -31,6 +31,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - **Match Counter, Spell Check, Typewriter & Focus Modes**: `Ctrl+F` displays live `current / total` match counts; Preferences offers toggles for system Spell Check, Typewriter Mode (keeps active line vertically centered), and Focus Mode (dims surrounding paragraphs).
    - Paste or drop images: saved desktop documents copy them into a sibling `assets/` directory with relative links; unsaved documents and Web mode embed them.
    - **Compact image addresses**: the editor displays image URLs as short paths, with Base64 payloads shown as `Embedded image/filename` instead of filling the document. Hover to inspect/copy the full address; click or press `Ctrl+Enter` beside it to edit. Saved/copied Markdown and XMD exports retain the actual source URL, including for previously inserted images.
+   - **Accurate statistics with embedded resources**: Base64 image/attachment payloads do not inflate words, characters, or estimated reading time. Alt text remains counted, and source line counts stay unchanged.
 
 ### Advanced Find & Replace
 

@@ -14,38 +14,38 @@ import { DEFAULT_SETTINGS } from '../src/lib/settings';
 import { openOrFocusDocumentState } from '../src/lib/documentUtils';
 import { DocumentTab } from '../src/types';
 
-describe('Release Acceptance & Quality Assurance (v2.0.1)', () => {
-  describe('Consistent Release Version 2.0.1 across all Project Manifests', () => {
+describe('Release Acceptance & Quality Assurance (v2.0.2)', () => {
+  describe('Consistent Release Version 2.0.2 across all Project Manifests', () => {
     const rootDir = resolve(__dirname, '..');
 
-    it('package.json should have version 2.0.1', () => {
+    it('package.json should have version 2.0.2', () => {
       const pkg = JSON.parse(readFileSync(resolve(rootDir, 'package.json'), 'utf-8'));
-      expect(pkg.version).toBe('2.0.1');
+      expect(pkg.version).toBe('2.0.2');
     });
 
-    it('package-lock.json should have root version 2.0.1', () => {
+    it('package-lock.json should have root version 2.0.2', () => {
       const lock = JSON.parse(readFileSync(resolve(rootDir, 'package-lock.json'), 'utf-8'));
-      expect(lock.version).toBe('2.0.1');
-      expect(lock.packages[''].version).toBe('2.0.1');
+      expect(lock.version).toBe('2.0.2');
+      expect(lock.packages[''].version).toBe('2.0.2');
     });
 
-    it('Cargo.toml should have version 2.0.1', () => {
+    it('Cargo.toml should have version 2.0.2', () => {
       const toml = readFileSync(resolve(rootDir, 'src-tauri/Cargo.toml'), 'utf-8');
       const match = /name\s*=\s*"markdown-editor"\s*\nversion\s*=\s*"([^"]+)"/.exec(toml);
       expect(match).not.toBeNull();
-      expect(match![1]).toBe('2.0.1');
+      expect(match![1]).toBe('2.0.2');
     });
 
-    it('Cargo.lock should have markdown-editor package version 2.0.1', () => {
+    it('Cargo.lock should have markdown-editor package version 2.0.2', () => {
       const lock = readFileSync(resolve(rootDir, 'src-tauri/Cargo.lock'), 'utf-8');
       const match = /\[\[package\]\]\s*\nname\s*=\s*"markdown-editor"\s*\nversion\s*=\s*"([^"]+)"/.exec(lock);
       expect(match).not.toBeNull();
-      expect(match![1]).toBe('2.0.1');
+      expect(match![1]).toBe('2.0.2');
     });
 
-    it('tauri.conf.json should have version 2.0.1', () => {
+    it('tauri.conf.json should have version 2.0.2', () => {
       const conf = JSON.parse(readFileSync(resolve(rootDir, 'src-tauri/tauri.conf.json'), 'utf-8'));
-      expect(conf.version).toBe('2.0.1');
+      expect(conf.version).toBe('2.0.2');
     });
   });
 
@@ -191,6 +191,8 @@ describe('Release Acceptance & Quality Assurance (v2.0.1)', () => {
       expect(html).toContain('aria-label="收起大纲 (Ctrl+Shift+O)"');
       expect(html).toContain('aria-label="偏好设置"');
       expect(html).toContain('aria-label="快捷键列表"');
+      // The native Windows title bar already shows the product name.
+      expect(html).not.toContain('Markdown Editor');
     });
 
     it('ToastContainer should have role="status" and aria-live="polite"', () => {
