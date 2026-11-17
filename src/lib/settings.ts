@@ -1,4 +1,5 @@
 import { ThemeMode, StartupViewMode, TabSizeOption, Language, EditorSettings } from '@/types';
+import { validateExportStyle, type ExportStyle } from '@/lib/exportStyle';
 
 export type { EditorSettings, StartupViewMode, TabSizeOption, Language };
 
@@ -119,6 +120,13 @@ export function validateSettings(raw: unknown): EditorSettings {
       ? obj.exportEmbedImages
       : DEFAULT_SETTINGS.exportEmbedImages;
 
+  // Optional export theme. Old settings (and fresh installs) stay undefined,
+  // which keeps every exporter on its legacy path until the user saves a theme.
+  let exportStyle: ExportStyle | undefined;
+  if (Object.prototype.hasOwnProperty.call(obj, 'exportStyle') && obj.exportStyle !== undefined) {
+    exportStyle = validateExportStyle(obj.exportStyle);
+  }
+
   return {
     version: 1,
     language,
@@ -135,6 +143,7 @@ export function validateSettings(raw: unknown): EditorSettings {
     typewriterMode,
     focusMode,
     exportEmbedImages,
+    ...(exportStyle ? { exportStyle } : {}),
   };
 }
 

@@ -20,7 +20,14 @@ import {
   FileCode,
   ClipboardCopy,
   FileArchive,
+  Images,
+  Search,
   Settings,
+  History,
+  FolderTree,
+  LayoutTemplate,
+  ShieldCheck,
+  Palette,
 } from 'lucide-react';
 import { ThemeMode, ViewMode, DocumentTab } from '@/types';
 import type { RecentFile } from '@/lib/recentFiles';
@@ -52,6 +59,13 @@ interface TitleBarProps {
   recentFiles?: RecentFile[];
   onOpenRecent?: (path: string) => void;
   onClearRecent?: () => void;
+  onOpenResources?: () => void;
+  onOpenSearch?: () => void;
+  onOpenHistory?: () => void;
+  onOpenTemplates?: () => void;
+  onOpenQuality?: () => void;
+  onOpenExportTheme?: () => void;
+  onOpenWorkspace?: () => void;
 }
 
 export const TitleBar: React.FC<TitleBarProps> = ({
@@ -79,6 +93,13 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   recentFiles = [],
   onOpenRecent,
   onClearRecent,
+  onOpenResources,
+  onOpenSearch,
+  onOpenHistory,
+  onOpenTemplates,
+  onOpenQuality,
+  onOpenExportTheme,
+  onOpenWorkspace,
 }) => {
   const { t } = useI18n();
   const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
@@ -144,6 +165,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
   const hasActiveTab = Boolean(activeTab);
   const isButtonDisabled = !hasActiveTab || isExporting;
+  const isResourcesDisabled = !hasActiveTab || activeTab?.kind === 'diff';
 
   const themeLabel =
     theme === 'light'
@@ -210,6 +232,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
           <span className="hidden md:inline">{t('titleBar.openDoc')}</span>
         </button>
+
+        {onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} title={t('titleBar.workspaceTooltip')} aria-label={t('titleBar.workspaceTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><FolderTree className="w-3.5 h-3.5 text-emerald-500" /><span className="hidden lg:inline">{t('titleBar.workspace')}</span></button>}
 
         {/* Recent files dropdown */}
         {onOpenRecent && (
@@ -291,6 +315,55 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           </div>
         )}
 
+        {onOpenResources && (
+          <button
+            type="button"
+            onClick={() => {
+              if (!isResourcesDisabled) onOpenResources();
+            }}
+            disabled={isResourcesDisabled}
+            title={
+              isResourcesDisabled
+                ? activeTab
+                  ? t('titleBar.resourcesDiffUnavailable')
+                  : t('titleBar.noOpenDocTooltip')
+                : t('titleBar.resourcesTooltip')
+            }
+            aria-label={t('titleBar.resourcesTooltip')}
+            className={clsx(
+              'flex items-center space-x-1 px-2 py-1 rounded transition-colors',
+              isResourcesDisabled
+                ? 'opacity-45 cursor-not-allowed text-slate-400 dark:text-slate-500'
+                : 'hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200'
+            )}
+          >
+            <Images
+              className={clsx(
+                'w-3.5 h-3.5',
+                isResourcesDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-violet-500'
+              )}
+            />
+            <span className="hidden md:inline">{t('titleBar.resources')}</span>
+          </button>
+        )}
+
+        {onOpenTemplates && <button type="button" onClick={onOpenTemplates} title={t('titleBar.templatesTooltip')} aria-label={t('titleBar.templatesTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><LayoutTemplate className="w-3.5 h-3.5 text-blue-500" /><span className="hidden lg:inline">{t('titleBar.templates')}</span></button>}
+        {onOpenQuality && <button type="button" onClick={onOpenQuality} disabled={!activeTab || activeTab.kind === 'diff'} title={t('titleBar.qualityTooltip')} aria-label={t('titleBar.qualityTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 disabled:opacity-40"><ShieldCheck className="w-3.5 h-3.5 text-teal-500" /><span className="hidden lg:inline">{t('titleBar.quality')}</span></button>}
+
+        {onOpenHistory && (
+          <button
+            type="button"
+            onClick={onOpenHistory}
+            disabled={!activeTab || activeTab.kind === 'diff' || !activeTab.filePath || activeTab.filePath.startsWith('browser://')}
+            title={t('titleBar.historyTooltip')}
+            aria-label={t('titleBar.historyTooltip')}
+            className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
+          >
+            <History className="w-3.5 h-3.5 text-blue-500" />
+            <span className="hidden lg:inline">{t('titleBar.history')}</span>
+          </button>
+        )}
+
         <button
           type="button"
           onClick={onSave}
@@ -314,6 +387,8 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         </button>
 
         {/* Export Dropdown Menu Button */}
+        {onOpenExportTheme && <button type="button" onClick={onOpenExportTheme} title={t('titleBar.exportThemeTooltip')} aria-label={t('titleBar.exportThemeTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><Palette className="w-3.5 h-3.5 text-fuchsia-500" /><span className="hidden lg:inline">{t('titleBar.exportTheme')}</span></button>}
+
         <div className="relative" ref={exportDropdownRef}>
           <button
             type="button"
@@ -493,6 +568,19 @@ export const TitleBar: React.FC<TitleBarProps> = ({
 
       {/* Right: View Mode, Theme Switcher & Shortcuts Help */}
       <div className="flex items-center space-x-1.5">
+        {/* Advanced find & replace */}
+        {onOpenSearch && (
+          <button
+            type="button"
+            onClick={onOpenSearch}
+            title={t('search.tooltip')}
+            aria-label={t('search.open')}
+            className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
+          >
+            <Search className="w-3.5 h-3.5" />
+          </button>
+        )}
+
         {/* Compare two documents */}
         {onCompare && (
           <button

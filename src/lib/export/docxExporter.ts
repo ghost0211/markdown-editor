@@ -18,9 +18,18 @@ import {
   LevelFormat,
   ExternalHyperlink,
   Footer,
+  Header,
+  PageBreak,
   PageNumber,
+  TableOfContents,
   Packer,
+  type FileChild,
 } from 'docx';
+import {
+  getExportColorPalette,
+  validateExportStyle,
+  type ExportStyle,
+} from '@/lib/exportStyle';
 import type {
   Root,
   RootContent,
@@ -83,6 +92,96 @@ export function isValidDocxHyperlink(urlStr?: string | null): boolean {
   } catch {
     return false;
   }
+}
+
+const LEGACY_HEADING_COLORS = [
+  '0F172A',
+  '1E293B',
+  '334155',
+  '475569',
+  '475569',
+  '64748B',
+] as const;
+
+interface DocxTheme {
+  font: string;
+  /** Body font size in half-points. */
+  size: number;
+  textColor: string;
+  headingColors: readonly string[];
+  mutedColor: string;
+  linkColor: string;
+  quoteColor: string;
+  quoteBorderColor: string;
+  borderColor: string;
+  borderLightColor: string;
+  panelColor: string;
+  panelAltColor: string;
+  codeColor: string;
+  monoFont: string;
+}
+
+/** Exact current Word appearance, used whenever no style is supplied. */
+const LEGACY_DOCX_THEME: DocxTheme = {
+  font: 'Microsoft YaHei',
+  size: 22,
+  textColor: '1E293B',
+  headingColors: LEGACY_HEADING_COLORS,
+  mutedColor: '64748B',
+  linkColor: '2563EB',
+  quoteColor: '475569',
+  quoteBorderColor: '3B82F6',
+  borderColor: 'CBD5E1',
+  borderLightColor: 'E2E8F0',
+  panelColor: 'F1F5F9',
+  panelAltColor: 'F8FAFC',
+  codeColor: '334155',
+  monoFont: 'Consolas',
+};
+
+const DOCX_FONT_BY_FAMILY: Record<ExportStyle['fontFamily'], string> = {
+  system: 'Microsoft YaHei',
+  serif: 'SimSun',
+  mono: 'Consolas',
+};
+
+function toDocxHex(color: string): string {
+  return color.replace(/^#/, '').toUpperCase();
+}
+
+/**
+ * Maps the closed export style onto Word's half-point/font/color model.
+ * Light keeps the historical Word palette so saving the default theme does not
+ * reshuffle existing documents; sepia/dark use the fixed palette values.
+ */
+function createDocxTheme(style: ExportStyle): DocxTheme {
+  const palette = getExportColorPalette(style.colorScheme);
+  const isLight = style.colorScheme === 'light';
+  const heading = toDocxHex(palette.heading);
+  const muted = toDocxHex(palette.muted);
+
+  return {
+    font: DOCX_FONT_BY_FAMILY[style.fontFamily],
+    size: Math.max(2, Math.floor(style.fontSize * 1.5)),
+    textColor: isLight ? '1E293B' : toDocxHex(palette.text),
+    headingColors: isLight
+      ? LEGACY_HEADING_COLORS
+      : [heading, heading, heading, heading, heading, muted],
+    mutedColor: isLight ? '64748B' : muted,
+    linkColor: isLight ? '2563EB' : toDocxHex(palette.link),
+    quoteColor: isLight ? '475569' : muted,
+    quoteBorderColor: isLight ? '3B82F6' : toDocxHex(palette.link),
+    borderColor: isLight ? 'CBD5E1' : toDocxHex(palette.border),
+    borderLightColor: isLight ? 'E2E8F0' : toDocxHex(palette.border),
+    panelColor: isLight ? 'F1F5F9' : toDocxHex(palette.panel),
+    panelAltColor: isLight ? 'F8FAFC' : toDocxHex(palette.background),
+    codeColor: isLight ? '334155' : toDocxHex(palette.text),
+    monoFont: 'Consolas',
+  };
+}
+
+function getDocxTocLabel(lang?: string): string {
+  return lang && lang.toLowerCase().startsWith('en') ? 'Contents' : '目录';
 }
 
 const NUMBERING_CONFIG = [
@@ -182,19 +281,23 @@ const NUMBERING_CONFIG = [
   },
 ];
 
-function getHeadingConfig(depth: number): {
+function getHeadingConfig(
+  depth: number,
+  theme: DocxTheme = LEGACY_DOCX_THEME
+): {
   level: (typeof HeadingLevel)[keyof typeof HeadingLevel];
   size: number;
   color: string;
   spacingBefore: number;
   spacingAfter: number;
 } {
+  const color = theme.headingColors[Math.min(Math.max(depth - 1, 0), 5)];
   switch (depth) {
     case 1:
       return {
         level: HeadingLevel.HEADING_1,
         size: 36, // 18pt
-        color: '0F172A',
+        color,
         spacingBefore: 360,
         spacingAfter: 160,
       };
@@ -202,7 +305,7 @@ function getHeadingConfig(depth: number): {
       return {
         level: HeadingLevel.HEADING_2,
         size: 30, // 15pt
-        color: '1E293B',
+        color,
         spacingBefore: 280,
         spacingAfter: 120,
       };
@@ -210,7 +313,7 @@ function getHeadingConfig(depth: number): {
       return {
         level: HeadingLevel.HEADING_3,
         size: 26, // 13pt
-        color: '334155',
+        color,
         spacingBefore: 240,
         spacingAfter: 100,
       };
@@ -218,7 +321,7 @@ function getHeadingConfig(depth: number): {
       return {
         level: HeadingLevel.HEADING_4,
         size: 22, // 11pt
-        color: '475569',
+        color,
         spacingBefore: 200,
         spacingAfter: 80,
       };
@@ -226,7 +329,7 @@ function getHeadingConfig(depth: number): {
       return {
         level: HeadingLevel.HEADING_5,
         size: 20, // 10pt
-        color: '475569',
+        color,
         spacingBefore: 160,
         spacingAfter: 60,
       };
@@ -235,7 +338,7 @@ function getHeadingConfig(depth: number): {
       return {
         level: HeadingLevel.HEADING_6,
         size: 18, // 9pt
-        color: '64748B',
+        color,
         spacingBefore: 120,
         spacingAfter: 40,
       };
@@ -247,7 +350,8 @@ function getHeadingConfig(depth: number): {
  */
 export function convertPhrasingChildren(
   children: PhrasingContent[],
-  currentStyle: InlineRunStyle = {}
+  currentStyle: InlineRunStyle = {},
+  theme: DocxTheme = LEGACY_DOCX_THEME
 ): (TextRun | ExternalHyperlink)[] {
   const result: (TextRun | ExternalHyperlink)[] = [];
 
@@ -276,7 +380,7 @@ export function convertPhrasingChildren(
           ...convertPhrasingChildren(strongNode.children, {
             ...currentStyle,
             bold: true,
-          })
+          }, theme)
         );
         break;
       }
@@ -286,7 +390,7 @@ export function convertPhrasingChildren(
           ...convertPhrasingChildren(emphasisNode.children, {
             ...currentStyle,
             italics: true,
-          })
+          }, theme)
         );
         break;
       }
@@ -296,7 +400,7 @@ export function convertPhrasingChildren(
           ...convertPhrasingChildren(deleteNode.children, {
             ...currentStyle,
             strike: true,
-          })
+          }, theme)
         );
         break;
       }
@@ -305,12 +409,12 @@ export function convertPhrasingChildren(
         result.push(
           new TextRun({
             text: codeNode.value,
-            font: 'Consolas',
+            font: theme.monoFont,
             size: currentStyle.size ? currentStyle.size - 2 : 20,
-            color: '0F172A',
+            color: theme.headingColors[0],
             shading: {
               type: ShadingType.CLEAR,
-              fill: 'F1F5F9',
+              fill: theme.panelColor,
             },
             bold: currentStyle.bold,
             italics: currentStyle.italics,
@@ -324,9 +428,9 @@ export function convertPhrasingChildren(
         if (isValidDocxHyperlink(rawUrl)) {
           const linkRuns = convertPhrasingChildren(linkNode.children, {
             ...currentStyle,
-            color: '2563EB',
+            color: theme.linkColor,
             underline: {},
-          });
+          }, theme);
           result.push(
             new ExternalHyperlink({
               link: rawUrl.trim(),
@@ -336,7 +440,7 @@ export function convertPhrasingChildren(
         } else {
           // Unsafe, empty, or invalid URL: export as regular readable text without losing link text
           result.push(
-            ...convertPhrasingChildren(linkNode.children, currentStyle)
+            ...convertPhrasingChildren(linkNode.children, currentStyle, theme)
           );
         }
         break;
@@ -348,7 +452,7 @@ export function convertPhrasingChildren(
           new TextRun({
             text: `[${alt}: ${imageNode.url}]`,
             italics: true,
-            color: '64748B',
+            color: theme.mutedColor,
             size: currentStyle.size ? currentStyle.size - 2 : 20,
           })
         );
@@ -392,7 +496,8 @@ export function convertPhrasingChildren(
  */
 function convertList(
   listNode: MdastList,
-  listLevel: number
+  listLevel: number,
+  theme: DocxTheme = LEGACY_DOCX_THEME
 ): (Paragraph | Table)[] {
   const result: (Paragraph | Table)[] = [];
   const isOrdered = Boolean(listNode.ordered);
@@ -405,7 +510,7 @@ function convertList(
     for (const child of item.children) {
       if (child.type === 'paragraph') {
         const pNode = child as MdastParagraph;
-        const runs = convertPhrasingChildren(pNode.children);
+        const runs = convertPhrasingChildren(pNode.children, {}, theme);
 
         if (isTask) {
           // Task list item: render checkbox symbol with indent
@@ -414,7 +519,7 @@ function convertList(
             text: checkSymbol,
             font: 'Segoe UI Symbol',
             bold: true,
-            color: item.checked ? '2563EB' : '64748B',
+            color: item.checked ? theme.linkColor : theme.mutedColor,
           });
 
           result.push(
@@ -453,10 +558,10 @@ function convertList(
         isFirstParagraphInItem = false;
       } else if (child.type === 'list') {
         const subList = child as MdastList;
-        result.push(...convertList(subList, listLevel + 1));
+        result.push(...convertList(subList, listLevel + 1, theme));
       } else {
         // Other blocks inside list item
-        const converted = convertBlockNode(child, listLevel + 1);
+        const converted = convertBlockNode(child, listLevel + 1, theme);
         result.push(...converted);
       }
     }
@@ -468,7 +573,10 @@ function convertList(
 /**
  * Converts a GFM Table node into a docx Table with dual widths & borders
  */
-function convertTable(tableNode: MdastTable): Table {
+function convertTable(
+  tableNode: MdastTable,
+  theme: DocxTheme = LEGACY_DOCX_THEME
+): Table {
   const TOTAL_WIDTH_DXA = 9000;
   const rows = tableNode.children;
   if (rows.length === 0) {
@@ -494,7 +602,7 @@ function convertTable(tableNode: MdastTable): Table {
 
       const phrasingRuns = convertPhrasingChildren(cellNode.children, {
         bold: isHeader,
-      });
+      }, theme);
 
       return new TableCell({
         width: {
@@ -504,12 +612,12 @@ function convertTable(tableNode: MdastTable): Table {
         shading: isHeader
           ? {
               type: ShadingType.CLEAR,
-              fill: 'F1F5F9',
+              fill: theme.panelColor,
             }
           : rowIndex % 2 === 0
           ? {
               type: ShadingType.CLEAR,
-              fill: 'F8FAFC',
+              fill: theme.panelAltColor,
             }
           : undefined,
         margins: {
@@ -541,12 +649,12 @@ function convertTable(tableNode: MdastTable): Table {
     },
     columnWidths,
     borders: {
-      top: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      bottom: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      left: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      right: { style: BorderStyle.SINGLE, size: 4, color: 'CBD5E1' },
-      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
-      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: 'E2E8F0' },
+      top: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
+      bottom: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
+      left: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
+      right: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
+      insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: theme.borderLightColor },
+      insideVertical: { style: BorderStyle.SINGLE, size: 4, color: theme.borderLightColor },
     },
     rows: tableRows,
   });
@@ -555,7 +663,10 @@ function convertTable(tableNode: MdastTable): Table {
 /**
  * Converts a code block node into multiple styled paragraphs
  */
-function convertCodeBlock(codeNode: MdastCode): Paragraph[] {
+function convertCodeBlock(
+  codeNode: MdastCode,
+  theme: DocxTheme = LEGACY_DOCX_THEME
+): Paragraph[] {
   const codeText = codeNode.value || '';
   const lines = codeText.split(/\r?\n/);
 
@@ -563,7 +674,7 @@ function convertCodeBlock(codeNode: MdastCode): Paragraph[] {
     return new Paragraph({
       shading: {
         type: ShadingType.CLEAR,
-        fill: 'F8FAFC',
+        fill: theme.panelAltColor,
       },
       indent: {
         left: 360,
@@ -577,9 +688,9 @@ function convertCodeBlock(codeNode: MdastCode): Paragraph[] {
       children: [
         new TextRun({
           text: line.length > 0 ? line : ' ',
-          font: 'Consolas',
+          font: theme.monoFont,
           size: 19,
-          color: '334155',
+          color: theme.codeColor,
         }),
       ],
     });
@@ -591,17 +702,18 @@ function convertCodeBlock(codeNode: MdastCode): Paragraph[] {
  */
 function convertBlockNode(
   node: RootContent,
-  indentContext = 0
+  indentContext = 0,
+  theme: DocxTheme = LEGACY_DOCX_THEME
 ): (Paragraph | Table)[] {
   switch (node.type) {
     case 'heading': {
       const headingNode = node as Heading;
-      const cfg = getHeadingConfig(headingNode.depth);
+      const cfg = getHeadingConfig(headingNode.depth, theme);
       const runs = convertPhrasingChildren(headingNode.children, {
         bold: true,
         color: cfg.color,
         size: cfg.size,
-      });
+      }, theme);
       return [
         new Paragraph({
           heading: cfg.level,
@@ -615,7 +727,7 @@ function convertBlockNode(
     }
     case 'paragraph': {
       const pNode = node as MdastParagraph;
-      const runs = convertPhrasingChildren(pNode.children);
+      const runs = convertPhrasingChildren(pNode.children, {}, theme);
       return [
         new Paragraph({
           spacing: { line: 276, after: 120 },
@@ -624,7 +736,7 @@ function convertBlockNode(
       ];
     }
     case 'list': {
-      return convertList(node as MdastList, indentContext);
+      return convertList(node as MdastList, indentContext, theme);
     }
     case 'blockquote': {
       const bqNode = node as MdastBlockquote;
@@ -633,9 +745,9 @@ function convertBlockNode(
         if (child.type === 'paragraph') {
           const pNode = child as MdastParagraph;
           const runs = convertPhrasingChildren(pNode.children, {
-            color: '475569',
+            color: theme.quoteColor,
             italics: true,
-          });
+          }, theme);
           result.push(
             new Paragraph({
               indent: { left: 720, right: 360 },
@@ -643,29 +755,29 @@ function convertBlockNode(
                 left: {
                   style: BorderStyle.SINGLE,
                   size: 24,
-                  color: '3B82F6',
+                  color: theme.quoteBorderColor,
                   space: 16,
                 },
               },
               shading: {
                 type: ShadingType.CLEAR,
-                fill: 'F8FAFC',
+                fill: theme.panelAltColor,
               },
               spacing: { before: 80, after: 80, line: 260 },
               children: runs,
             })
           );
         } else {
-          result.push(...convertBlockNode(child, indentContext + 1));
+          result.push(...convertBlockNode(child, indentContext + 1, theme));
         }
       }
       return result;
     }
     case 'code': {
-      return convertCodeBlock(node as MdastCode);
+      return convertCodeBlock(node as MdastCode, theme);
     }
     case 'table': {
-      return [convertTable(node as MdastTable)];
+      return [convertTable(node as MdastTable, theme)];
     }
     case 'thematicBreak': {
       return [
@@ -675,7 +787,7 @@ function convertBlockNode(
             bottom: {
               style: BorderStyle.SINGLE,
               size: 6,
-              color: 'CBD5E1',
+              color: theme.borderColor,
               space: 1,
             },
           },
@@ -701,13 +813,22 @@ function convertBlockNode(
 }
 
 /**
- * Exports a markdown string to OOXML .docx binary format (Uint8Array)
+ * Exports a markdown string to OOXML .docx binary format (Uint8Array).
+ *
+ * Passing no `style` preserves the legacy document exactly (Microsoft YaHei,
+ * 11pt, page-number footer, no cover/TOC/header). An explicit style controls
+ * the document font/size/colors and the optional cover, TOC, header, and
+ * footer; `pageNumbers: false` removes the footer instead of leaving it on.
  */
 export async function exportMarkdownToDocx(
   markdown: string,
   title: string,
-  lang?: string
+  lang?: string,
+  style?: ExportStyle
 ): Promise<Uint8Array> {
+  const normalizedStyle = style ? validateExportStyle(style) : undefined;
+  const theme = normalizedStyle ? createDocxTheme(normalizedStyle) : LEGACY_DOCX_THEME;
+
   // Front matter parses to a `yaml` node, which convertBlockNode ignores, so
   // the metadata block never reaches the document body.
   const tree = unified()
@@ -717,20 +838,126 @@ export async function exportMarkdownToDocx(
     .parse(markdown) as Root;
   transformCallouts(tree, lang);
 
-  const children: (Paragraph | Table)[] = [];
+  const content: FileChild[] = [];
   for (const node of tree.children) {
-    const elements = convertBlockNode(node);
-    children.push(...elements);
+    const elements = convertBlockNode(node, 0, theme);
+    content.push(...elements);
   }
 
-  // If document was completely empty, include at least one empty paragraph
-  if (children.length === 0) {
-    children.push(new Paragraph({ children: [new TextRun('')] }));
+  const bodyChildren: FileChild[] = [];
+  const documentTitle = title || 'Markdown Document';
+
+  if (normalizedStyle?.cover) {
+    const coverDate = new Date().toISOString().slice(0, 10);
+    bodyChildren.push(
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { before: 2400, after: 240 },
+        children: [
+          new TextRun({
+            text: documentTitle,
+            bold: true,
+            font: theme.font,
+            size: 56,
+            color: theme.headingColors[0],
+          }),
+        ],
+      }),
+      new Paragraph({
+        alignment: AlignmentType.CENTER,
+        children: [
+          new TextRun({
+            text: coverDate,
+            font: theme.font,
+            size: 22,
+            color: theme.mutedColor,
+          }),
+        ],
+      }),
+      new Paragraph({ children: [new PageBreak()] })
+    );
   }
+
+  if (normalizedStyle?.toc) {
+    const tocLabel = getDocxTocLabel(lang);
+    bodyChildren.push(
+      new Paragraph({
+        spacing: { before: 120, after: 200 },
+        children: [
+          new TextRun({
+            text: tocLabel,
+            bold: true,
+            font: theme.font,
+            size: 30,
+            color: theme.headingColors[0],
+          }),
+        ],
+      }),
+      new TableOfContents(tocLabel, {
+        hyperlink: true,
+        headingStyleRange: '1-3',
+      }),
+      new Paragraph({ children: [new PageBreak()] })
+    );
+  }
+
+  bodyChildren.push(...content);
+
+  // If document was completely empty, include at least one empty paragraph.
+  if (bodyChildren.length === 0) {
+    bodyChildren.push(new Paragraph({ children: [new TextRun('')] }));
+  }
+
+  const showPageNumbers = normalizedStyle ? normalizedStyle.pageNumbers : true;
+  const header = normalizedStyle?.headerText
+    ? {
+        default: new Header({
+          children: [
+            new Paragraph({
+              border: {
+                bottom: {
+                  style: BorderStyle.SINGLE,
+                  size: 4,
+                  color: theme.borderColor,
+                  space: 4,
+                },
+              },
+              children: [
+                new TextRun({
+                  text: normalizedStyle.headerText,
+                  font: theme.font,
+                  size: 18,
+                  color: theme.mutedColor,
+                }),
+              ],
+            }),
+          ],
+        }),
+      }
+    : undefined;
+  const footer = showPageNumbers
+    ? {
+        default: new Footer({
+          children: [
+            new Paragraph({
+              alignment: AlignmentType.RIGHT,
+              children: [
+                new TextRun({
+                  children: [PageNumber.CURRENT, ' / ', PageNumber.TOTAL_PAGES],
+                  size: 18,
+                  color: '94A3B8',
+                }),
+              ],
+            }),
+          ],
+        }),
+      }
+    : undefined;
 
   const doc = new Document({
     creator: 'Markdown Editor',
-    title: title || 'Markdown Document',
+    title: documentTitle,
+    ...(normalizedStyle?.toc ? { features: { updateFields: true } } : {}),
     numbering: {
       config: NUMBERING_CONFIG,
     },
@@ -738,9 +965,9 @@ export async function exportMarkdownToDocx(
       default: {
         document: {
           run: {
-            font: 'Microsoft YaHei',
-            size: 22, // 11pt
-            color: '1E293B',
+            font: theme.font,
+            size: theme.size,
+            color: theme.textColor,
           },
           paragraph: {
             spacing: {
@@ -767,23 +994,9 @@ export async function exportMarkdownToDocx(
             },
           },
         },
-        footers: {
-          default: new Footer({
-            children: [
-              new Paragraph({
-                alignment: AlignmentType.RIGHT,
-                children: [
-                  new TextRun({
-                    children: [PageNumber.CURRENT, ' / ', PageNumber.TOTAL_PAGES],
-                    size: 18,
-                    color: '94A3B8',
-                  }),
-                ],
-              }),
-            ],
-          }),
-        },
-        children,
+        ...(header ? { headers: header } : {}),
+        ...(footer ? { footers: footer } : {}),
+        children: bodyChildren,
       },
     ],
   });

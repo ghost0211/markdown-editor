@@ -52,6 +52,8 @@ export interface XmdReference {
   /** Markdown destination span, or the HTML attribute span. */
   target: XmdSourceSpan;
   html?: XmdHtmlReference;
+  /** Body locations of reference-style uses; the destination itself lives in a definition. */
+  usageLines?: number[];
 }
 
 export interface XmdReferenceScan {
@@ -172,11 +174,11 @@ export function scanXmdReferences(markdown: string): XmdReferenceScan {
     if (node.type === 'definition' && !definitions.has(node.identifier)) definitions.set(node.identifier, node);
   });
 
-  const targets = new Map<Definition, boolean>();
+  const targets = new Map<Definition, { image: boolean; usageLines: number[] }>();
   const references: XmdReference[] = [];
   let hasEmptyImage = false;
 
-  function add(node: Nodes & { url: string }, image: boolean): void {
+  function add(node: Nodes & { url: string }, image: boolean, usageLines?: number[]): void {
     const start = node.position?.start.offset;
     const end = node.position?.end.offset;
     if (start === undefined || end === undefined) return;
@@ -194,7 +196,7 @@ export function scanXmdReferences(markdown: string): XmdReferenceScan {
       if (image) hasEmptyImage = true;
       return;
     }
-    references.push({ source: node.url, image, target: { from: target.start, to: target.end } });
+    references.push({ source: node.url, image, target: { from: target.start, to: target.end }, usageLines });
   }
 
   walk(tree, (node) => {
@@ -202,7 +204,12 @@ export function scanXmdReferences(markdown: string): XmdReferenceScan {
     if (node.type === 'link') add(node, false);
     if (node.type === 'imageReference' || node.type === 'linkReference') {
       const definition = definitions.get(node.identifier);
-      if (definition) targets.set(definition, Boolean(targets.get(definition)) || node.type === 'imageReference');
+      if (definition) {
+        const entry = targets.get(definition) || { image: false, usageLines: [] };
+        entry.image ||= node.type === 'imageReference';
+        if (node.position) entry.usageLines.push(node.position.start.line);
+        targets.set(definition, entry);
+      }
     }
     if (node.type === 'html' && node.position?.start.offset !== undefined && node.position.end.offset !== undefined) {
       const offset = node.position.start.offset;
@@ -210,7 +217,7 @@ export function scanXmdReferences(markdown: string): XmdReferenceScan {
     }
   });
 
-  for (const [definition, image] of targets) add(definition, image);
+  for (const [definition, { image, usageLines }] of targets) add(definition, image, usageLines);
 
   return {
     hasEmptyImage,

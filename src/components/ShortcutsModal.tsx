@@ -105,6 +105,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
     {
       title: t('shortcutsModal.groupEdit'),
       items: [
+        { key: 'Ctrl + Shift + F / Ctrl + H', desc: t('search.open') },
         { key: 'Ctrl + B', desc: t('shortcutsModal.bold') },
         { key: 'Ctrl + I', desc: t('shortcutsModal.italic') },
         { key: 'Ctrl + K', desc: t('shortcutsModal.insertLink') },

@@ -5,6 +5,9 @@ import {
   serializeEditorState,
   restoreEditorInitialState,
   isSnapshotValid,
+  applyCachedDocumentChange,
+  getCachedEditorState,
+  setCachedEditorState,
 } from '../src/lib/editorStateCache';
 
 /**
@@ -72,6 +75,17 @@ describe('editorStateCache: per-document undo isolation', () => {
     expect(afterUndoInB.doc.toString()).not.toContain('typed-in-A');
     // A's own snapshot is intact for when the user switches back.
     expect(restore(snapshotA).doc.toString()).toBe('A0 typed-in-A');
+  });
+
+  it('preserves undo for batch replacements in an inactive tab', () => {
+    const typed = typeInto(EditorState.create({ doc: 'before', extensions }), ' typed');
+    setCachedEditorState('batch-test', serializeEditorState(typed));
+    applyCachedDocumentChange('batch-test', 'before typed', 'after typed');
+    let restored = restore(getCachedEditorState('batch-test')!);
+    undo({ state: restored, dispatch: (transaction) => { restored = transaction.state; } });
+    expect(restored.doc.toString()).toBe('before typed');
+    undo({ state: restored, dispatch: (transaction) => { restored = transaction.state; } });
+    expect(restored.doc.toString()).toBe('before');
   });
 
   it('rejects a cached snapshot once the content drifted', () => {

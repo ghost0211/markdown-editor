@@ -1,7 +1,10 @@
 pub mod commands;
+pub mod history;
 pub mod path_utils;
 pub mod pdf_export;
+pub mod resource_store;
 pub mod session_store;
+pub mod workspace;
 pub mod xmd_export;
 
 pub use path_utils::{
@@ -56,6 +59,11 @@ pub fn run() {
             commands::read_text_file,
             commands::read_binary_file,
             commands::get_file_mtime,
+            commands::get_file_size,
+            commands::save_resource_dialog,
+            resource_store::export_resource_file,
+            resource_store::create_resource_file,
+            resource_store::settle_created_resource_files,
             commands::write_text_file,
             commands::write_binary_file,
             commands::open_file_dialog,
@@ -65,6 +73,9 @@ pub fn run() {
             xmd_export::read_xmd_resource,
             xmd_export::read_xmd_document,
             xmd_export::write_xmd_file,
+            history::record_document_history,
+            history::list_document_history,
+            history::read_document_snapshot,
             commands::export_pdf_from_html,
             commands::open_url,
             commands::open_windows_default_apps_settings,
@@ -73,7 +84,12 @@ pub fn run() {
             commands::set_window_theme,
             commands::read_session_data,
             commands::write_session_data,
-            commands::clear_session_data
+            commands::clear_session_data,
+            workspace::choose_workspace_folder,
+            workspace::list_workspace,
+            workspace::create_workspace_document,
+            workspace::create_workspace_folder,
+            workspace::rename_workspace_path
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

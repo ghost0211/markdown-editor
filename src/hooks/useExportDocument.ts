@@ -1,5 +1,5 @@
 import { useState, useCallback } from 'react';
-import { DocumentTab, ToastType } from '@/types';
+import { DocumentTab, ToastType, ExportStyle } from '@/types';
 import { exportFileDialog, writeBinaryFile } from '@/lib/native';
 import {
   ensureExportPathExtension,
@@ -21,12 +21,17 @@ export interface UseExportDocumentResult {
 export interface UseExportDocumentOptions {
   /** Inline local images as data URLs in the exported HTML. */
   embedImages?: boolean;
+  /**
+   * Optional saved export theme. Undefined keeps the legacy exporter
+   * appearance; Word/PDF/HTML all receive the same style object.
+   */
+  style?: ExportStyle;
 }
 
 export function useExportDocument(
   activeTab: DocumentTab | undefined,
   showToast: (message: string, type?: ToastType, duration?: number) => string,
-  { embedImages = false }: UseExportDocumentOptions = {}
+  { embedImages = false, style }: UseExportDocumentOptions = {}
 ): UseExportDocumentResult {
   const { t, language } = useI18n();
   const [isExporting, setIsExporting] = useState(false);
@@ -49,7 +54,12 @@ export function useExportDocument(
       showToast(t('toasts.exportingWord'), 'info', 2000);
 
       const { exportMarkdownToDocx } = await import('@/lib/export/docxExporter');
-      const docxBytes = await exportMarkdownToDocx(activeTab.content, activeTab.title, language);
+      const docxBytes = await exportMarkdownToDocx(
+        activeTab.content,
+        activeTab.title,
+        language,
+        style
+      );
       await writeBinaryFile(targetPath, docxBytes);
 
       if (targetPath.startsWith('browser://')) {
@@ -64,7 +74,7 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, isExporting, language, showToast, t]);
+  }, [activeTab, isExporting, language, showToast, style, t]);
 
   const exportPdf = useCallback(async () => {
     if (!activeTab || isExporting) return;
@@ -88,7 +98,8 @@ export function useExportDocument(
         activeTab.title,
         targetPath,
         activeTab.filePath || undefined,
-        language
+        language,
+        style
       );
 
       if (targetPath.startsWith('browser://')) {
@@ -103,7 +114,7 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, isExporting, language, showToast, t]);
+  }, [activeTab, isExporting, language, showToast, style, t]);
 
   const exportHtml = useCallback(async () => {
     if (!activeTab || isExporting) return;
@@ -135,6 +146,7 @@ export function useExportDocument(
           sourceFilePath: activeTab.filePath || undefined,
           lang: language,
           resolveImage,
+          style,
         }
       );
 
@@ -150,7 +162,7 @@ export function useExportDocument(
       setIsExporting(false);
       setExportingType(null);
     }
-  }, [activeTab, embedImages, isExporting, language, showToast, t]);
+  }, [activeTab, embedImages, isExporting, language, showToast, style, t]);
 
   const exportXmd = useCallback(async () => {
     if (!activeTab || isExporting) return;

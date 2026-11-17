@@ -110,7 +110,8 @@ mod tests {
     fn test_large_multi_megabyte_session_exceeding_localstorage_quota() {
         let temp_dir = tempfile::tempdir().unwrap();
         // ~6.5 MB payload — well past the 5 MB WebView localStorage ceiling
-        let large_body = "# 大型草稿\n\n".to_string() + &"这是一段长文本测试内容。\n".repeat(180_000);
+        let large_body =
+            "# 大型草稿\n\n".to_string() + &"这是一段长文本测试内容。\n".repeat(180_000);
         assert!(large_body.len() > 6 * 1024 * 1024);
 
         let payload = serde_json::json!({

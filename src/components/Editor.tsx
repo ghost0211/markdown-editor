@@ -12,12 +12,14 @@ import { languages } from '@codemirror/language-data';
 import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, ViewUpdate } from '@codemirror/view';
 import { EditorState, Text } from '@codemirror/state';
+import { isolateHistory } from '@codemirror/commands';
 import { indentUnit } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
 import { createMarkdownEditingKeymap } from '@/lib/editorKeymap';
 import { createTypewriterExtension } from '@/lib/typewriterMode';
 import { createFocusModeExtension } from '@/lib/focusMode';
 import { createSearchMatchCountExtension } from '@/lib/searchMatchCount';
+import { createEmbeddedResourceProtection } from '@/lib/embeddedResourceProtection';
 import { createImageAddressExtension, safeImageInsertionPosition } from '@/lib/imageAddressExtension';
 import {
   isSingleUrl,
@@ -39,6 +41,10 @@ import { useI18n } from '@/i18n';
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
+  /** Select a full-text search match after its tab is mounted. */
+  selectRange: (from: number, to: number, expectedContent?: string) => boolean;
+  /** Apply a programmatic source change as one undoable editor transaction. */
+  replaceDocument: (original: string, content: string) => boolean;
   applyAction: (action: MarkdownAction) => void;
   focus: () => void;
   getScrollTop: () => number;
@@ -77,6 +83,7 @@ interface EditorProps {
   initialCursorCol?: number;
   /** Receives pasted/dropped image files and the source position to insert at. */
   onImageFiles?: (files: File[], position: number) => void;
+  onProtectedReplace?: () => void;
 }
 
 export { cachedEditorStateIds, dropCachedEditorState };
@@ -134,6 +141,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       initialCursorLine = 1,
       initialCursorCol = 1,
       onImageFiles,
+      onProtectedReplace,
     },
     ref
   ) => {
@@ -146,6 +154,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     onScrollRef.current = onScroll;
     const onImageFilesRef = useRef(onImageFiles);
     onImageFilesRef.current = onImageFiles;
+    const onProtectedReplaceRef = useRef(onProtectedReplace);
+    onProtectedReplaceRef.current = onProtectedReplace;
 
     // Stable for as long as the user's line-number preference is unchanged.
     const basicSetup = useMemo(() => ({ ...BASE_BASIC_SETUP, lineNumbers }), [lineNumbers]);
@@ -161,6 +171,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       const ext = [
         createMarkdownEditingKeymap({ t, language }),
         createSearchMatchCountExtension(),
+        createEmbeddedResourceProtection(() => onProtectedReplaceRef.current?.()),
         markdown({ base: markdownLanguage, codeLanguages: languages }),
         createImageAddressExtension({
           embedded: t('editor.embeddedImage'),
@@ -394,6 +405,29 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             effects: EditorView.scrollIntoView(line.from, { y: 'start', yMargin: 16 }),
           });
           view.focus();
+        },
+
+        selectRange: (from: number, to: number, expectedContent?: string) => {
+          const view = cmRef.current?.view;
+          if (!view || (expectedContent !== undefined && view.state.doc.toString() !== expectedContent)) return false;
+          const start = Math.max(0, Math.min(from, view.state.doc.length));
+          const end = Math.max(start, Math.min(to, view.state.doc.length));
+          view.dispatch({ selection: { anchor: start, head: end }, effects: EditorView.scrollIntoView(start, { y: 'center' }) });
+          view.focus();
+          return true;
+        },
+
+        replaceDocument: (original: string, content: string) => {
+          const view = cmRef.current?.view;
+          if (!view || view.state.doc.toString() !== original) return false;
+          if (original === content) return true;
+          let from = 0;
+          while (from < original.length && from < content.length && original[from] === content[from]) from++;
+          let originalEnd = original.length;
+          let newEnd = content.length;
+          while (originalEnd > from && newEnd > from && original[originalEnd - 1] === content[newEnd - 1]) { originalEnd--; newEnd--; }
+          view.dispatch({ changes: { from, to: originalEnd, insert: content.slice(from, newEnd) }, annotations: isolateHistory.of('full'), userEvent: 'input.resource' });
+          return true;
         },
 
         applyAction: (action: MarkdownAction) => {

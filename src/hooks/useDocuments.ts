@@ -2,12 +2,11 @@ import { useState, useCallback, useRef } from 'react';
 import { prepareDocumentsForUpdate } from '@/lib/appUpdateDocuments';
 import { DocumentTab, ConfirmDialogState, StartupViewMode, ViewMode } from '@/types';
 import { getWelcomeDocument } from '@/lib/defaultDocument';
-import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime, isTauri } from '@/lib/native';
+import { openFileDialog, saveFileDialog, writeTextFile, readTextFile, getFileMtime, isTauri, recordSavedDocumentHistory } from '@/lib/native';
 import {
   getFileNameFromPath,
   normalizeLineEndings,
   normalizePathKey,
-  computeSavedTabState,
   createDefaultTab,
   createDiffTabState,
   moveTabState,
@@ -30,9 +29,22 @@ import { loadLocalSessionSync, STORAGE_ACTIVE_TAB_KEY } from '@/lib/sessionStora
 import { useSessionPersistence } from '@/hooks/useSessionPersistence';
 import { useAutoSave, AUTO_SAVE_DELAY_MS } from '@/hooks/useAutoSave';
 import { useExternalFileChanges } from '@/hooks/useExternalFileChanges';
+import {
+  createDocumentSaveController,
+  type DocumentSaveController,
+  type DocumentSaveHost,
+} from '@/lib/saveQueue';
 import { useI18n, getCurrentLanguage } from '@/i18n';
+import { movedWorkspacePath, renameWorkspaceDocuments } from '@/lib/workspaceDocuments';
 
 export { AUTO_SAVE_DELAY_MS };
+
+/** A batched content replacement produced by an out-of-editor mutation. */
+export interface ContentUpdate {
+  id: string;
+  original: string;
+  content: string;
+}
 
 function createInitialWelcomeTab(): DocumentTab {
   const currentLang = getCurrentLanguage();
@@ -47,6 +59,45 @@ function createInitialWelcomeTab(): DocumentTab {
     cursorLine: 1,
     cursorCol: 1,
   };
+}
+
+/**
+ * Pure all-or-nothing batch replacement used by `applyContentUpdates`.
+ *
+ * Requirements: every id is unique, targets a still-open normal document, and
+ * the tab's current content is exactly the `original` snapshot the caller saw.
+ * Returns the next tab array, or `null` when any check fails so callers can
+ * refuse the whole batch without applying a partial update.
+ */
+export function applyContentUpdatesToTabs(
+  tabs: DocumentTab[],
+  updates: ContentUpdate[]
+): DocumentTab[] | null {
+  if (!Array.isArray(updates)) return null;
+  if (updates.length === 0) return tabs;
+
+  const byId = new Map<string, ContentUpdate>();
+  for (const update of updates) {
+    if (!update || typeof update.id !== 'string' || byId.has(update.id)) return null;
+    if (typeof update.original !== 'string' || typeof update.content !== 'string') return null;
+    byId.set(update.id, update);
+  }
+
+  for (const [id, update] of byId) {
+    const tab = tabs.find((item) => item.id === id);
+    if (!tab || tab.kind === 'diff' || tab.content !== update.original) return null;
+  }
+
+  return tabs.map((tab) => {
+    const update = byId.get(tab.id);
+    if (!update) return tab;
+    return {
+      ...tab,
+      content: update.content,
+      isDirty:
+        normalizeLineEndings(update.content) !== normalizeLineEndings(tab.savedContent),
+    };
+  });
 }
 
 export function useDocuments(
@@ -162,6 +213,30 @@ export function useDocuments(
       setTabs(next);
       saveSession(next);
       scheduleAutoSaveRef.current();
+    },
+    [saveSession]
+  );
+
+  /**
+   * Applies an all-or-nothing batch of content replacements produced outside
+   * the editor (for example when the resource manager rewrites image paths).
+   *
+   * Every update must target a distinct, still-open normal document whose
+   * current content still equals the `original` snapshot the caller based its
+   * rewrite on. If any check fails nothing is changed, so a stale batch can
+   * never partially overwrite newer edits or a diff tab.
+   */
+  const applyContentUpdates = useCallback(
+    (updates: ContentUpdate[]): boolean => {
+      if (!Array.isArray(updates)) return false;
+      if (updates.length === 0) return true;
+      const next = applyContentUpdatesToTabs(tabsRef.current, updates);
+      if (!next) return false;
+      tabsRef.current = next;
+      setTabs(next);
+      saveSession(next);
+      scheduleAutoSaveRef.current();
+      return true;
     },
     [saveSession]
   );
@@ -327,60 +402,30 @@ export function useDocuments(
     [saveSession, showToast, t]
   );
 
-  const autoSaveErrorShownRef = useRef(false);
+  // The controller owns the keyed save queue and stale-attempt bookkeeping.
+  // A ref-based host keeps it stable across renders while still using the
+  // latest language, tab ref and session writer.
+  const saveHostRef = useRef<DocumentSaveHost | null>(null);
+  saveHostRef.current = {
+    tabsRef,
+    setTabs,
+    saveSession,
+    rememberRecentFile,
+    showToast,
+    saveFileDialog,
+    writeFile: writeTextFile,
+    getFileMtime,
+    recordHistory: recordSavedDocumentHistory,
+    translate: t,
+  };
+  const saveControllerRef = useRef<DocumentSaveController | null>(null);
+  if (!saveControllerRef.current) {
+    saveControllerRef.current = createDocumentSaveController(() => saveHostRef.current!);
+  }
   const writeDocumentTab = useCallback(
-    async (tabId: string, forceSaveAs = false, silent = false): Promise<boolean> => {
-      const tab = tabsRef.current.find((item) => item.id === tabId);
-      if (!tab) return false;
-
-      let targetPath = tab.filePath;
-      if (!targetPath || forceSaveAs) {
-        try {
-          const selected = await saveFileDialog(tab.title);
-          if (!selected) return false;
-          targetPath = selected;
-        } catch (err: unknown) {
-          showToast((err as Error).message || t('toasts.getSavePathFailed'), 'error');
-          return false;
-        }
-      }
-
-      const freshTab = tabsRef.current.find((item) => item.id === tab.id) || tab;
-      const contentSnapshot = freshTab.content;
-
-      try {
-        await writeTextFile(targetPath, contentSnapshot, tab.filePath);
-        const fileMtime = (await getFileMtime(targetPath)) ?? undefined;
-        const fileName = getFileNameFromPath(targetPath);
-
-        const next = tabsRef.current.map((item) =>
-          item.id === tab.id
-            ? computeSavedTabState(item, targetPath, contentSnapshot, fileMtime)
-            : item
-        );
-        tabsRef.current = next;
-        setTabs(next);
-        saveSession(next);
-        rememberRecentFile(targetPath);
-
-        if (silent) {
-          autoSaveErrorShownRef.current = false;
-        } else {
-          showToast(t('toasts.savedSuccess', { name: fileName }), 'success');
-        }
-        return true;
-      } catch (err: unknown) {
-        const message = (err as Error).message || t('toasts.saveFailed');
-        if (!silent) {
-          showToast(message, 'error');
-        } else if (!autoSaveErrorShownRef.current) {
-          autoSaveErrorShownRef.current = true;
-          showToast(t('toasts.autoSaveFailed', { error: message }), 'error');
-        }
-        return false;
-      }
-    },
-    [showToast, saveSession, rememberRecentFile, t]
+    (tabId: string, forceSaveAs = false, silent = false): Promise<boolean> =>
+      saveControllerRef.current!.writeDocumentTab(tabId, forceSaveAs, silent),
+    []
   );
 
   const { scheduleAutoSave } = useAutoSave({
@@ -483,6 +528,9 @@ export function useDocuments(
     (tabId: string) => {
       const prev = tabsRef.current;
       const closing = prev.find((tab) => tab.id === tabId);
+      // A save may still be queued for this tab; drop its bookkeeping but let
+      // the write finish. Completion sees the missing tab and never re-adds it.
+      saveControllerRef.current?.forget(tabId);
       if (closing && closing.kind !== 'diff') {
         closedFilesRef.current = pushClosedFile(closedFilesRef.current, closing.filePath);
       }
@@ -796,13 +844,50 @@ export function useDocuments(
     showToast,
   });
 
+  const renameWorkspacePath = useCallback(async (oldPath: string, newPath: string) => {
+    const original = tabsRef.current;
+    let result: ReturnType<typeof renameWorkspaceDocuments>;
+    try {
+      result = renameWorkspaceDocuments(original, oldPath, newPath);
+    } catch {
+      // Native rename already succeeded: paths must still move even when a
+      // damaged Markdown buffer cannot be parsed for optional link rewriting.
+      result = { changes: [], tabs: original.map((tab) => {
+        const filePath = tab.filePath ? movedWorkspacePath(tab.filePath, oldPath, newPath) : null;
+        return filePath ? { ...tab, filePath, title: getFileNameFromPath(filePath), fileMtime: undefined } : tab;
+      }) };
+      showToast(t('workspace.referencesNeedReview'), 'warning');
+    }
+    tabsRef.current = result.tabs;
+    setTabs(result.tabs);
+    saveSession(result.tabs);
+    const moved = result.tabs.filter((tab) => tab.kind !== 'diff' && tab.filePath && normalizePathKey(tab.filePath) !== normalizePathKey(original.find((item) => item.id === tab.id)?.filePath));
+    for (const tab of moved) {
+      const previous = original.find((item) => item.id === tab.id)?.filePath;
+      if (previous) forgetRecentFile(previous);
+      if (tab.filePath) rememberRecentFile(tab.filePath);
+    }
+    const mtimes = await Promise.all(moved.map(async (tab) => [tab.id, tab.filePath, await getFileMtime(tab.filePath!)] as const));
+    if (mtimes.length) {
+      const known = new Map(mtimes.map(([id, path, mtime]) => [`${id}:${normalizePathKey(path)}`, mtime ?? undefined]));
+      const refreshed = tabsRef.current.map((tab) => known.has(`${tab.id}:${normalizePathKey(tab.filePath)}`)
+        ? { ...tab, fileMtime: known.get(`${tab.id}:${normalizePathKey(tab.filePath)}`) } : tab);
+      tabsRef.current = refreshed;
+      setTabs(refreshed);
+      saveSession(refreshed);
+    }
+    return result.changes;
+  }, [forgetRecentFile, rememberRecentFile, saveSession, showToast, t]);
+
   return {
     tabs,
+    renameWorkspacePath,
     activeTabId,
     activeTab,
     setActiveTabId,
     createNewTab,
     updateContent,
+    applyContentUpdates,
     updateCursor,
     updateViewMode,
     updateScrollPositions,

@@ -37,7 +37,7 @@ export default defineConfig({
     host: "0.0.0.0",
     // Rust build outputs include loaded DLLs that Windows cannot watch.
     watch: {
-      ignored: ["**/src-tauri/target/**"],
+      ignored: ["**/src-tauri/target/**", "**/*.tmpdir/**"],
     },
   },
   build: {

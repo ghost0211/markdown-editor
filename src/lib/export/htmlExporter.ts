@@ -8,8 +8,17 @@ import { rehypeEmbedImages, type ImageResolver } from '@/lib/export/embedImages'
 import remarkRehype from 'remark-rehype';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
+import rehypeSlug from 'rehype-slug';
 import rehypeStringify from 'rehype-stringify';
+import { parseFragment, type DefaultTreeAdapterMap } from 'parse5';
 import { writeHtmlFile } from '../native';
+import {
+  DEFAULT_EXPORT_STYLE,
+  getExportColorPalette,
+  getExportFontStack,
+  validateExportStyle,
+  type ExportStyle,
+} from '@/lib/exportStyle';
 
 export function escapeHtml(str: string): string {
   return str
@@ -80,6 +89,8 @@ export interface HtmlRenderOptions {
    * references (relative / absolute paths or network links).
    */
   resolveImage?: ImageResolver;
+  /** Optional validated export theme. Undefined keeps the legacy appearance. */
+  style?: ExportStyle;
 }
 
 /**
@@ -163,6 +174,75 @@ export function getBaseUrlFromSourcePath(sourceFilePath?: string | null): string
   return undefined;
 }
 
+interface TocHeading {
+  level: number;
+  id: string;
+  text: string;
+}
+
+function getNodeText(node: DefaultTreeAdapterMap['node']): string {
+  if ('value' in node && typeof node.value === 'string') {
+    return node.value;
+  }
+  if ('childNodes' in node) {
+    return node.childNodes.map((child) => getNodeText(child)).join('');
+  }
+  return '';
+}
+
+function collectTocHeadings(
+  node: DefaultTreeAdapterMap['node'],
+  result: TocHeading[]
+): void {
+  if ('tagName' in node && /^h[1-6]$/.test(node.tagName) && 'attrs' in node) {
+    const level = Number(node.tagName.slice(1));
+    if (level <= 4) {
+      const id = node.attrs.find((attribute) => attribute.name === 'id')?.value;
+      const text = getNodeText(node).replace(/\s+/g, ' ').trim();
+      if (id && text) {
+        result.push({ level, id, text });
+      }
+    }
+  }
+  if ('childNodes' in node) {
+    for (const child of node.childNodes) {
+      collectTocHeadings(child, result);
+    }
+  }
+}
+
+function getExportTocLabel(lang: string): string {
+  return lang.toLowerCase().startsWith('en') ? 'Contents' : '目录';
+}
+
+/**
+ * Builds a TOC from the already-sanitized body. The id/href/text values are
+ * escaped again so the inserted navigation can never become an injection sink.
+ */
+function buildExportTocHtml(htmlBody: string, label: string): string {
+  const fragment = parseFragment(htmlBody);
+  const headings: TocHeading[] = [];
+  collectTocHeadings(fragment, headings);
+
+  if (headings.length === 0) {
+    return '';
+  }
+
+  const items = headings
+    .map(
+      (heading) =>
+        `  <li class="export-toc-level-${heading.level}"><a href="#${escapeHtml(heading.id)}">${escapeHtml(heading.text)}</a></li>`
+    )
+    .join('\n');
+
+  return `<nav class="export-toc" aria-label="${escapeHtml(label)}">
+<div class="export-toc-title">${escapeHtml(label)}</div>
+<ul class="export-toc-list">
+${items}
+</ul>
+</nav>`;
+}
+
 /**
  * Generates full standalone HTML document with embedded CSS, responsive screen styling,
  * print pagination, GFM, syntax highlighting, and strict sanitization.
@@ -175,7 +255,11 @@ export async function buildStandaloneHtml(
   const opts: HtmlRenderOptions =
     typeof options === 'string' ? { sourceFilePath: options } : options || {};
 
-  const processed = await unified()
+  const style = validateExportStyle(opts.style ?? DEFAULT_EXPORT_STYLE);
+  const palette = getExportColorPalette(style.colorScheme);
+  const fontStack = getExportFontStack(style.fontFamily);
+
+  const pipeline = unified()
     .use(remarkParse)
     .use(remarkGfm)
     .use(remarkFrontmatter, ['yaml', 'toml'])
@@ -183,7 +267,13 @@ export async function buildStandaloneHtml(
     .use(remarkCallouts, { lang: opts.lang })
     .use(remarkRehype)
     .use(rehypeHighlight)
-    .use(rehypeSanitize, SANITIZE_SCHEMA)
+    .use(rehypeSanitize, SANITIZE_SCHEMA);
+
+  // Slug only when a TOC is requested. It runs after sanitization, so ids are
+  // derived from trusted, rendered heading text and are never user-supplied.
+  const withHeadingIds = style.toc ? pipeline.use(rehypeSlug) : pipeline;
+
+  const processed = await withHeadingIds
     .use(rehypeEmbedImages, { resolve: opts.resolveImage })
     .use(rehypeStringify)
     .process(markdown);
@@ -196,6 +286,28 @@ export async function buildStandaloneHtml(
 
   const baseUrl = getBaseUrlFromSourcePath(opts.sourceFilePath);
   const baseTag = baseUrl ? `<base href="${escapeHtml(baseUrl)}">\n` : '';
+
+  const tocLabel = getExportTocLabel(safeLang);
+  const coverDate = new Date().toISOString().slice(0, 10);
+  const pageLabel = safeLang.toLowerCase().startsWith('en') ? 'Page' : '页';
+  const headerHtml = style.headerText
+    ? `\n<header class="export-header">${escapeHtml(style.headerText)}</header>`
+    : '';
+  const coverHtml = style.cover
+    ? `
+<section class="export-cover" aria-label="${escapeHtml(safeTitle)}">
+  <h1 class="export-cover-title">${safeTitle}</h1>
+  <p class="export-cover-date">${escapeHtml(coverDate)}</p>
+</section>`
+    : '';
+  const tocHtml = style.toc ? `\n${buildExportTocHtml(htmlBody, tocLabel)}` : '';
+  const pageFooterHtml = style.pageNumbers
+    ? `
+<footer class="export-page-footer" aria-hidden="true">
+  <span class="export-page-footer-title">${safeTitle}</span>
+  <span class="export-page-footer-number" data-label="${escapeHtml(pageLabel)}"></span>
+</footer>`
+    : '';
 
   return `<!DOCTYPE html>
 <html lang="${safeLang}">
@@ -477,10 +589,189 @@ img {
   page-break-inside: avoid;
 }
 
+/* ---------------------------------------------------------------------------
+ * Export theme tokens. Every value comes from the fixed exportStyle whitelist;
+ * user-provided CSS is never interpolated here.
+ * ------------------------------------------------------------------------- */
+:root {
+  --export-bg: ${palette.background};
+  --export-text: ${palette.text};
+  --export-heading: ${palette.heading};
+  --export-muted: ${palette.muted};
+  --export-border: ${palette.border};
+  --export-border-strong: ${style.colorScheme === 'light' ? '#cbd5e1' : palette.border};
+  --export-link: ${palette.link};
+  --export-link-hover: ${style.colorScheme === 'light' ? '#1d4ed8' : palette.link};
+  --export-quote-text: ${style.colorScheme === 'light' ? '#475569' : palette.muted};
+  --export-quote-border: ${style.colorScheme === 'light' ? '#3b82f6' : palette.link};
+  --export-panel: ${style.colorScheme === 'light' ? '#f1f5f9' : palette.panel};
+  --export-panel-alt: ${style.colorScheme === 'light' ? '#f8fafc' : palette.background};
+  --export-font: ${fontStack};
+  --export-font-size: ${style.fontSize}px;
+}
+
+body {
+  background-color: var(--export-bg);
+  color: var(--export-text);
+  font-family: var(--export-font);
+  font-size: var(--export-font-size);
+}
+
+h1, h2, h3, h4, h5 {
+  color: var(--export-heading);
+}
+
+h6 {
+  color: var(--export-muted);
+}
+
+strong, b {
+  color: var(--export-heading);
+}
+
+del, s {
+  color: var(--export-muted);
+}
+
+a {
+  color: var(--export-link);
+}
+
+a:hover {
+  color: var(--export-link-hover);
+}
+
+h1, h2 {
+  border-bottom-color: var(--export-border);
+}
+
+blockquote {
+  border-left-color: var(--export-quote-border);
+  background-color: var(--export-panel-alt);
+  color: var(--export-quote-text);
+}
+
+section.footnotes {
+  border-top-color: var(--export-border-strong);
+  color: var(--export-quote-text);
+}
+
+code {
+  background-color: var(--export-panel);
+  color: var(--export-heading);
+}
+
+pre {
+  background-color: var(--export-panel-alt);
+  border-color: var(--export-border);
+}
+
+th, td {
+  border-color: var(--export-border-strong);
+}
+
+th {
+  background-color: var(--export-panel);
+  color: var(--export-heading);
+}
+
+tr:nth-child(even) td {
+  background-color: var(--export-panel-alt);
+}
+
+hr {
+  border-top-color: var(--export-border-strong);
+}
+
+/* Cover page, running header, TOC, and HTML print footer. */
+.export-header,
+.export-cover,
+.export-toc {
+  max-width: 860px;
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.export-header {
+  margin-bottom: 20px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--export-border);
+  color: var(--export-muted);
+  font-size: 0.85em;
+  text-align: right;
+}
+
+.export-cover {
+  display: flex;
+  min-height: 70vh;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  border-bottom: 1px solid var(--export-border);
+  margin-bottom: 28px;
+  page-break-after: always;
+  break-after: page;
+}
+
+.export-cover-title {
+  margin: 0;
+  border: 0;
+  font-size: 2.2em;
+  line-height: 1.25;
+  color: var(--export-heading);
+}
+
+.export-cover-date {
+  margin-top: 18px;
+  color: var(--export-muted);
+  font-size: 0.9em;
+}
+
+.export-toc {
+  margin-bottom: 28px;
+  padding: 14px 18px;
+  border: 1px solid var(--export-border);
+  border-radius: 6px;
+  background-color: var(--export-panel);
+  page-break-after: always;
+  break-after: page;
+}
+
+.export-toc-title {
+  margin-bottom: 8px;
+  font-weight: 600;
+  color: var(--export-heading);
+}
+
+.export-toc-list {
+  margin: 0;
+  padding-left: 18px;
+  list-style: none;
+}
+
+.export-toc-list li {
+  margin: 4px 0;
+}
+
+.export-toc-list a {
+  color: var(--export-link);
+  text-decoration: none;
+}
+
+.export-toc-level-1 { padding-left: 0; }
+.export-toc-level-2 { padding-left: 1em; }
+.export-toc-level-3 { padding-left: 2em; }
+.export-toc-level-4 { padding-left: 3em; }
+
+.export-page-footer {
+  display: none;
+}
+
 @media (max-width: 768px) {
   body {
     padding: 16px 12px;
-    font-size: 14px;
+    font-size: calc(var(--export-font-size) - 1px);
   }
 }
 
@@ -492,7 +783,8 @@ img {
 @media print {
   body {
     padding: 0;
-    background-color: #ffffff;
+    background-color: var(--export-bg);
+    color: var(--export-text);
     -webkit-print-color-adjust: exact !important;
     print-color-adjust: exact !important;
   }
@@ -500,13 +792,37 @@ img {
   .markdown-body {
     max-width: 100%;
   }
+
+  /*
+   * Chromium/Edge do not implement CSS page counters in @page margin boxes.
+   * The footer itself is real and visible; counter(page) is a progressive
+   * enhancement where the print engine supports it (the UI documents this).
+   */
+  .export-page-footer {
+    position: fixed;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 4px 12mm 0;
+    border-top: 1px solid var(--export-border);
+    background-color: var(--export-bg);
+    color: var(--export-muted);
+    font-size: 10px;
+  }
+
+  .export-page-footer-number::after {
+    content: attr(data-label) " " counter(page);
+  }
 }
 </style>
 </head>
-<body>
+<body>${headerHtml}${coverHtml}${tocHtml}
 <div class="markdown-body">
 ${htmlBody}
-</div>
+</div>${pageFooterHtml}
 </body>
 </html>`;
 }

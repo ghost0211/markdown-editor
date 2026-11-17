@@ -30,14 +30,18 @@ import { useExportDocument } from '@/hooks/useExportDocument';
 import { usePaneScrollSync } from '@/hooks/usePaneScrollSync';
 import { useWindowFileDrop } from '@/hooks/useWindowFileDrop';
 import { useImageAssetInsertion } from '@/hooks/useImageAssetInsertion';
+import { useDocumentResources } from '@/hooks/useDocumentResources';
+import type { DocumentResource } from '@/lib/documentResources';
 import { I18nProvider, useI18n } from '@/i18n';
 
-import { cachedEditorStateIds, dropCachedEditorState } from '@/lib/editorStateCache';
+import { applyCachedDocumentChange, cachedEditorStateIds, dropCachedEditorState } from '@/lib/editorStateCache';
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
 import { ViewMode, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { showInFolder, openExternalUrl, setWindowTheme } from '@/lib/native';
+import { showInFolder, openExternalUrl, setWindowTheme, isTauri, chooseWorkspaceFolder, listWorkspace, createWorkspaceDocument, createWorkspaceFolder, renameWorkspacePath as renameWorkspaceFile } from '@/lib/native';
+import { workspaceEntryAbsolutePath, type WorkspaceEntry, type WorkspaceListing } from '@/lib/workspace';
+import { DEFAULT_EXPORT_STYLE, type ExportStyle } from '@/lib/exportStyle';
 import { resolveDocumentLink } from '@/lib/documentLinks';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
@@ -61,6 +65,19 @@ const LazyShortcutsModal = lazy(() =>
 const LazyCompareModal = lazy(() =>
   import('@/components/CompareModal').then((m) => ({ default: m.CompareModal }))
 );
+const LazyResourceManager = lazy(() =>
+  import('@/components/ResourceManager').then((m) => ({ default: m.ResourceManager }))
+);
+const LazyDocumentSearch = lazy(() =>
+  import('@/components/DocumentSearch').then((m) => ({ default: m.DocumentSearch }))
+);
+const LazyDocumentHistory = lazy(() =>
+  import('@/components/DocumentHistory').then((m) => ({ default: m.DocumentHistory }))
+);
+const LazyTemplateManager = lazy(() => import('@/components/TemplateManager').then((m) => ({ default: m.TemplateManager })));
+const LazyQualityPanel = lazy(() => import('@/components/QualityPanel').then((m) => ({ default: m.QualityPanel })));
+const LazyExportStyleDialog = lazy(() => import('@/components/ExportStyleDialog').then((m) => ({ default: m.ExportStyleDialog })));
+const LazyWorkspacePanel = lazy(() => import('@/components/WorkspacePanel').then((m) => ({ default: m.WorkspacePanel })));
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
@@ -99,7 +116,9 @@ const AppContent: React.FC<AppContentProps> = ({
     activeTab,
     setActiveTabId,
     createNewTab,
+    renameWorkspacePath,
     updateContent,
+    applyContentUpdates,
     updateCursor,
     updateViewMode,
     updateScrollPositions,
@@ -162,7 +181,7 @@ const AppContent: React.FC<AppContentProps> = ({
     exportHtml,
     exportXmd,
     copyRichText,
-  } = useExportDocument(activeTab, showToast, { embedImages: settings.exportEmbedImages });
+  } = useExportDocument(activeTab, showToast, { embedImages: settings.exportEmbedImages, style: settings.exportStyle });
 
   const [lastUsedViewMode, setLastUsedViewMode] = useState<ViewMode>(() => {
     const saved = localStorage.getItem(STORAGE_VIEW_MODE_KEY) as ViewMode | null;
@@ -203,10 +222,169 @@ const AppContent: React.FC<AppContentProps> = ({
     [activeTabId, prepareModeSwitchLineSync, updateViewMode]
   );
 
+  const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
+  const [isQualityOpen, setIsQualityOpen] = useState(false);
+  const [isExportThemeOpen, setIsExportThemeOpen] = useState(false);
+  const closeFeatureModals = useCallback(() => {
+    setIsSearchOpen(false); setIsResourceManagerOpen(false); setHistoryTabId(null);
+    setIsTemplatesOpen(false); setIsQualityOpen(false); setIsExportThemeOpen(false);
+  }, []);
+  const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [searchSelection, setSearchSelection] = useState<{ id: string; from: number; to: number; content: string } | null>(null);
+  const [isResourceManagerOpen, setIsResourceManagerOpen] = useState(false);
+  const [historyTabId, setHistoryTabId] = useState<string | null>(null);
+  const isHistoryOpen = historyTabId !== null;
+  const historyTab = historyTabId ? tabs.find((tab) => tab.id === historyTabId && tab.kind !== 'diff') : undefined;
+  useEffect(() => {
+    if (historyTabId && !historyTab) setHistoryTabId(null);
+  }, [historyTabId, historyTab]);
+  const handleOpenHistory = useCallback(() => {
+    closeFeatureModals();
+    setHistoryTabId(activeTab?.kind !== 'diff' ? activeTab.id : null);
+  }, [activeTab, closeFeatureModals]);
+  const handleCloseHistory = useCallback(() => setHistoryTabId(null), []);
+  const handleRestoreHistory = useCallback((content: string): boolean => {
+    const tab = tabsRef.current.find((item) => item.id === historyTabId && item.kind !== 'diff');
+    if (!tab) return false;
+    if (activeTab?.id === tab.id && editorRef.current?.replaceDocument(tab.content, content)) {
+      showToast(t('history.restored'), 'success');
+      return true;
+    }
+    applyCachedDocumentChange(tab.id, tab.content, content);
+    updateContent(tab.id, content);
+    showToast(t('history.restored'), 'success');
+    return true;
+  }, [activeTab, historyTabId, showToast, t, updateContent]);
+  const updateResourceContent = useCallback((id: string, content: string) => {
+    if (activeTab?.id === id && editorRef.current?.replaceDocument(activeTab.content, content)) return;
+    if (activeTab?.id === id) applyCachedDocumentChange(id, activeTab.content, content);
+    updateContent(id, content);
+  }, [activeTab, updateContent]);
+  const documentResources = useDocumentResources({
+    documentId: activeTab?.id || '',
+    document: activeTab?.content || '',
+    sourceFilePath: activeTab?.filePath,
+    enabled: isResourceManagerOpen && activeTab?.kind !== 'diff',
+    updateContent: updateResourceContent,
+    showToast,
+  });
+  const handleOpenResources = useCallback(() => {
+    closeFeatureModals();
+    if (activeTab && activeTab.kind !== 'diff') setIsResourceManagerOpen(true);
+  }, [activeTab, closeFeatureModals]);
+  const handleCloseResources = useCallback(() => setIsResourceManagerOpen(false), []);
+  const handleOpenTemplates = useCallback(() => { closeFeatureModals(); setIsTemplatesOpen(true); }, [closeFeatureModals]);
+  const handleOpenQuality = useCallback(() => { if (activeTab?.kind === 'diff') return; closeFeatureModals(); setIsQualityOpen(true); }, [activeTab, closeFeatureModals]);
+  const handleOpenExportTheme = useCallback(() => { closeFeatureModals(); setIsExportThemeOpen(true); }, [closeFeatureModals]);
+  const handleCloseTemplates = useCallback(() => setIsTemplatesOpen(false), []);
+  const handleCloseQuality = useCallback(() => setIsQualityOpen(false), []);
+  const handleCloseExportTheme = useCallback(() => setIsExportThemeOpen(false), []);
+  const handleCreateTemplate = useCallback((title: string, content: string) => createNewTab(title, content), [createNewTab]);
+  const handleInsertTemplate = useCallback((content: string) => {
+    if (!activeTab || activeTab.kind === 'diff') { createNewTab(undefined, content); return; }
+    if (viewMode === 'read') {
+      const separator = !activeTab.content || activeTab.content.endsWith('\n') ? '' : '\n';
+      updateResourceContent(activeTab.id, activeTab.content + separator + content);
+      setViewMode('edit');
+    } else editorRef.current?.insertText(content);
+  }, [activeTab, createNewTab, setViewMode, updateResourceContent, viewMode]);
+  const handleQualityLocate = useCallback((line: number) => {
+    requestAnimationFrame(() => {
+      if (viewMode === 'read') previewRef.current?.scrollToSourceLine(line);
+      else editorRef.current?.jumpToLine(line);
+    });
+  }, [viewMode]);
+  const handleSaveExportTheme = useCallback((style: ExportStyle) => updateSetting('exportStyle', style), [updateSetting]);
+  useEffect(() => {
+    if (!activeTab || activeTab.kind === 'diff') setIsResourceManagerOpen(false);
+  }, [activeTab]);
+  const handleLocateResource = useCallback((resource: DocumentResource, line?: number) => {
+    const targetLine = line || resource.references[0]?.line || 1;
+    setIsResourceManagerOpen(false);
+    // Run after modal cleanup has restored its previous focus.
+    requestAnimationFrame(() => {
+      if (viewMode === 'read') previewRef.current?.scrollToSourceLine(targetLine);
+      else editorRef.current?.jumpToLine(targetLine);
+    });
+  }, [viewMode]);
+
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(() => {
     const saved = localStorage.getItem(STORAGE_SIDEBAR_KEY);
     return saved !== null ? saved === 'true' : true;
   });
+
+  const [sidebarMode, setSidebarMode] = useState<'outline' | 'workspace'>('outline');
+  const [workspaceRoot, setWorkspaceRoot] = useState<string | null>(() => isTauri() ? localStorage.getItem('markdown_editor_workspace_root_v1') : null);
+  const [workspaceListing, setWorkspaceListing] = useState<WorkspaceListing | null>(null);
+  const [workspaceBusy, setWorkspaceBusy] = useState(false);
+  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
+  const workspaceRequestRef = useRef(0);
+  const refreshWorkspace = useCallback(async () => {
+    if (!workspaceRoot || !isTauri()) { setWorkspaceListing(null); return; }
+    const request = ++workspaceRequestRef.current;
+    setWorkspaceBusy(true);
+    try {
+      const listing = await listWorkspace(workspaceRoot);
+      if (workspaceRequestRef.current === request) setWorkspaceListing(listing);
+    } catch (error) {
+      if (workspaceRequestRef.current === request) showToast(error instanceof Error ? error.message : String(error), 'error');
+    } finally {
+      if (workspaceRequestRef.current === request) setWorkspaceBusy(false);
+    }
+  }, [workspaceRoot, showToast]);
+  const toggleWorkspace = useCallback(() => {
+    setSidebarMode('workspace');
+    setIsSidebarOpen((open) => {
+      const next = sidebarMode === 'workspace' ? !open : true;
+      localStorage.setItem(STORAGE_SIDEBAR_KEY, String(next));
+      return next;
+    });
+  }, [sidebarMode]);
+  useEffect(() => {
+    if (isSidebarOpen && sidebarMode === 'workspace' && workspaceRoot) void refreshWorkspace();
+  }, [isSidebarOpen, sidebarMode, workspaceRoot, refreshWorkspace]);
+  const chooseWorkspace = useCallback(async () => {
+    if (!isTauri()) { showToast(t('workspace.desktopOnly'), 'warning'); return; }
+    const selected = await chooseWorkspaceFolder();
+    if (!selected) return;
+    setWorkspaceRoot(selected);
+    try { localStorage.setItem('markdown_editor_workspace_root_v1', selected); } catch { /* Optional preference. */ }
+    if (selected === workspaceRoot) await refreshWorkspace();
+  }, [refreshWorkspace, showToast, t, workspaceRoot]);
+  const createWorkspaceDoc = useCallback(async (parent: string, name: string) => {
+    if (!workspaceRoot) return;
+    setWorkspaceBusy(true);
+    try {
+      const path = await createWorkspaceDocument(workspaceRoot, parent, name);
+      await refreshWorkspace();
+      await openFileByPath(path);
+    } finally { setWorkspaceBusy(false); }
+  }, [workspaceRoot, refreshWorkspace, openFileByPath]);
+  const createWorkspaceDir = useCallback(async (parent: string, name: string) => {
+    if (!workspaceRoot) return;
+    setWorkspaceBusy(true);
+    try {
+      await createWorkspaceFolder(workspaceRoot, parent, name);
+      await refreshWorkspace();
+    } finally { setWorkspaceBusy(false); }
+  }, [workspaceRoot, refreshWorkspace]);
+  const renameWorkspaceEntry = useCallback(async (entry: WorkspaceEntry, name: string) => {
+    if (!workspaceRoot) return;
+    const path = workspaceEntryAbsolutePath(workspaceRoot, entry.path);
+    if (!path) throw new Error(t('workspace.invalidName'));
+    setWorkspaceBusy(true);
+    try {
+      const moved = await renameWorkspaceFile(workspaceRoot, path, name);
+      if (moved.oldPath !== moved.newPath) {
+        const changes = await renameWorkspacePath(moved.oldPath, moved.newPath);
+        for (const change of changes) {
+          if (activeTab?.id === change.id && editorRef.current?.replaceDocument(change.original, change.content)) continue;
+          applyCachedDocumentChange(change.id, change.original, change.content);
+        }
+      }
+      await refreshWorkspace();
+    } finally { setWorkspaceBusy(false); }
+  }, [workspaceRoot, renameWorkspacePath, activeTab, refreshWorkspace, t]);
 
   const [splitRatio, setSplitRatio] = useState(() => {
     const saved = Number.parseFloat(localStorage.getItem(STORAGE_SPLIT_RATIO_KEY) || '');
@@ -222,12 +400,19 @@ const AppContent: React.FC<AppContentProps> = ({
   }, []);
 
   const toggleSidebar = useCallback(() => {
+    // The outline button also provides a way back from the folder workspace.
+    if (sidebarMode === 'workspace') {
+      setSidebarMode('outline');
+      setIsSidebarOpen(true);
+      localStorage.setItem(STORAGE_SIDEBAR_KEY, 'true');
+      return;
+    }
     setIsSidebarOpen((prev) => {
       const next = !prev;
       localStorage.setItem(STORAGE_SIDEBAR_KEY, String(next));
       return next;
     });
-  }, []);
+  }, [sidebarMode]);
 
   const handleCloseSidebar = useCallback(() => {
     setIsSidebarOpen(false);
@@ -237,15 +422,32 @@ const AppContent: React.FC<AppContentProps> = ({
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
 
-  const handleOpenSettings = useCallback(() => setIsSettingsModalOpen(true), []);
+  const handleOpenSettings = useCallback(() => {
+    closeFeatureModals();
+    setIsSettingsModalOpen(true);
+  }, [closeFeatureModals]);
   const handleCloseSettings = useCallback(() => setIsSettingsModalOpen(false), []);
-  const handleToggleSettings = useCallback(() => setIsSettingsModalOpen((prev) => !prev), []);
+  const handleToggleSettings = useCallback(() => {
+    closeFeatureModals();
+    setIsShortcutsModalOpen(false);
+    setIsSettingsModalOpen((prev) => !prev);
+  }, [closeFeatureModals]);
 
-  const handleOpenShortcuts = useCallback(() => setIsShortcutsModalOpen(true), []);
+  const handleOpenShortcuts = useCallback(() => {
+    closeFeatureModals();
+    setIsShortcutsModalOpen(true);
+  }, [closeFeatureModals]);
   const handleCloseShortcuts = useCallback(() => setIsShortcutsModalOpen(false), []);
-  const handleToggleShortcuts = useCallback(() => setIsShortcutsModalOpen((prev) => !prev), []);
+  const handleToggleShortcuts = useCallback(() => {
+    closeFeatureModals();
+    setIsSettingsModalOpen(false);
+    setIsShortcutsModalOpen((prev) => !prev);
+  }, [closeFeatureModals]);
 
-  const handleOpenCompare = useCallback(() => setIsCompareModalOpen(true), []);
+  const handleOpenCompare = useCallback(() => {
+    closeFeatureModals();
+    setIsCompareModalOpen(true);
+  }, [closeFeatureModals]);
   const handleCloseCompare = useCallback(() => setIsCompareModalOpen(false), []);
   const handleConfirmCompare = useCallback(
     (leftId: string, rightId: string) => {
@@ -325,6 +527,17 @@ const AppContent: React.FC<AppContentProps> = ({
     }
   }, [tabs]);
 
+  const resourceCacheTabIdsRef = useRef(new Set(tabs.map((tab) => tab.id)));
+  useEffect(() => {
+    const liveIds = new Set(tabs.map((tab) => tab.id));
+    if ([...resourceCacheTabIdsRef.current].some((id) => !liveIds.has(id))) {
+      // Save As can change a cache scope's path; clearing all on a close is
+      // conservative and releases every old-scope Base64 key as well.
+      void import('@/lib/export/xmdExporter').then(({ clearXmdExportCache }) => clearXmdExportCache());
+    }
+    resourceCacheTabIdsRef.current = liveIds;
+  }, [tabs]);
+
   const checkExternalChangesRef = useRef(checkExternalChanges);
   checkExternalChangesRef.current = checkExternalChanges;
 
@@ -397,8 +610,45 @@ const AppContent: React.FC<AppContentProps> = ({
   const handleNextTab = useCallback(() => handleCycleTab(1), [handleCycleTab]);
   const handlePreviousTab = useCallback(() => handleCycleTab(-1), [handleCycleTab]);
 
+  const handleOpenSearch = useCallback(() => {
+    closeFeatureModals();
+    setIsSearchOpen(true);
+  }, [closeFeatureModals]);
+  const handleCloseSearch = useCallback(() => setIsSearchOpen(false), []);
+  const handleLocateSearch = useCallback((id: string, from: number, to: number) => {
+    const tab = tabsRef.current.find((item) => item.id === id && item.kind !== 'diff');
+    if (!tab) return;
+    setIsSearchOpen(false);
+    setActiveTabId(id);
+    if ((tab.viewMode ?? defaultViewMode) === 'read') updateViewMode(id, 'edit');
+    setSearchSelection({ id, from, to, content: tab.content });
+  }, [defaultViewMode, setActiveTabId, updateViewMode]);
+  useEffect(() => {
+    if (!searchSelection || activeTab?.id !== searchSelection.id) return;
+    let frame = 0;
+    let attempts = 0;
+    const apply = () => {
+      if (editorRef.current?.selectRange(searchSelection.from, searchSelection.to, searchSelection.content) || ++attempts >= 120) {
+        setSearchSelection(null);
+      } else frame = requestAnimationFrame(apply);
+    };
+    frame = requestAnimationFrame(apply);
+    return () => cancelAnimationFrame(frame);
+  }, [activeTab?.id, searchSelection, viewMode]);
+  const handleApplySearch = useCallback((updates: { id: string; original: string; content: string }[]) => {
+    const currentId = activeTabIdRef.current;
+    const currentUpdate = updates.find((update) => update.id === currentId);
+    // The document store validates the entire batch before changing any tab.
+    if (!applyContentUpdates(updates)) return false;
+    const activeApplied = currentUpdate ? editorRef.current?.replaceDocument(currentUpdate.original, currentUpdate.content) : false;
+    for (const update of updates) {
+      if (update.id !== currentId || !activeApplied) applyCachedDocumentChange(update.id, update.original, update.content);
+    }
+    return true;
+  }, [applyContentUpdates]);
+
   const isModalOpen =
-    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || confirmDialog.isOpen;
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || workspaceDialogOpen || confirmDialog.isOpen;
 
   useKeyboardShortcuts({
     onNew: handleNewTab,
@@ -413,6 +663,7 @@ const AppContent: React.FC<AppContentProps> = ({
     onNextTab: handleNextTab,
     onPreviousTab: handlePreviousTab,
     onReopenClosed: handleReopenClosed,
+    onOpenSearch: handleOpenSearch,
     enabled: !isModalOpen,
   });
 
@@ -464,6 +715,7 @@ const AppContent: React.FC<AppContentProps> = ({
       initialCursorLine={activeTab?.cursorLine}
       initialCursorCol={activeTab?.cursorCol}
       onImageFiles={handleImageFilesForEditor}
+      onProtectedReplace={() => showToast(t('editor.resourceReplaceProtected'), 'warning')}
       value={activeTab?.content || ''}
       onChange={handleEditorChange}
       onCursorChange={handleCursorChange}
@@ -504,6 +756,13 @@ const AppContent: React.FC<AppContentProps> = ({
         onToggleSidebar={toggleSidebar}
         onNew={handleNewTab}
         onOpen={openDocument}
+        onOpenResources={handleOpenResources}
+        onOpenSearch={handleOpenSearch}
+        onOpenHistory={handleOpenHistory}
+        onOpenTemplates={handleOpenTemplates}
+        onOpenQuality={handleOpenQuality}
+        onOpenExportTheme={handleOpenExportTheme}
+        onOpenWorkspace={toggleWorkspace}
         onSave={handleSave}
         onSaveAs={handleSaveAs}
         onExportWord={exportWord}
@@ -552,7 +811,26 @@ const AppContent: React.FC<AppContentProps> = ({
       )}
 
       <div className="flex-1 flex overflow-hidden relative">
-        {activeTab?.kind !== 'diff' && (
+        {sidebarMode === 'workspace' ? (
+          <Suspense fallback={<aside className="w-80 bg-panel border-r border-slate-200 dark:border-slate-800" />}>
+            <LazyWorkspacePanel
+              isOpen={isSidebarOpen}
+              onClose={handleCloseSidebar}
+              rootPath={workspaceRoot}
+              entries={workspaceListing?.entries || []}
+              truncated={workspaceListing?.truncated}
+              activePath={activeTab?.filePath}
+              busy={workspaceBusy}
+              onChoose={() => void chooseWorkspace()}
+              onOpen={(path) => { void openFileByPath(path); }}
+              onRefresh={refreshWorkspace}
+              onCreateDocument={createWorkspaceDoc}
+              onCreateFolder={createWorkspaceDir}
+              onRename={renameWorkspaceEntry}
+              onDialogOpenChange={setWorkspaceDialogOpen}
+            />
+          </Suspense>
+        ) : activeTab?.kind !== 'diff' && (
           <Sidebar
             headings={headings}
             isOpen={isSidebarOpen}
@@ -658,6 +936,65 @@ const AppContent: React.FC<AppContentProps> = ({
             defaultLeftId={defaultCompareLeftId}
             onConfirm={handleConfirmCompare}
             onCancel={handleCloseCompare}
+          />
+        </Suspense>
+      )}
+
+      {isSearchOpen && (
+        <Suspense fallback={null}>
+          <LazyDocumentSearch
+            isOpen={isSearchOpen}
+            onClose={handleCloseSearch}
+            tabs={tabs}
+            activeTabId={activeTabId}
+            onLocate={handleLocateSearch}
+            onApply={handleApplySearch}
+            showToast={showToast}
+          />
+        </Suspense>
+      )}
+
+      {isResourceManagerOpen && activeTab && activeTab.kind !== 'diff' && (
+        <Suspense fallback={null}>
+          <LazyResourceManager
+            key={activeTab.id}
+            isOpen={isResourceManagerOpen}
+            onClose={handleCloseResources}
+            documentTitle={activeTab.title}
+            resources={documentResources.resources}
+            error={documentResources.error}
+            isRefreshing={documentResources.isRefreshing}
+            onRefresh={documentResources.refresh}
+            onLocate={handleLocateResource}
+            onExport={documentResources.exportResource}
+            onReveal={documentResources.revealResource}
+            onConvert={documentResources.convertResource}
+            onConvertAll={documentResources.convertAll}
+            canConvert={documentResources.canConvert}
+            convertReason={documentResources.convertReason}
+            busyId={documentResources.busyId}
+            sourceFilePath={activeTab.filePath}
+          />
+        </Suspense>
+      )}
+
+      {isTemplatesOpen && <Suspense fallback={null}><LazyTemplateManager isOpen={isTemplatesOpen} onClose={handleCloseTemplates} onCreateDocument={handleCreateTemplate} onInsert={handleInsertTemplate} /></Suspense>}
+
+      {isQualityOpen && activeTab && activeTab.kind !== 'diff' && <Suspense fallback={null}><LazyQualityPanel isOpen={isQualityOpen} onClose={handleCloseQuality} content={activeTab.content} sourceFilePath={activeTab.filePath} onLocate={handleQualityLocate} /></Suspense>}
+
+      {isExportThemeOpen && <Suspense fallback={null}><LazyExportStyleDialog isOpen={isExportThemeOpen} onClose={handleCloseExportTheme} value={settings.exportStyle ?? DEFAULT_EXPORT_STYLE} onSave={handleSaveExportTheme} /></Suspense>}
+
+      {isHistoryOpen && historyTab && (
+        <Suspense fallback={null}>
+          <LazyDocumentHistory
+            key={historyTab.id}
+            isOpen={isHistoryOpen}
+            onClose={handleCloseHistory}
+            sourceFilePath={historyTab.filePath}
+            content={historyTab.content}
+            title={historyTab.title}
+            isDark={isDark}
+            onRestore={handleRestoreHistory}
           />
         </Suspense>
       )}

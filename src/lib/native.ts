@@ -255,6 +255,19 @@ export async function getFileMtime(path: string): Promise<number | null> {
   return null;
 }
 
+/** Reads the actual size of a referenced local file for the resource manager. */
+export async function getFileSize(path: string): Promise<number> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
+  try {
+    const size = await invoke<number>('get_file_size', { path });
+    if (typeof size !== 'number' || !Number.isFinite(size) || size < 0) throw new Error('Invalid file size');
+    return size;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(message, { cause: error });
+  }
+}
+
 /**
  * Writes UTF-8 content to a file.
  */
@@ -320,6 +333,53 @@ function buildXmdWriteFrame(path: string, data: Uint8Array): Uint8Array {
   frame.set(pathBytes, XMD_WRITE_FRAME_HEADER_BYTES);
   frame.set(data, XMD_WRITE_FRAME_HEADER_BYTES + pathBytes.length);
   return frame;
+}
+
+/**
+ * Resource-manager writes use raw bytes and never reinterpret a `.xmd` filename.
+ *
+ * A `createNew` write (used while externalizing an embedded image) returns the
+ * native receipt token that identifies the exact file this call created. The
+ * resource manager keeps it until the Markdown update has been committed and
+ * then calls {@link settleCreatedResourceFiles}; plain exports return `null`.
+ */
+export async function writeResourceFile(path: string, data: Uint8Array, createNew = false): Promise<string | null> {
+  if (data.length > 32 * 1024 * 1024) throw new Error('资源超过 32 MiB / Resource exceeds 32 MiB');
+  if (isTauri()) {
+    try {
+      const receipt = await invoke<string | null>(
+        createNew ? 'create_resource_file' : 'export_resource_file',
+        buildXmdWriteFrame(path, data)
+      );
+      return typeof receipt === 'string' && receipt.length > 0 ? receipt : null;
+    } catch (error) {
+      throw new Error(typeof error === 'string' ? error : error instanceof Error ? error.message : String(error), { cause: error });
+    }
+  }
+  if (createNew) throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
+  // Attachments are downloads, never executable document navigation.
+  downloadBlob(new Uint8Array(data), path, 'application/octet-stream');
+  return null;
+}
+
+/**
+ * Releases or rolls back files created through `writeResourceFile(..., true)`.
+ *
+ * - `discard: false` commits the conversion and only drops the native receipt
+ *   records, so the created assets stay on disk.
+ * - `discard: true` removes the files that *this* operation created, but only
+ *   when they are still byte-for-byte unchanged; user edits are never deleted.
+ *
+ * Browser builds have nothing to settle; the call is a no-op there.
+ */
+export async function settleCreatedResourceFiles(receipts: string[], discard: boolean): Promise<void> {
+  if (!Array.isArray(receipts) || receipts.length === 0) return;
+  if (!isTauri()) return;
+  try {
+    await invoke('settle_created_resource_files', { receipts, discard });
+  } catch (error) {
+    throw new Error(typeof error === 'string' ? error : error instanceof Error ? error.message : String(error), { cause: error });
+  }
 }
 
 /**
@@ -423,6 +483,21 @@ export async function openFileDialog(): Promise<OpenFileResult | null> {
   }
 }
 
+/** Save a resource with its original extension instead of forcing `.md`. */
+export async function saveResourceDialog(defaultName: string): Promise<string | null> {
+  if (isTauri()) {
+    try {
+      return await invoke<string | null>('save_resource_dialog', { defaultName });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(message, { cause: error });
+    }
+  }
+  if (typeof window === 'undefined') return null;
+  const name = window.prompt(t(getCurrentLanguage(), 'browserFallback.promptSaveFilename'), defaultName);
+  return name ? `browser://${name}` : null;
+}
+
 /**
  * Opens native save file dialog to select a destination path.
  */
@@ -490,11 +565,19 @@ export async function exportFileDialog(
 
 /**
  * Converts HTML to PDF via headless Edge (in Tauri) or browser print dialog (in Web mode).
+ *
+ * `showHeaderFooter` defaults to false so old callers keep Edge's
+ * `--no-pdf-header-footer` behavior. Passing true lets Edge draw its native
+ * page header/footer (including page numbers) for the PDF.
  */
-export async function exportPdfFromHtml(path: string, html: string): Promise<void> {
+export async function exportPdfFromHtml(
+  path: string,
+  html: string,
+  showHeaderFooter = false
+): Promise<void> {
   if (isTauri()) {
     try {
-      await invoke('export_pdf_from_html', { path, html });
+      await invoke('export_pdf_from_html', { path, html, showHeaderFooter });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || 'PDF 导出失败';
       throw new Error(msg, { cause: err });
@@ -586,6 +669,46 @@ export async function setWindowTheme(theme: 'light' | 'dark' | 'system'): Promis
   }
 }
 
+export interface DocumentHistoryEntry {
+  id: string;
+  createdAt: number;
+  originalPath: string;
+  title: string;
+  bytes: number;
+  sha256: string;
+}
+
+/** List local saved-document snapshots without reading their Markdown bodies. */
+export async function readDocumentHistory(path: string): Promise<DocumentHistoryEntry[]> {
+  if (!isTauri() || !path.trim() || path.startsWith('browser://')) return [];
+  try {
+    return await invoke<DocumentHistoryEntry[]>('list_document_history', { path });
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+}
+
+/** Read a snapshot only after validating its exact id in the hashed document store. */
+export async function readDocumentSnapshot(path: string, id: string): Promise<string> {
+  if (!isTauri() || !path.trim() || path.startsWith('browser://')) return '';
+  try {
+    return await invoke<string>('read_document_snapshot', { path, id });
+  } catch (error) {
+    throw new Error(error instanceof Error ? error.message : String(error), { cause: error });
+  }
+}
+
+/** Best-effort history recording never blocks or fails the main document save. */
+export async function recordSavedDocumentHistory(path: string, content: string, title: string): Promise<boolean> {
+  if (!isTauri() || !path.trim() || path.startsWith('browser://')) return false;
+  try {
+    return await invoke<boolean>('record_document_history', { path, content, title });
+  } catch (error) {
+    console.warn('保存本地历史版本失败 / Could not save local history:', error);
+    return false;
+  }
+}
+
 /**
  * Reads the persisted tab session JSON from Tauri's native app-data directory.
  * Returns null in Web mode or when no session file exists yet.
@@ -621,6 +744,39 @@ export async function clearSessionData(): Promise<void> {
     const msg = typeof err === 'string' ? err : (err as Error)?.message || '清理会话数据失败';
     throw new Error(msg, { cause: err });
   }
+}
+
+import type { WorkspaceListing, WorkspaceRenameResult } from '@/lib/workspace';
+
+/** Folder-workspace commands keep every mutation inside the chosen root. */
+export async function chooseWorkspaceFolder(): Promise<string | null> {
+  if (!isTauri()) return null;
+  try { return await invoke<string | null>('choose_workspace_folder'); }
+  catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function listWorkspace(root: string): Promise<WorkspaceListing> {
+  if (!isTauri()) return { root, entries: [], truncated: false };
+  try { return await invoke<WorkspaceListing>('list_workspace', { root }); }
+  catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function createWorkspaceDocument(root: string, parent: string, name: string): Promise<string> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'workspace.desktopOnly'));
+  try { return await invoke<string>('create_workspace_document', { root, parent, name }); }
+  catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function createWorkspaceFolder(root: string, parent: string, name: string): Promise<string> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'workspace.desktopOnly'));
+  try { return await invoke<string>('create_workspace_folder', { root, parent, name }); }
+  catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function renameWorkspacePath(root: string, path: string, newName: string, newParent: string | null = null): Promise<WorkspaceRenameResult> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'workspace.desktopOnly'));
+  try { return await invoke<WorkspaceRenameResult>('rename_workspace_path', { root, path, newName, newParent }); }
+  catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
 }
 
 /**

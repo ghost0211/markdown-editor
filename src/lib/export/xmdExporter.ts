@@ -2,6 +2,12 @@ import JSZip from 'jszip';
 import { resolveDocumentLink } from '@/lib/documentLinks';
 import { isTauri, readXmdResource, fetchXmdImage } from '@/lib/native';
 import {
+  createXmdExportCache,
+  type CachedXmdResource,
+  type XmdExportCache,
+  type XmdExportCacheStats,
+} from '@/lib/export/xmdExportCache';
+import {
   isLocalDestination,
   isPackagedLinkDestination,
   mediaTypeForPackagePath,
@@ -11,10 +17,12 @@ import {
   XMD_MANIFEST_FILE,
   XMD_VERSION,
   type XmdManifest,
+  type XmdReference,
   type XmdSourceSpan,
 } from '@/lib/xmdPackage';
 
 export { XMD_VERSION, type XmdManifest, type XmdManifestResource } from '@/lib/xmdPackage';
+export { DEFAULT_XMD_EXPORT_CACHE_BYTES, type XmdExportCache, type XmdExportCacheStats } from '@/lib/export/xmdExportCache';
 export const MAX_XMD_RESOURCE_BYTES = 32 * 1024 * 1024;
 export const MAX_XMD_TOTAL_BYTES = 128 * 1024 * 1024;
 export const MAX_XMD_RESOURCES = 2048;
@@ -28,6 +36,33 @@ export interface XmdExportOptions {
   sourceFilePath?: string | null;
   /** Injectable byte loader; receives a resolved local path or an absolute URL. */
   loadResource?: (source: string) => Promise<XmdResourceData>;
+  /**
+   * Package cache used to reuse already-compressed `data:` assets. Defaults to
+   * the shared bounded cache; pass `null` to disable it.
+   */
+  cache?: XmdExportCache | null;
+  /** Document bucket for cache eviction; defaults to `sourceFilePath`. */
+  cacheScope?: string;
+}
+
+/** Shared cache backing ordinary saves/exports. Callers may pass their own. */
+const sharedXmdExportCache = createXmdExportCache();
+
+/**
+ * Drops cached XMD packages for one document (or all documents when `scope` is
+ * omitted). Useful when a tab is closed or its resources were replaced.
+ */
+export function clearXmdExportCache(scope?: string): void {
+  if (scope === undefined) {
+    sharedXmdExportCache.clear();
+  } else {
+    sharedXmdExportCache.deleteScope(scope);
+  }
+}
+
+/** Diagnostics for the shared cache (never contains package bytes). */
+export function getXmdExportCacheStats(): XmdExportCacheStats {
+  return sharedXmdExportCache.stats;
 }
 
 const EXTENSION_BY_MIME: Record<string, string> = {
@@ -110,14 +145,19 @@ function resolveResource(source: string, sourceFilePath?: string | null): { key:
   return { key: resolved.path, suffix: resolved.anchor ? `#${resolved.anchor}` : '' };
 }
 
-function decodeDataUrl(source: string): XmdResourceData {
+export function decodeDataUrl(source: string): XmdResourceData {
+  const fragment = source.indexOf('#');
+  if (fragment !== -1) source = source.slice(0, fragment);
   const match = /^data:([^,]*),(.*)$/is.exec(source);
   if (!match) throw new Error('无效的 data URL / Invalid data URL');
   const mediaType = match[1].split(';')[0].toLowerCase();
   const payload = match[2];
   if (payload.length > MAX_XMD_RESOURCE_BYTES * 4) throw new Error('资源超过 32 MiB / Resource exceeds 32 MiB');
   if (/;base64$/i.test(match[1])) {
-    const binary = atob(decodeURIComponent(payload).replace(/\s/g, ''));
+    const encoded = decodeURIComponent(payload).replace(/\s/g, '');
+    if (encoded.length > Math.ceil(MAX_XMD_RESOURCE_BYTES / 3) * 4) throw new Error('资源超过 32 MiB / Resource exceeds 32 MiB');
+    const binary = atob(encoded);
+    if (binary.length > MAX_XMD_RESOURCE_BYTES) throw new Error('资源超过 32 MiB / Resource exceeds 32 MiB');
     return { bytes: Uint8Array.from(binary, (character) => character.charCodeAt(0)), mediaType };
   }
   const bytes: number[] = [];
@@ -182,29 +222,87 @@ async function loadResource(source: string): Promise<XmdResourceData> {
   return { bytes: await readXmdResource(source) };
 }
 
+function isDataUrlSource(source: string): boolean {
+  return /^data:/i.test(source);
+}
+
+/** Media type the default `data:` loader will report for this exact source. */
+function declaredDataUrlMediaType(source: string): string {
+  const header = /^data:([^,]*),/is.exec(source)?.[1];
+  return header === undefined ? '' : header.split(';')[0].trim().toLowerCase();
+}
+
+/**
+ * Cache identity is the ordered list of exact resolved sources. Length
+ * prefixes make the key unambiguous even if a source contains separators.
+ * Packets are only cached when every source is a `data:` URL, so a changed
+ * local/network resource can never be served from this key.
+ */
+function cacheKeyFor(scope: string, sources: readonly string[]): string {
+  const encoded = sources.map((source) => `${source.length}:${source}`).join('|');
+  return `xmd-export-v1:deflate-6:${scope.length}:${scope}|${encoded}`;
+}
+
+function cachedResourcesMatch(
+  sources: readonly string[],
+  resources: readonly CachedXmdResource[]
+): boolean {
+  if (resources.length !== sources.length) return false;
+  for (let index = 0; index < sources.length; index++) {
+    const resource = resources[index];
+    if (!resource || typeof resource.path !== 'string') return false;
+    if (!/^assets\/\d{4}\.[a-z\d]+$/.test(resource.path)) return false;
+    if (!Number.isInteger(resource.size) || resource.size < 0
+      || resource.size > MAX_XMD_RESOURCE_BYTES) return false;
+    const mediaType = declaredDataUrlMediaType(sources[index]) || mediaTypeForSource(sources[index]);
+    if (resource.mediaType !== mediaType) return false;
+  }
+  return true;
+}
+
+function packageResourceError(source: string, error: unknown): Error {
+  const description = error instanceof Error ? error.message : String(error);
+  const display = source.length > 160 ? `${source.slice(0, 100)}…` : source;
+  return new Error(
+    `无法打包资源 / Unable to package resource "${display}": ${description}`,
+    { cause: error }
+  );
+}
+
 /**
  * XMD v1 is a ZIP with manifest.json, document.md and assets/. It preserves the
  * source text except for resource destinations; no input document is mutated.
  * Missing resources fail the export instead of producing a silently broken pack.
+ *
+ * When every resource is an embedded `data:` URL, the generated package is kept
+ * in a bounded LRU cache. A subsequent save with the same sources loads that
+ * ZIP again and lets JSZip write the already-compressed `assets/*` entries
+ * unchanged, avoiding a full decode + DEFLATE pass for every embedded image.
+ * Local files and HTTP images never enter the cache: they are re-read on every
+ * export so external changes are always reflected.
  */
 export async function exportMarkdownToXmd(
   markdown: string,
   title: string,
   options: XmdExportOptions = {}
 ): Promise<Uint8Array> {
-  const zip = new JSZip();
   const manifest: XmdManifest = {
     format: 'xmd', version: XMD_VERSION, entry: XMD_DOCUMENT_FILE, title, resources: [],
   };
-  const resources = new Map<string, { path: string; mediaType: string }>();
   const edits = new Map<number, { end: number; value: string }>();
   const attributes = new Map<number, { target: XmdSourceSpan; value: string; edits: { from: number; to: number; value: string }[] }>();
-  let totalBytes = new TextEncoder().encode(markdown).length;
+  const documentBytes = new TextEncoder().encode(markdown).length;
+  let totalBytes = documentBytes;
   if (totalBytes > MAX_XMD_TOTAL_BYTES) throw new Error('文档超过 128 MiB / Document exceeds 128 MiB');
 
   const scan = scanXmdReferences(markdown);
   if (scan.hasEmptyImage) throw new Error('图片地址为空 / Empty image destination');
 
+  // Resolve first, load later: the cache is keyed by the exact ordered sources
+  // and a hit can skip byte loading entirely.
+  const resolvedUses: (XmdReference & { key: string; suffix: string })[] = [];
+  const sources: string[] = [];
+  const seenSources = new Set<string>();
   for (const use of scan.references) {
     // Anchors stay inline; only destinations the package can own are collected.
     // `data:` links are included so a re-export of an imported bundle keeps
@@ -216,28 +314,95 @@ export async function exportMarkdownToXmd(
     if (!use.image && !isPackagedLinkDestination(use.source)) continue;
     try {
       const { key, suffix } = resolveResource(use.source, options.sourceFilePath);
-      let resource = resources.get(key);
-      if (!resource) {
-        if (resources.size >= MAX_XMD_RESOURCES) throw new Error('资源数量超过 2048 / More than 2048 resources');
-        const data = await (options.loadResource || loadResource)(key);
+      if (!seenSources.has(key)) {
+        if (sources.length >= MAX_XMD_RESOURCES) throw new Error('资源数量超过 2048 / More than 2048 resources');
+        seenSources.add(key);
+        sources.push(key);
+      }
+      resolvedUses.push({ ...use, key, suffix });
+    } catch (error) {
+      throw packageResourceError(use.source, error);
+    }
+  }
+
+  const cache = options.cache === undefined ? sharedXmdExportCache : options.cache;
+  const cacheScope = options.cacheScope ?? options.sourceFilePath ?? 'untitled';
+  // The key embeds every full data: URL, so a source set whose keys alone would
+  // exceed the budget can never be cached: skip building that huge temporary
+  // string instead of allocating it and rejecting the entry afterwards.
+  const sourceKeyBytes = sources.reduce((sum, source) => sum + source.length * 2, 0);
+  const cacheKey = cache && !options.loadResource && sources.length > 0
+    && sources.every(isDataUrlSource)
+    && sourceKeyBytes + cacheScope.length * 2 + 128 <= cache.maxBytes
+    ? cacheKeyFor(cacheScope, sources)
+    : null;
+
+  let zip: JSZip | null = null;
+  let resources: Map<string, CachedXmdResource> | null = null;
+
+  if (cache && cacheKey) {
+    const cached = cache.get(cacheKey);
+    if (cached && cachedResourcesMatch(sources, cached.resources)) {
+      const cachedContentBytes = cached.resources.reduce((sum, resource) => sum + resource.size, 0);
+      if (totalBytes + cachedContentBytes > MAX_XMD_TOTAL_BYTES) {
+        throw new Error('资源总大小超过 128 MiB / Package content exceeds 128 MiB');
+      }
+      try {
+        // JSZip reads the central directory lazily and keeps each entry's
+        // compressed bytes, so generateAsync can copy them instead of
+        // recompressing. The document and manifest entries are replaced below.
+        zip = await JSZip.loadAsync(cached.bytes);
+        totalBytes += cachedContentBytes;
+        resources = new Map(sources.map((source, index) => [source, cached.resources[index]]));
+      } catch {
+        // A corrupt/incompatible cached package must never break a save.
+        cache.delete(cacheKey);
+        zip = null;
+        resources = null;
+        totalBytes = documentBytes;
+      }
+    } else if (cached) {
+      cache.delete(cacheKey);
+    }
+  }
+
+  if (!zip || !resources) {
+    zip = new JSZip();
+    const loaded = new Map<string, CachedXmdResource>();
+    const loader = options.loadResource || loadResource;
+    for (const source of sources) {
+      try {
+        const data = await loader(source);
         if (data.bytes.length > MAX_XMD_RESOURCE_BYTES) throw new Error('资源超过 32 MiB / Resource exceeds 32 MiB');
         totalBytes += data.bytes.length;
         if (totalBytes > MAX_XMD_TOTAL_BYTES) throw new Error('资源总大小超过 128 MiB / Package content exceeds 128 MiB');
-        const mediaType = data.mediaType?.split(';')[0].trim().toLowerCase() || mediaTypeForSource(key);
-        const extension = extensionForMediaType(mediaType) || extensionForSource(key) || 'bin';
-        const path = `${XMD_ASSET_DIRECTORY}/${String(resources.size + 1).padStart(4, '0')}.${extension}`;
-        resource = { path, mediaType };
-        resources.set(key, resource);
+        const mediaType = data.mediaType?.split(';')[0].trim().toLowerCase() || mediaTypeForSource(source);
+        const extension = extensionForMediaType(mediaType) || extensionForSource(source) || 'bin';
+        const path = `${XMD_ASSET_DIRECTORY}/${String(loaded.size + 1).padStart(4, '0')}.${extension}`;
+        loaded.set(source, { path, mediaType, size: data.bytes.length });
         zip.file(path, data.bytes);
-        manifest.resources.push({ path, mediaType, size: data.bytes.length });
+      } catch (error) {
+        throw packageResourceError(source, error);
       }
+    }
+    resources = loaded;
+  }
+
+  manifest.resources = sources.map((source) => {
+    const resource = resources!.get(source)!;
+    return { path: resource.path, mediaType: resource.mediaType, size: resource.size };
+  });
+
+  for (const use of resolvedUses) {
+    try {
+      const resource = resources.get(use.key)!;
       if (use.image && !resource.mediaType.startsWith('image/')) {
         throw new Error('资源不是可识别的图片 / Resource is not a recognized image');
       }
       // URL fragments can contain escaped Markdown delimiters in the source.
       // Percent-encode them before reinserting a decoded URL into Markdown or
       // HTML; this also keeps reference definitions and srcset values valid.
-      const value = resource.path + suffix.replace(/[()<>\\\s"']/g,
+      const value = resource.path + use.suffix.replace(/[()<>\\\s"']/g,
         (character) => `%${character.charCodeAt(0).toString(16).toUpperCase()}`);
       if (use.html) {
         let attribute = attributes.get(use.target.from);
@@ -250,9 +415,7 @@ export async function exportMarkdownToXmd(
         edits.set(use.target.from, { end: use.target.to, value });
       }
     } catch (error) {
-      const description = error instanceof Error ? error.message : String(error);
-      const source = use.source.length > 160 ? `${use.source.slice(0, 100)}…` : use.source;
-      throw new Error(`无法打包资源 / Unable to package resource "${source}": ${description}`, { cause: error });
+      throw packageResourceError(use.source, error);
     }
   }
   for (const { target, value, edits: attributeEdits } of attributes.values()) {
@@ -277,5 +440,12 @@ export async function exportMarkdownToXmd(
   pieces.push(markdown.slice(cursor));
   zip.file(XMD_DOCUMENT_FILE, pieces.join(''));
   zip.file(XMD_MANIFEST_FILE, JSON.stringify(manifest, null, 2) + '\n');
-  return zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  const bytes = await zip.generateAsync({ type: 'uint8array', compression: 'DEFLATE', compressionOptions: { level: 6 } });
+  if (cache && cacheKey) {
+    cache.set(cacheKey, bytes, sources.map((source) => {
+      const resource = resources!.get(source)!;
+      return { path: resource.path, mediaType: resource.mediaType, size: resource.size };
+    }), cacheScope);
+  }
+  return bytes;
 }

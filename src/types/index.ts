@@ -1,3 +1,7 @@
+import type { ExportStyle } from '@/lib/exportStyle';
+
+export type { ExportStyle, ExportFontFamily, ExportColorScheme } from '@/lib/exportStyle';
+
 export type ViewMode = 'edit' | 'split' | 'read';
 export type ThemeMode = 'light' | 'dark' | 'system';
 export type StartupViewMode = 'remember-last' | ViewMode;
@@ -25,6 +29,11 @@ export interface EditorSettings {
   focusMode: boolean;
   /** Inline local images as data URLs when exporting HTML, so the file is self-contained. */
   exportEmbedImages: boolean;
+  /**
+   * Optional export theme. Undefined keeps the legacy exporter appearance;
+   * it is only populated after the user saves a theme in the dialog.
+   */
+  exportStyle?: ExportStyle;
 }
 
 export interface DocumentTab {

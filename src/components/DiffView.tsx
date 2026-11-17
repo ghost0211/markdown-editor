@@ -25,6 +25,8 @@ export interface DiffViewProps {
   tabSize?: number;
   wordWrap?: boolean;
   lineNumbers?: boolean;
+  /** History comparisons keep the entire snapshot visible instead of collapsing it. */
+  collapseUnchanged?: boolean;
 }
 
 /**
@@ -47,6 +49,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
   tabSize = 2,
   wordWrap = true,
   lineNumbers = true,
+  collapseUnchanged = true,
 }) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -117,7 +120,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
       parent: containerRef.current,
       highlightChanges: true,
       gutter: true,
-      collapseUnchanged: { margin: 3, minSize: 4 },
+      collapseUnchanged: collapseUnchanged ? { margin: 3, minSize: 4 } : undefined,
     });
 
     mergeViewRef.current = view;
@@ -129,7 +132,7 @@ export const DiffView: React.FC<DiffViewProps> = ({
     // Rebuild only when presentation settings change; document updates flow
     // one way (editor -> owning tab) for the lifetime of this view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDark, fontSize, lineHeight, tabSize, wordWrap, lineNumbers, leftReadOnly, rightReadOnly]);
+  }, [isDark, fontSize, lineHeight, tabSize, wordWrap, lineNumbers, leftReadOnly, rightReadOnly, collapseUnchanged]);
 
   const renderSideHeader = (title: string, readOnly: boolean) => (
     <div className="flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 truncate">

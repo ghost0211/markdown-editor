@@ -65,6 +65,36 @@ pub fn get_file_mtime(path: String) -> Result<u64, String> {
 }
 
 #[tauri::command]
+pub fn get_file_size(path: String) -> Result<u64, String> {
+    if path.replace('\\', "/").starts_with("//") {
+        return Err("不支持网络共享资源 / Network share resources are not supported".into());
+    }
+    let metadata =
+        fs::metadata(&path).map_err(|e| format!("读取资源信息失败 ({}): {}", path, e))?;
+    if !metadata.is_file() {
+        return Err(format!("资源不是常规文件: {}", path));
+    }
+    Ok(metadata.len())
+}
+
+#[tauri::command]
+pub fn save_resource_dialog(default_name: Option<String>) -> Result<Option<String>, String> {
+    let name = default_name.unwrap_or_else(|| "attachment.bin".to_string());
+    let extension = Path::new(&name)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .unwrap_or("bin")
+        .to_string();
+    Ok(rfd::FileDialog::new()
+        .add_filter("原始文件 / Original File", &[extension.as_str()])
+        .add_filter("All Files", &["*"])
+        .set_title("导出资源")
+        .set_file_name(&name)
+        .save_file()
+        .map(|path| path.to_string_lossy().to_string()))
+}
+
+#[tauri::command]
 pub fn write_text_file(path: String, content: String) -> Result<(), String> {
     let p = Path::new(&path);
     if let Some(parent) = p.parent() {
@@ -117,8 +147,17 @@ pub fn open_file_dialog() -> Result<Option<OpenFileResponse>, String> {
 
             // XMD is a ZIP container; the frontend reads raw bytes through the
             // bounded native command and safely resolves bundled resources.
-            if path_buf.extension().and_then(|ext| ext.to_str()).map(|ext| ext.eq_ignore_ascii_case("xmd")).unwrap_or(false) {
-                return Ok(Some(OpenFileResponse { path: path_str, name: file_name, content: String::new() }));
+            if path_buf
+                .extension()
+                .and_then(|ext| ext.to_str())
+                .map(|ext| ext.eq_ignore_ascii_case("xmd"))
+                .unwrap_or(false)
+            {
+                return Ok(Some(OpenFileResponse {
+                    path: path_str,
+                    name: file_name,
+                    content: String::new(),
+                }));
             }
 
             match fs::read_to_string(&path_buf) {
@@ -154,7 +193,15 @@ pub fn save_file_dialog(default_name: Option<String>) -> Result<Option<String>, 
         .set_file_name(&file_name);
 
     match dialog.save_file() {
-        Some(path_buf) => Ok(Some(if is_xmd { ensure_export_extension(path_buf, "xmd") } else { path_buf }.to_string_lossy().to_string())),
+        Some(path_buf) => Ok(Some(
+            if is_xmd {
+                ensure_export_extension(path_buf, "xmd")
+            } else {
+                path_buf
+            }
+            .to_string_lossy()
+            .to_string(),
+        )),
         None => Ok(None),
     }
 }
@@ -207,8 +254,8 @@ pub fn export_file_dialog(
     format: String,
     default_name: Option<String>,
 ) -> Result<Option<String>, String> {
-    let (filter_name, ext, title) = export_format_spec(&format)
-        .ok_or_else(|| format!("不支持的导出格式: {}", format))?;
+    let (filter_name, ext, title) =
+        export_format_spec(&format).ok_or_else(|| format!("不支持的导出格式: {}", format))?;
 
     let final_default_name = export_dialog_default_name(default_name, ext);
 
@@ -228,10 +275,17 @@ pub fn export_file_dialog(
 }
 
 #[tauri::command]
-pub async fn export_pdf_from_html(path: String, html: String) -> Result<(), String> {
-    tauri::async_runtime::spawn_blocking(move || export_pdf_from_html_sync(path, html))
-        .await
-        .map_err(|e| format!("后台导出任务执行失败: {}", e))?
+pub async fn export_pdf_from_html(
+    path: String,
+    html: String,
+    show_header_footer: Option<bool>,
+) -> Result<(), String> {
+    let show_header_footer = show_header_footer.unwrap_or(false);
+    tauri::async_runtime::spawn_blocking(move || {
+        export_pdf_from_html_sync(path, html, show_header_footer)
+    })
+    .await
+    .map_err(|e| format!("后台导出任务执行失败: {}", e))?
 }
 
 #[tauri::command]

@@ -32,6 +32,55 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Paste or drop images: saved desktop documents copy them into a sibling `assets/` directory with relative links; unsaved documents and Web mode embed them.
    - **Compact image addresses**: the editor displays image URLs as short paths, with Base64 payloads shown as `Embedded image/filename` instead of filling the document. Hover to inspect/copy the full address; click or press `Ctrl+Enter` beside it to edit. Saved/copied Markdown and XMD exports retain the actual source URL, including for previously inserted images.
 
+### Advanced Find & Replace
+
+- Open the title-bar magnifier, `Ctrl+Shift+F`, or `Ctrl+H`. `Ctrl+F` retains the editor's quick search.
+- Search the current/all open documents with case, Unicode whole-word, regex and optional code skipping. Results are grouped by document and can locate source matches. Embedded image/attachment `data:` destinations are protected and excluded from Base64 snippets/replacements.
+- Preview before applying the current/all matches. Multi-document changes validate every original buffer before applying as one batch. Replacements are undoable per tab; saving and Auto Save follow the existing settings.
+- Expensive search/regex replacement runs in a time-limited Web Worker. Results cap at 1000 per document / 5000 total; truncation disables Replace All instead of silently missing matches. Regex is disabled without Worker support.
+
+### XMD Performance & Save Reliability
+
+- XMD saves write/sync a temporary file in the target directory before atomic replacement. A failed write/commit retains the previous package.
+- Saves to the same destination queue and snapshot fresh content when their turn starts. An older Save As cannot roll back a newer completed save. Auto Save checks external mtime changes again inside the queue.
+- A global 64 MiB in-memory LRU reuses already-compressed assets for fully embedded documents. Body-only edits skip Base64 decoding and asset DEFLATE; changed assets invalidate the cache, while local/remote resources are always re-read.
+- The complete ZIP is still generated and atomically written, not appended incrementally. First saves and packages above the cache budget use full packaging. The editing buffer still contains inline-resource Markdown.
+
+### Local Document History
+
+- Successful saves of local Markdown / XMD documents automatically create snapshots, including Auto Save; consecutive identical content is skipped. Closing a tab retains its history.
+- Open the title-bar History button to select a snapshot and compare it with the current buffer in a read-only side-by-side diff. Restore changes the undoable editing buffer only; inspect and save afterward instead of overwriting the file immediately.
+- Keep up to 50 snapshots per document and 64 MiB overall, pruning oldest first. Snapshots and indexes are written atomically; body length and SHA-256 are validated before reading. A damaged index can be rebuilt from safe snapshots; malformed snapshots are preserved rather than restored or overwritten.
+- Stored locally in `history/v1/<normalized-path-hash>/` under the application data directory, as plaintext only: no upload, Git dependency, or encryption. XMD snapshots preserve its current editor Markdown, including embedded resources; historical versions of external asset files are not separately copied.
+
+### Templates & Snippets
+
+- The title-bar Templates action offers bilingual GFM meeting minutes, weekly report, technical proposal, and reading-notes templates. Create a separate document or insert at the cursor; new documents retain normal unsaved-change protection.
+- Create, edit, and delete up to 50 local snippets (256 KiB body each), with a remembered author. `{{date}}`, `{{time}}`, `{{datetime}}`, `{{title}}`, and `{{author}}` use local text substitution only, never code execution.
+
+### Document Quality Checks
+
+- The title-bar Quality action uses the real Markdown AST to check heading-level jumps, empty headings/links, missing image alt text, unclosed code/front matter, duplicate headings, and missing/unresolved local resources.
+- Filter errors, warnings, and informational findings; select one to locate its source line. Code, math, comments, and escaped Markdown are not mistaken for content. Local files receive metadata-only stat checks; no file bodies are read and no remote links are contacted. Reports never auto-fix or rewrite the document.
+
+### Export Style Themes
+
+- Configure system/serif/monospace fonts, 10–20px body text, light/sepia/dark palettes, cover, table of contents, header text, and page numbers. Save up to 10 named local presets.
+- HTML/PDF share a fixed safe style whitelist. Word supports a real TOC field, cover, header, and optional page-number footer. Without a saved custom theme, existing export behavior is retained; XMD is unchanged.
+- PDF page numbers use Edge's native print header/footer. Custom header text applies to HTML/Word. HTML print page numbers use progressive `counter(page)` enhancement; unsupported browsers do not receive fabricated page numbers.
+
+### Folder Workspace
+
+- Switch the left sidebar to a folder tree using the title-bar Workspace button. Choose a native folder, open documents, refresh, and create documents/folders or rename in place. The selected directory is remembered and the current document's ancestors expand automatically.
+- Shows directories and supported `.md`, `.markdown`, `.mdown`, `.mkd`, `.txt`, `.xmd` documents, up to 5000 entries and depth 12. Hidden, VCS, dependency, and build directories are skipped; symlinks are not followed and file bodies are not read for scanning.
+- Mutations stay inside the chosen root. Creating/renaming never overwrites an existing target; root renames and moving a folder into itself are rejected. Open-tab paths and local references to renamed paths are synchronized with undoable, dirty-state-preserving edits. Snapshots under the old path are not migrated.
+
+### Image & Attachment Resource Manager
+   - Open the image icon labelled Resources in the title bar to browse resources referenced by the current document. Search/filter All, Images, Attachments or Missing; preview images, copy full paths, inspect sizes/reference counts, and jump to each source line.
+   - Local files are checked on disk. Remote images remain unknown until used, with no bulk downloading. Export original resource bytes (up to 32 MiB each) or reveal local files in Explorer; attachment downloads never navigate to executable content. A conversion batch is limited to 128 MiB.
+   - Saved desktop Markdown documents can convert one/all embedded images into sibling `assets/` files with relative references. New files never overwrite existing assets; source changes only after every file has been written and can be undone. Save afterward (or use enabled Auto Save). XMD resources remain bundled.
+   - Only referenced resources are inventoried; no disk-wide scanning or file deletion. Compression/format conversion, embedding external files and orphan-file cleanup are not included yet.
+
 4. **Native File System Capabilities**:
    - Powered by a Rust backend integrating `rfd` native file dialogs and `std::fs` for sub-millisecond file operations.
    - Strict UTF-8 validation and error handling.

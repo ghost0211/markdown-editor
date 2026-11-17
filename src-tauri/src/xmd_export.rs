@@ -2,11 +2,14 @@
 //! avoids loosening the webview CSP or relying on third-party CORS headers.
 use reqwest::{redirect, Client, Url};
 use serde::Serialize;
+use std::io::Write;
 use std::time::Duration;
 use std::{fs, io::Read, path::Path};
 use tauri::ipc::{InvokeBody, Request, Response};
 
 const MAX_RESOURCE_BYTES: usize = 32 * 1024 * 1024;
+/// Largest `.xmd` accepted for reading: 128 MiB of content plus ZIP overhead.
+const MAX_XMD_DOCUMENT_BYTES: u64 = 136 * 1024 * 1024;
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,7 +36,8 @@ fn validate_resource_size(size: u64) -> Result<(), String> {
 }
 
 fn read_bounded_file(path: &str, maximum: u64) -> Result<Vec<u8>, String> {
-    let file = fs::File::open(path).map_err(|e| format!("读取资源失败 / Cannot read resource: {e}"))?;
+    let file =
+        fs::File::open(path).map_err(|e| format!("读取资源失败 / Cannot read resource: {e}"))?;
     let metadata = file.metadata().map_err(|e| e.to_string())?;
     if !metadata.is_file() {
         return Err("资源不是常规文件 / Resource is not a regular file".into());
@@ -42,7 +46,9 @@ fn read_bounded_file(path: &str, maximum: u64) -> Result<Vec<u8>, String> {
         return Err("资源超过大小上限 / Resource exceeds size limit".into());
     }
     let mut bytes = Vec::with_capacity(metadata.len() as usize);
-    file.take(maximum + 1).read_to_end(&mut bytes).map_err(|e| e.to_string())?;
+    file.take(maximum + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|e| e.to_string())?;
     if bytes.len() as u64 > maximum {
         return Err("资源超过大小上限 / Resource exceeds size limit".into());
     }
@@ -54,14 +60,19 @@ fn local_resource_bytes(path: &str) -> Result<Vec<u8>, String> {
     if normalized.starts_with("//") || normalized.starts_with("/??/") {
         return Err("不支持网络共享资源 / Network share resources are not supported".into());
     }
-    read_bounded_file(path, MAX_RESOURCE_BYTES as u64)
-        .map_err(|error| if error.contains("size limit") { "图片超过 32 MiB / Image exceeds 32 MiB".into() } else { error })
+    read_bounded_file(path, MAX_RESOURCE_BYTES as u64).map_err(|error| {
+        if error.contains("size limit") {
+            "图片超过 32 MiB / Image exceeds 32 MiB".into()
+        } else {
+            error
+        }
+    })
 }
 
 #[tauri::command]
 pub fn read_xmd_document(path: String) -> Result<Response, String> {
     // 128 MiB decompressed body plus bounded ZIP headers and compression slack.
-    read_bounded_file(&path, 136 * 1024 * 1024).map(Response::new)
+    read_bounded_file(&path, MAX_XMD_DOCUMENT_BYTES).map(Response::new)
 }
 
 #[tauri::command]
@@ -69,9 +80,59 @@ pub fn read_xmd_resource(path: String) -> Result<Response, String> {
     local_resource_bytes(&path).map(Response::new)
 }
 
+/// Replaces `target` with `payload` without ever truncating an existing file.
+///
+/// The bytes are written and fsynced into a temporary file in the destination
+/// directory first; only then is it atomically renamed over the target. A
+/// failure while creating, writing or syncing the temporary file leaves the
+/// previous package untouched, and the temporary file is removed by `tempfile`.
+/// The rename happens on the same volume (same directory), so a concurrently
+/// running reader never observes a half-written ZIP.
+fn write_xmd_atomically(target: &Path, payload: &[u8]) -> Result<(), String> {
+    let parent = target.parent().filter(|path| !path.as_os_str().is_empty());
+    if let Some(parent) = parent {
+        fs::create_dir_all(parent)
+            .map_err(|error| format!("创建 XMD 目录失败 / Cannot create XMD directory: {error}"))?;
+    }
+    let directory = parent.unwrap_or_else(|| Path::new("."));
+    let mut temporary = tempfile::Builder::new()
+        .prefix(".xmd-")
+        .suffix(".tmp")
+        .tempfile_in(directory)
+        .map_err(|error| {
+            format!("创建 XMD 临时文件失败 / Cannot create temporary XMD file: {error}")
+        })?;
+    temporary.write_all(payload).map_err(|error| {
+        format!("写入 XMD 临时文件失败 / Cannot write temporary XMD file: {error}")
+    })?;
+    temporary.as_file_mut().flush().map_err(|error| {
+        format!("刷新 XMD 临时文件失败 / Cannot flush temporary XMD file: {error}")
+    })?;
+    // Flush file data to the device before the rename, otherwise a crash could
+    // leave the new directory entry pointing at incomplete contents.
+    temporary.as_file().sync_all().map_err(|error| {
+        format!("同步 XMD 临时文件失败 / Cannot sync temporary XMD file: {error}")
+    })?;
+    temporary
+        .persist(target)
+        .map_err(|error| format!("写入 XMD 失败 / Cannot write XMD: {}", error.error))?;
+    // Best effort on Unix: make the rename itself durable. Windows persists the
+    // directory entry as part of the replace operation.
+    #[cfg(unix)]
+    {
+        if let Ok(directory) = fs::File::open(directory) {
+            let _ = directory.sync_all();
+        }
+    }
+    Ok(())
+}
+
 fn write_xmd_frame(frame: &[u8]) -> Result<(), String> {
-    let length_bytes: [u8; 4] = frame.get(..4).ok_or("Invalid XMD frame")?
-        .try_into().map_err(|_| "Invalid XMD frame")?;
+    let length_bytes: [u8; 4] = frame
+        .get(..4)
+        .ok_or("Invalid XMD frame")?
+        .try_into()
+        .map_err(|_| "Invalid XMD frame")?;
     let length = u32::from_le_bytes(length_bytes) as usize;
     if length == 0 || length > 32768 {
         return Err("Invalid XMD path length".into());
@@ -85,11 +146,7 @@ fn write_xmd_frame(frame: &[u8]) -> Result<(), String> {
     if !payload.starts_with(b"PK\x03\x04") {
         return Err("XMD payload must be a ZIP archive".into());
     }
-    let target = Path::new(path);
-    if let Some(parent) = target.parent().filter(|p| !p.as_os_str().is_empty()) {
-        fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
-    fs::write(target, payload).map_err(|e| format!("写入 XMD 失败 / Cannot write XMD: {e}"))
+    write_xmd_atomically(Path::new(path), payload)
 }
 
 #[tauri::command]
@@ -166,32 +223,153 @@ mod tests {
 
     #[test]
     fn rejects_shares_and_oversized_files_before_reading() {
-        for path in ["//attacker.example/share/pic.png", r"\\attacker.example\share\pic.png", r"\\?\UNC\attacker\pic.png"] {
-            assert!(local_resource_bytes(path).unwrap_err().contains("Network share"));
+        for path in [
+            "//attacker.example/share/pic.png",
+            r"\\attacker.example\share\pic.png",
+            r"\\?\UNC\attacker\pic.png",
+        ] {
+            assert!(local_resource_bytes(path)
+                .unwrap_err()
+                .contains("Network share"));
         }
         let file = tempfile::NamedTempFile::new().unwrap();
         file.as_file().set_len(64 * 1024 * 1024).unwrap();
-        assert!(local_resource_bytes(file.path().to_str().unwrap()).unwrap_err().contains("32 MiB"));
+        assert!(local_resource_bytes(file.path().to_str().unwrap())
+            .unwrap_err()
+            .contains("32 MiB"));
         file.as_file().set_len(3).unwrap();
-        assert_eq!(local_resource_bytes(file.path().to_str().unwrap()).unwrap().len(), 3);
+        assert_eq!(
+            local_resource_bytes(file.path().to_str().unwrap())
+                .unwrap()
+                .len(),
+            3
+        );
+    }
+
+    fn frame_for(path: &Path, payload: &[u8]) -> Vec<u8> {
+        let path = path.to_str().unwrap().as_bytes();
+        let mut frame = (path.len() as u32).to_le_bytes().to_vec();
+        frame.extend_from_slice(path);
+        frame.extend_from_slice(payload);
+        frame
+    }
+
+    fn directory_entries(path: &Path) -> Vec<String> {
+        let mut names: Vec<String> = fs::read_dir(path)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().to_string())
+            .collect();
+        names.sort();
+        names
     }
 
     #[test]
     fn writes_raw_xmd_frames_without_number_array_serialization() {
         let directory = tempfile::tempdir().unwrap();
         let path = directory.path().join("测试.xmd");
-        let path_bytes = path.to_str().unwrap().as_bytes();
-        let mut frame = (path_bytes.len() as u32).to_le_bytes().to_vec();
-        frame.extend_from_slice(path_bytes);
-        frame.extend_from_slice(b"PK\x03\x04test");
-        write_xmd_frame(&frame).unwrap();
-        assert_eq!(fs::read(path).unwrap(), b"PK\x03\x04test");
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04test")).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04test");
         assert!(write_xmd_frame(b"bad").is_err());
     }
 
     #[test]
+    fn atomically_replaces_an_existing_package_and_removes_temporary_files() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("document.xmd");
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04old package")).unwrap();
+
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04new package")).unwrap();
+
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04new package");
+        assert_eq!(directory_entries(directory.path()), vec!["document.xmd"]);
+    }
+
+    #[test]
+    fn accepts_only_zip_local_file_headers() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("header.xmd");
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04rest")).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04rest");
+
+        for payload in [
+            b"PK\x05\x06".as_slice(), // empty archive / end-of-central-directory
+            b"PK\x01\x02".as_slice(), // central directory
+            b"not a zip".as_slice(),
+        ] {
+            assert!(write_xmd_frame(&frame_for(&path, payload)).is_err());
+        }
+        // Rejected payloads never touch the package that is already on disk.
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04rest");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn failed_replacement_keeps_the_previous_package() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("locked.xmd");
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04original")).unwrap();
+
+        // A read-only destination cannot be replaced by MoveFileExW, which is
+        // what tempfile uses on Windows. The already saved package must survive.
+        let original_permissions = fs::metadata(&path).unwrap().permissions();
+        let mut permissions = original_permissions.clone();
+        permissions.set_readonly(true);
+        fs::set_permissions(&path, permissions).unwrap();
+
+        let result = write_xmd_frame(&frame_for(&path, b"PK\x03\x04replacement"));
+
+        fs::set_permissions(&path, original_permissions).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04original");
+        assert_eq!(directory_entries(directory.path()), vec!["locked.xmd"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn failed_temporary_file_creation_keeps_the_previous_package() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let directory = tempfile::tempdir().unwrap();
+        let folder = directory.path().join("readonly");
+        fs::create_dir(&folder).unwrap();
+        let path = folder.join("document.xmd");
+        write_xmd_frame(&frame_for(&path, b"PK\x03\x04original")).unwrap();
+
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o555)).unwrap();
+        // Running as root bypasses directory permissions; skip instead of
+        // asserting platform behavior the process cannot observe.
+        let writable = fs::File::create(folder.join("probe")).is_ok();
+        if writable {
+            fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+            return;
+        }
+
+        let result = write_xmd_frame(&frame_for(&path, b"PK\x03\x04replacement"));
+        fs::set_permissions(&folder, fs::Permissions::from_mode(0o755)).unwrap();
+
+        assert!(result.is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"PK\x03\x04original");
+        assert_eq!(directory_entries(&folder), vec!["document.xmd"]);
+    }
+
+    #[test]
+    fn document_read_limit_matches_the_128_mib_content_cap() {
+        assert_eq!(MAX_XMD_DOCUMENT_BYTES, 136 * 1024 * 1024);
+        let file = tempfile::NamedTempFile::new().unwrap();
+        file.as_file().set_len(MAX_XMD_DOCUMENT_BYTES + 1).unwrap();
+        // The metadata check rejects the oversized file before reading it.
+        let error =
+            read_bounded_file(file.path().to_str().unwrap(), MAX_XMD_DOCUMENT_BYTES).unwrap_err();
+        assert!(error.contains("size limit"));
+    }
+
+    #[test]
     fn only_accepts_http_images_without_url_credentials() {
-        for value in ["https://example.com/image.png", "http://127.0.0.1/image.png"] {
+        for value in [
+            "https://example.com/image.png",
+            "http://127.0.0.1/image.png",
+        ] {
             assert!(validate_image_url(&Url::parse(value).unwrap()).is_ok());
         }
         for value in [
@@ -212,7 +390,9 @@ mod tests {
         let address = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
             let (mut stream, _) = listener.accept().unwrap();
-            stream.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+            stream
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
             let mut request = [0; 4096];
             let size = stream.read(&mut request).unwrap();
             let request = String::from_utf8_lossy(&request[..size]).to_lowercase();
@@ -221,7 +401,8 @@ mod tests {
             assert!(!request.contains("referer:"));
             stream.write_all(response.as_bytes()).unwrap();
         });
-        let result = tauri::async_runtime::block_on(fetch_xmd_image(format!("http://{address}/image")));
+        let result =
+            tauri::async_runtime::block_on(fetch_xmd_image(format!("http://{address}/image")));
         server.join().unwrap();
         result
     }

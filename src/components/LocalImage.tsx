@@ -6,6 +6,8 @@ import { useI18n } from '@/i18n';
 interface LocalImageProps extends React.ComponentPropsWithoutRef<'img'> {
   /** Path of the Markdown document containing the image. */
   sourcePath?: string | null;
+  /** A path already resolved by a trusted source parser; avoid URL-decoding twice. */
+  resolvedPath?: string;
 }
 
 function mimeTypeForImage(path: string): string {
@@ -33,13 +35,14 @@ function mimeTypeForImage(path: string): string {
 export const LocalImage: React.FC<LocalImageProps> = ({
   src,
   sourcePath,
+  resolvedPath,
   alt = '',
   loading = 'lazy',
   ...props
 }) => {
   const { t } = useI18n();
   const rawSrc = typeof src === 'string' ? src : undefined;
-  const localPath = resolveLocalImagePath(rawSrc, sourcePath);
+  const localPath = resolvedPath || resolveLocalImagePath(rawSrc, sourcePath);
   const [objectUrl, setObjectUrl] = useState<string | null>(null);
   const [failed, setFailed] = useState(false);
 

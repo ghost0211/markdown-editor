@@ -1,5 +1,5 @@
 import { EditorState } from '@codemirror/state';
-import { historyField } from '@codemirror/commands';
+import { history, historyField, isolateHistory } from '@codemirror/commands';
 import { normalizeLineEndings } from '@/lib/documentUtils';
 
 /**
@@ -79,6 +79,22 @@ export function getCachedEditorState(docId: string): SerializedEditorState | und
 
 export function setCachedEditorState(docId: string, state: SerializedEditorState): void {
   stateCache.set(docId, state);
+}
+
+/** Preserve one undoable step for batch changes to an inactive/read-only pane's document. */
+export function applyCachedDocumentChange(docId: string, original: string, content: string): void {
+  if (original === content) return;
+  const cached = getCachedEditorState(docId);
+  const initial = restoreEditorInitialState(cached, original);
+  const state = initial
+    ? EditorState.fromJSON(initial.json, { extensions: [history()] }, HISTORY_FIELDS)
+    : EditorState.create({ doc: original, extensions: [history()] });
+  const next = state.update({
+    changes: { from: 0, to: state.doc.length, insert: content },
+    annotations: isolateHistory.of('full'),
+    userEvent: 'input.resource',
+  }).state;
+  setCachedEditorState(docId, serializeEditorState(next));
 }
 
 /** Releases the cached editor state of a document that was closed for good. */

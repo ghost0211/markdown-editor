@@ -16,6 +16,11 @@ interface KeyboardShortcutsOptions {
   onPreviousTab?: () => void;
   onReopenClosed?: () => void;
   /**
+   * Enhanced find & replace modal. Ctrl+Shift+F and Ctrl+H open it; plain
+   * Ctrl+F is intentionally left to CodeMirror's built-in find panel.
+   */
+  onOpenSearch?: () => void;
+  /**
    * When false, document-level shortcuts (Ctrl+N / Ctrl+W / ...) are ignored.
    * Used while a modal dialog owns the keyboard, so typing inside a dialog can
    * never trigger "new document" or "close tab".
@@ -36,6 +41,7 @@ export function useKeyboardShortcuts({
   onNextTab,
   onPreviousTab,
   onReopenClosed,
+  onOpenSearch,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -63,6 +69,21 @@ export function useKeyboardShortcuts({
       // Everything below acts on the document itself and must not fire while a
       // modal dialog owns the keyboard.
       if (!enabled) return;
+
+      // Enhanced find & replace. Ctrl+F is deliberately not handled here so
+      // CodeMirror keeps its own in-editor search panel.
+      if (isCtrlOrMeta && !e.altKey) {
+        if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
+          e.preventDefault();
+          onOpenSearch?.();
+          return;
+        }
+        if (!e.shiftKey && (e.key === 'h' || e.key === 'H')) {
+          e.preventDefault();
+          onOpenSearch?.();
+          return;
+        }
+      }
 
       // Browser-style tab cycling. Keep focus where it is (usually the editor)
       // while TabBar scrolls the newly active tab into view.
@@ -160,6 +181,7 @@ export function useKeyboardShortcuts({
     onNextTab,
     onPreviousTab,
     onReopenClosed,
+    onOpenSearch,
     enabled,
   ]);
 }

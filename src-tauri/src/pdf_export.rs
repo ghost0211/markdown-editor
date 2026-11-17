@@ -81,7 +81,28 @@ pub(crate) fn validate_pdf_file(path: &Path) -> Result<u64, String> {
     Ok(len)
 }
 
-pub(crate) fn export_pdf_from_html_sync(path: String, html: String) -> Result<(), String> {
+pub(crate) fn pdf_print_flags(show_header_footer: bool) -> Vec<&'static str> {
+    let mut flags = vec!["--headless", "--disable-gpu"];
+    // Keep the historical no-header/footer behavior unless PDF page numbers
+    // explicitly ask Edge to draw its native header/footer.
+    if !show_header_footer {
+        flags.push("--no-pdf-header-footer");
+    }
+    flags.extend([
+        "--run-all-compositor-stages-before-draw",
+        "--virtual-time-budget=3000",
+        "--no-first-run",
+        "--no-default-browser-check",
+        "--disable-extensions",
+    ]);
+    flags
+}
+
+pub(crate) fn export_pdf_from_html_sync(
+    path: String,
+    html: String,
+    show_header_footer: bool,
+) -> Result<(), String> {
     let dest_path = PathBuf::from(&path);
     if let Some(parent) = dest_path.parent() {
         if !parent.as_os_str().is_empty() && !parent.exists() {
@@ -113,14 +134,7 @@ pub(crate) fn export_pdf_from_html_sync(path: String, html: String) -> Result<()
 
     let mut command = std::process::Command::new(&edge_exe);
     command
-        .arg("--headless")
-        .arg("--disable-gpu")
-        .arg("--no-pdf-header-footer")
-        .arg("--run-all-compositor-stages-before-draw")
-        .arg("--virtual-time-budget=3000")
-        .arg("--no-first-run")
-        .arg("--no-default-browser-check")
-        .arg("--disable-extensions")
+        .args(pdf_print_flags(show_header_footer))
         .arg(user_data_arg)
         .arg(print_arg)
         .arg(&temp_html_file);
@@ -201,6 +215,17 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_pdf_print_flags_header_footer_default_is_off() {
+        let legacy = pdf_print_flags(false);
+        assert!(legacy.contains(&"--no-pdf-header-footer"));
+
+        let native_header_footer = pdf_print_flags(true);
+        assert!(!native_header_footer.contains(&"--no-pdf-header-footer"));
+        assert!(native_header_footer.contains(&"--headless"));
+        assert!(native_header_footer.contains(&"--virtual-time-budget=3000"));
+    }
+
+    #[test]
     #[cfg(target_os = "windows")]
     fn test_find_edge_binary() {
         let edge = find_edge_binary();
@@ -278,6 +303,7 @@ p { line-height: 1.6; }
         let result = export_pdf_from_html_sync(
             target_pdf.to_string_lossy().to_string(),
             sample_html.to_string(),
+            false,
         );
 
         assert!(
@@ -321,6 +347,7 @@ p { line-height: 1.6; }
         let result = export_pdf_from_html_sync(
             target_pdf.to_string_lossy().to_string(),
             sample_html.to_string(),
+            false,
         );
 
         assert!(result.is_ok(), "覆盖导出应当成功: {:?}", result.err());
