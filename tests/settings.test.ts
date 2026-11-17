@@ -7,6 +7,8 @@ import {
   SETTINGS_STORAGE_KEY,
   LEGACY_THEME_KEY,
   SETTINGS_BOUNDS,
+  EDITOR_PRESENTATIONS,
+  type EditorPresentation,
 } from '../src/lib/settings';
 
 describe('Settings Validation and Persistence (settings.ts)', () => {
@@ -62,6 +64,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
         spellcheck: true,
         typewriterMode: true,
         focusMode: true,
+        editorPresentation: 'visual' as const,
         exportEmbedImages: true,
       };
       expect(validateSettings(valid)).toEqual(valid);
@@ -143,6 +146,49 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
       expect(validateSettings({ restoreSession: false }).restoreSession).toBe(false);
       expect(validateSettings({ restoreSession: true }).restoreSession).toBe(true);
     });
+
+    it('defaults editorPresentation to source so existing users keep the source editor', () => {
+      expect(DEFAULT_SETTINGS.editorPresentation).toBe('source');
+      expect(validateSettings({}).editorPresentation).toBe('source');
+      expect(validateSettings(null).editorPresentation).toBe('source');
+      // Legacy payload captured before the field existed: migration must not flip to visual.
+      const legacyPayload = {
+        version: 1,
+        language: 'en-US',
+        theme: 'dark',
+        fontSize: 16,
+        lineHeight: 1.8,
+        tabSize: 4,
+        wordWrap: false,
+        lineNumbers: false,
+        restoreSession: false,
+        startupView: 'edit',
+        autoSave: true,
+      };
+      expect(validateSettings(legacyPayload).editorPresentation).toBe('source');
+    });
+
+    it('accepts only the supported editorPresentation values (source, visual)', () => {
+      expect(EDITOR_PRESENTATIONS).toEqual(['source', 'visual']);
+      expect(validateSettings({ editorPresentation: 'source' }).editorPresentation).toBe('source');
+      expect(validateSettings({ editorPresentation: 'visual' }).editorPresentation).toBe('visual');
+      expect(
+        validateSettings({ editorPresentation: 'wysiwyg' as unknown as EditorPresentation })
+          .editorPresentation
+      ).toBe('source');
+      expect(
+        validateSettings({ editorPresentation: 'Visual' as unknown as EditorPresentation })
+          .editorPresentation
+      ).toBe('source');
+      expect(
+        validateSettings({ editorPresentation: null as unknown as EditorPresentation })
+          .editorPresentation
+      ).toBe('source');
+      expect(
+        validateSettings({ editorPresentation: 1 as unknown as EditorPresentation })
+          .editorPresentation
+      ).toBe('source');
+    });
   });
 
   describe('loadSettings and saveSettings', () => {
@@ -223,6 +269,47 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
       expect(parsed.fontSize).toBe(20);
       expect(parsed.theme).toBe('dark');
       expect(localStorageMock[LEGACY_THEME_KEY]).toBe('dark');
+    });
+
+    it('keeps stored legacy settings on the source editor when editorPresentation is absent', () => {
+      localStorageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({
+        version: 1,
+        language: 'zh-CN',
+        theme: 'light',
+        fontSize: 14,
+        lineHeight: 1.6,
+        tabSize: 2,
+        wordWrap: true,
+        lineNumbers: true,
+        restoreSession: true,
+        startupView: 'split',
+      });
+
+      const loaded = loadSettings();
+      expect(loaded.editorPresentation).toBe('source');
+      expect(loaded.startupView).toBe('split');
+    });
+
+    it('persists a visual editorPresentation and restores it on the next load', () => {
+      saveSettings({ ...DEFAULT_SETTINGS, editorPresentation: 'visual' });
+
+      const stored = JSON.parse(localStorageMock[SETTINGS_STORAGE_KEY]);
+      expect(stored.editorPresentation).toBe('visual');
+      expect(loadSettings().editorPresentation).toBe('visual');
+
+      saveSettings({ ...DEFAULT_SETTINGS, editorPresentation: 'source' });
+      expect(JSON.parse(localStorageMock[SETTINGS_STORAGE_KEY]).editorPresentation).toBe('source');
+      expect(loadSettings().editorPresentation).toBe('source');
+    });
+
+    it('normalizes an invalid editorPresentation before writing it to storage', () => {
+      saveSettings({
+        ...DEFAULT_SETTINGS,
+        editorPresentation: 'bogus' as unknown as EditorPresentation,
+      });
+
+      expect(JSON.parse(localStorageMock[SETTINGS_STORAGE_KEY]).editorPresentation).toBe('source');
+      expect(loadSettings().editorPresentation).toBe('source');
     });
   });
 });

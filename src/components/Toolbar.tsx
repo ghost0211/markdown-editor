@@ -1,34 +1,151 @@
 import React from 'react';
 import {
   Bold,
-  Italic,
-  Strikethrough,
   Code,
+  CodeXml,
+  Eye,
   FileCode,
-  Quote,
-  Heading1,
-  Heading2,
-  Heading3,
+  Italic,
+  Link2,
   List,
   ListOrdered,
   ListTodo,
-  Link2,
   Image as ImageIcon,
-  Table as TableIcon,
   Minus,
+  Quote,
+  Strikethrough,
+  Table as TableIcon,
 } from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 import { MarkdownAction } from '@/lib/markdownCommands';
 import { useI18n } from '@/i18n';
+import type { TranslationKey } from '@/i18n';
 
-interface ToolbarProps {
+export type ToolbarPresentation = 'source' | 'visual';
+
+export interface ToolbarProps {
   onAction: (action: MarkdownAction) => void;
   disabled?: boolean;
+  /** Current editor presentation; unavailable switches are disabled. */
+  presentation?: ToolbarPresentation;
+  onPresentationChange?: (value: ToolbarPresentation) => void;
+  /** Formats reported by `getActiveMarkdownFormats` for the main selection. */
+  activeFormats?: readonly MarkdownAction[];
 }
 
-export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) => {
+interface ToolbarButtonConfig {
+  action: MarkdownAction;
+  labelKey: TranslationKey;
+  icon: LucideIcon;
+  /** Toggle buttons expose `aria-pressed` and highlight while active. */
+  toggle: boolean;
+}
+
+const INLINE_BUTTONS: readonly ToolbarButtonConfig[] = [
+  { action: 'bold', labelKey: 'toolbar.bold', icon: Bold, toggle: true },
+  { action: 'italic', labelKey: 'toolbar.italic', icon: Italic, toggle: true },
+  { action: 'strike', labelKey: 'toolbar.strike', icon: Strikethrough, toggle: true },
+  { action: 'quote', labelKey: 'toolbar.quote', icon: Quote, toggle: true },
+];
+
+const CODE_BUTTONS: readonly ToolbarButtonConfig[] = [
+  { action: 'inline-code', labelKey: 'toolbar.inlineCode', icon: Code, toggle: true },
+  { action: 'code-block', labelKey: 'toolbar.codeBlock', icon: FileCode, toggle: true },
+];
+
+const LIST_BUTTONS: readonly ToolbarButtonConfig[] = [
+  { action: 'ul', labelKey: 'toolbar.ul', icon: List, toggle: true },
+  { action: 'ol', labelKey: 'toolbar.ol', icon: ListOrdered, toggle: true },
+  { action: 'task', labelKey: 'toolbar.task', icon: ListTodo, toggle: true },
+];
+
+const INSERT_BUTTONS: readonly ToolbarButtonConfig[] = [
+  { action: 'link', labelKey: 'toolbar.link', icon: Link2, toggle: false },
+  { action: 'image', labelKey: 'toolbar.image', icon: ImageIcon, toggle: false },
+  { action: 'table', labelKey: 'toolbar.table', icon: TableIcon, toggle: false },
+  { action: 'hr', labelKey: 'toolbar.hr', icon: Minus, toggle: false },
+];
+
+const HEADING_OPTIONS: ReadonlyArray<{ value: MarkdownAction; labelKey: TranslationKey }> = [
+  { value: 'paragraph', labelKey: 'toolbar.paragraph' },
+  { value: 'h1', labelKey: 'toolbar.h1' },
+  { value: 'h2', labelKey: 'toolbar.h2' },
+  { value: 'h3', labelKey: 'toolbar.h3' },
+  { value: 'h4', labelKey: 'toolbar.h4' },
+  { value: 'h5', labelKey: 'toolbar.h5' },
+  { value: 'h6', labelKey: 'toolbar.h6' },
+];
+
+const HEADING_ACTIONS: readonly MarkdownAction[] = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
+
+export const Toolbar: React.FC<ToolbarProps> = ({
+  onAction,
+  disabled = false,
+  presentation = 'source',
+  onPresentationChange,
+  activeFormats,
+}) => {
   const { t } = useI18n();
-  const btnClass =
-    'h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const btnBase =
+    'h-7 w-7 inline-flex items-center justify-center rounded-md transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const btnClass = `${btnBase} text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80 hover:text-slate-900 dark:hover:text-white`;
+  const activeBtnClass = `${btnBase} bg-blue-100 text-blue-700 dark:bg-blue-500/25 dark:text-blue-200 hover:bg-blue-200 dark:hover:bg-blue-500/40`;
+  const modeBtnClass =
+    'h-6 px-2 inline-flex shrink-0 items-center justify-center gap-1 rounded text-slate-500 dark:text-slate-400 transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+  const modeActiveClass = 'bg-white dark:bg-slate-800 text-blue-700 dark:text-blue-200 shadow-sm';
+
+  const isActive = (action: MarkdownAction) => activeFormats?.includes(action) ?? false;
+  const activeHeading = HEADING_ACTIONS.find((action) => isActive(action)) ?? 'paragraph';
+
+  // Keep the editor selection and focus when a toolbar button is pressed.
+  const keepEditorSelection = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+  };
+
+  const renderButton = ({ action, labelKey, icon: Icon, toggle }: ToolbarButtonConfig) => {
+    const active = toggle && isActive(action);
+    const label = t(labelKey);
+    return (
+      <button
+        key={action}
+        type="button"
+        onClick={() => onAction(action)}
+        onMouseDown={keepEditorSelection}
+        disabled={disabled}
+        title={label}
+        aria-label={label}
+        aria-pressed={toggle ? active : undefined}
+        className={active ? activeBtnClass : btnClass}
+      >
+        <Icon className="w-3.5 h-3.5" />
+      </button>
+    );
+  };
+
+  const renderModeButton = (
+    mode: ToolbarPresentation,
+    icon: LucideIcon,
+    labelKey: TranslationKey
+  ) => {
+    const active = presentation === mode;
+    const label = t(labelKey);
+    return (
+      <button
+        key={mode}
+        type="button"
+        onClick={() => onPresentationChange?.(mode)}
+        onMouseDown={keepEditorSelection}
+        disabled={disabled || !onPresentationChange}
+        title={label}
+        aria-label={label}
+        aria-pressed={active}
+        className={active ? `${modeBtnClass} ${modeActiveClass}` : modeBtnClass}
+      >
+        {React.createElement(icon, { className: 'w-3 h-3' })}
+        <span className="whitespace-nowrap">{label}</span>
+      </button>
+    );
+  };
 
   return (
     <div
@@ -36,177 +153,54 @@ export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) 
       role="toolbar"
       aria-label={t('toolbar.ariaLabel')}
     >
-      {/* Headings */}
-      <div className="flex items-center space-x-0.5">
-        <button
-          onClick={() => onAction('h1')}
-          disabled={disabled}
-          title={t('toolbar.h1')}
-          aria-label={t('toolbar.h1')}
-          className={btnClass}
-        >
-          <Heading1 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('h2')}
-          disabled={disabled}
-          title={t('toolbar.h2')}
-          aria-label={t('toolbar.h2')}
-          className={btnClass}
-        >
-          <Heading2 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('h3')}
-          disabled={disabled}
-          title={t('toolbar.h3')}
-          aria-label={t('toolbar.h3')}
-          className={btnClass}
-        >
-          <Heading3 className="w-3.5 h-3.5" />
-        </button>
+      {/* Source / visual presentation switch */}
+      <div
+        className="flex items-center rounded-md border border-slate-200 dark:border-slate-700 p-0.5 space-x-0.5 shrink-0"
+        role="group"
+        aria-label={t('toolbar.presentationLabel')}
+        title={presentation === 'visual' ? t('editor.visualHint') : undefined}
+      >
+        {renderModeButton('source', CodeXml, 'toolbar.sourceMode')}
+        {renderModeButton('visual', Eye, 'toolbar.visualMode')}
       </div>
+
+      <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
+
+      {/* Heading level (body text + H1-H6) */}
+      <select
+        value={activeHeading}
+        onChange={(event) => onAction(event.target.value as MarkdownAction)}
+        disabled={disabled}
+        title={t('toolbar.headingStyle')}
+        aria-label={t('toolbar.headingStyle')}
+        className="h-7 shrink-0 rounded-md border border-slate-200 dark:border-slate-700 bg-transparent px-1 text-xs text-slate-600 dark:text-slate-300 hover:bg-slate-200 dark:hover:bg-slate-700/80 disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+      >
+        {HEADING_OPTIONS.map(({ value, labelKey }) => (
+          <option key={value} value={value} title={t(labelKey)} className="text-slate-900 dark:text-slate-100">
+            {t(labelKey)}
+          </option>
+        ))}
+      </select>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
       {/* Inline styles */}
-      <div className="flex items-center space-x-0.5">
-        <button
-          onClick={() => onAction('bold')}
-          disabled={disabled}
-          title={t('toolbar.bold')}
-          aria-label={t('toolbar.bold')}
-          className={btnClass}
-        >
-          <Bold className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('italic')}
-          disabled={disabled}
-          title={t('toolbar.italic')}
-          aria-label={t('toolbar.italic')}
-          className={btnClass}
-        >
-          <Italic className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('strike')}
-          disabled={disabled}
-          title={t('toolbar.strike')}
-          aria-label={t('toolbar.strike')}
-          className={btnClass}
-        >
-          <Strikethrough className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('quote')}
-          disabled={disabled}
-          title={t('toolbar.quote')}
-          aria-label={t('toolbar.quote')}
-          className={btnClass}
-        >
-          <Quote className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      <div className="flex items-center space-x-0.5">{INLINE_BUTTONS.map(renderButton)}</div>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
       {/* Code */}
-      <div className="flex items-center space-x-0.5">
-        <button
-          onClick={() => onAction('inline-code')}
-          disabled={disabled}
-          title={t('toolbar.inlineCode')}
-          aria-label={t('toolbar.inlineCode')}
-          className={btnClass}
-        >
-          <Code className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('code-block')}
-          disabled={disabled}
-          title={t('toolbar.codeBlock')}
-          aria-label={t('toolbar.codeBlock')}
-          className={btnClass}
-        >
-          <FileCode className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      <div className="flex items-center space-x-0.5">{CODE_BUTTONS.map(renderButton)}</div>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
       {/* Lists */}
-      <div className="flex items-center space-x-0.5">
-        <button
-          onClick={() => onAction('ul')}
-          disabled={disabled}
-          title={t('toolbar.ul')}
-          aria-label={t('toolbar.ul')}
-          className={btnClass}
-        >
-          <List className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('ol')}
-          disabled={disabled}
-          title={t('toolbar.ol')}
-          aria-label={t('toolbar.ol')}
-          className={btnClass}
-        >
-          <ListOrdered className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('task')}
-          disabled={disabled}
-          title={t('toolbar.task')}
-          aria-label={t('toolbar.task')}
-          className={btnClass}
-        >
-          <ListTodo className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      <div className="flex items-center space-x-0.5">{LIST_BUTTONS.map(renderButton)}</div>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
-      {/* Links, Media & Structure */}
-      <div className="flex items-center space-x-0.5">
-        <button
-          onClick={() => onAction('link')}
-          disabled={disabled}
-          title={t('toolbar.link')}
-          aria-label={t('toolbar.link')}
-          className={btnClass}
-        >
-          <Link2 className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('image')}
-          disabled={disabled}
-          title={t('toolbar.image')}
-          aria-label={t('toolbar.image')}
-          className={btnClass}
-        >
-          <ImageIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('table')}
-          disabled={disabled}
-          title={t('toolbar.table')}
-          aria-label={t('toolbar.table')}
-          className={btnClass}
-        >
-          <TableIcon className="w-3.5 h-3.5" />
-        </button>
-        <button
-          onClick={() => onAction('hr')}
-          disabled={disabled}
-          title={t('toolbar.hr')}
-          aria-label={t('toolbar.hr')}
-          className={btnClass}
-        >
-          <Minus className="w-3.5 h-3.5" />
-        </button>
-      </div>
+      {/* Links, Media & Structure (insert-only, no toggle highlight) */}
+      <div className="flex items-center space-x-0.5">{INSERT_BUTTONS.map(renderButton)}</div>
     </div>
   );
 };

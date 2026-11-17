@@ -37,7 +37,7 @@ import { I18nProvider, useI18n } from '@/i18n';
 import { applyCachedDocumentChange, cachedEditorStateIds, dropCachedEditorState } from '@/lib/editorStateCache';
 import { extractOutline } from '@/lib/outline';
 import { calculateStats } from '@/lib/stats';
-import { ViewMode, ThemeMode, EditorSettings, DiffSideRef } from '@/types';
+import { ViewMode, ThemeMode, EditorSettings, DiffSideRef, type EditorPresentation } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
 import { showInFolder, openExternalUrl, setWindowTheme, isTauri, chooseWorkspaceFolder, listWorkspace, createWorkspaceDocument, createWorkspaceFolder, renameWorkspacePath as renameWorkspaceFile } from '@/lib/native';
 import { workspaceEntryAbsolutePath, type WorkspaceEntry, type WorkspaceListing } from '@/lib/workspace';
@@ -667,6 +667,11 @@ const AppContent: React.FC<AppContentProps> = ({
     enabled: !isModalOpen,
   });
 
+  const [activeFormats, setActiveFormats] = useState<readonly MarkdownAction[]>([]);
+  const handlePresentationChange = useCallback((presentation: EditorPresentation) => {
+    updateSetting('editorPresentation', presentation);
+  }, [updateSetting]);
+
   const handleToolbarAction = useCallback((action: MarkdownAction) => {
     editorRef.current?.applyAction(action);
   }, []);
@@ -719,6 +724,9 @@ const AppContent: React.FC<AppContentProps> = ({
       value={activeTab?.content || ''}
       onChange={handleEditorChange}
       onCursorChange={handleCursorChange}
+      presentation={settings.editorPresentation}
+      sourcePath={activeTab?.filePath}
+      onFormatsChange={setActiveFormats}
       onScroll={handleEditorScroll}
       isDark={isDark}
       fontSize={settings.fontSize}
@@ -807,7 +815,9 @@ const AppContent: React.FC<AppContentProps> = ({
       />
 
       {viewMode !== 'read' && activeTab?.kind !== 'diff' && (
-        <Toolbar onAction={handleToolbarAction} disabled={!activeTab} />
+        <Toolbar onAction={handleToolbarAction} disabled={!activeTab}
+          presentation={settings.editorPresentation} onPresentationChange={handlePresentationChange}
+          activeFormats={activeFormats} />
       )}
 
       <div className="flex-1 flex overflow-hidden relative">

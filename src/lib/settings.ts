@@ -1,10 +1,20 @@
-import { ThemeMode, StartupViewMode, TabSizeOption, Language, EditorSettings } from '@/types';
+import {
+  ThemeMode,
+  StartupViewMode,
+  TabSizeOption,
+  Language,
+  EditorPresentation,
+  EditorSettings,
+} from '@/types';
 import { validateExportStyle, type ExportStyle } from '@/lib/exportStyle';
 
-export type { EditorSettings, StartupViewMode, TabSizeOption, Language };
+export type { EditorSettings, StartupViewMode, TabSizeOption, Language, EditorPresentation };
 
 export const SETTINGS_STORAGE_KEY = 'markdown_editor_settings_v1';
 export const LEGACY_THEME_KEY = 'markdown_editor_theme';
+
+/** Allowed values for {@link EditorSettings.editorPresentation}, in UI order. */
+export const EDITOR_PRESENTATIONS = ['source', 'visual'] as const;
 
 export const SETTINGS_BOUNDS = {
   fontSize: { min: 11, max: 28, step: 1, default: 14 },
@@ -28,6 +38,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   spellcheck: false,
   typewriterMode: false,
   focusMode: false,
+  editorPresentation: 'source',
   exportEmbedImages: false,
 };
 
@@ -115,6 +126,13 @@ export function validateSettings(raw: unknown): EditorSettings {
   const focusMode =
     typeof obj.focusMode === 'boolean' ? obj.focusMode : DEFAULT_SETTINGS.focusMode;
 
+  // 10. Editor presentation: 'source' | 'visual'. Missing or unknown values keep
+  // the classic source editor, so upgrading never changes how existing files edit.
+  let editorPresentation: EditorPresentation = DEFAULT_SETTINGS.editorPresentation;
+  if (obj.editorPresentation === 'source' || obj.editorPresentation === 'visual') {
+    editorPresentation = obj.editorPresentation;
+  }
+
   const exportEmbedImages =
     typeof obj.exportEmbedImages === 'boolean'
       ? obj.exportEmbedImages
@@ -142,6 +160,7 @@ export function validateSettings(raw: unknown): EditorSettings {
     spellcheck,
     typewriterMode,
     focusMode,
+    editorPresentation,
     exportEmbedImages,
     ...(exportStyle ? { exportStyle } : {}),
   };

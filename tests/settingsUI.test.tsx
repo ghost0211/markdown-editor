@@ -3,6 +3,13 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { SettingsModal } from '../src/components/SettingsModal';
 import { TitleBar } from '../src/components/TitleBar';
 import { DEFAULT_SETTINGS, SETTINGS_BOUNDS } from '../src/lib/settings';
+import { I18nProvider } from '../src/i18n';
+
+/** Returns the opening tag of the radio button carrying the given aria-label. */
+function findRadioButtonTag(html: string, ariaLabel: string): string {
+  const match = html.match(new RegExp(`<button[^>]*aria-label="${ariaLabel}"[^>]*>`));
+  return match ? match[0] : '';
+}
 
 describe('Settings UI Components (SettingsModal & TitleBar)', () => {
   describe('SettingsModal rendering', () => {
@@ -123,6 +130,80 @@ describe('Settings UI Components (SettingsModal & TitleBar)', () => {
 
       expect(html).toContain('显示行号');
       expect(html).toContain('aria-label="显示行号"');
+    });
+
+    it('renders the default editing mode selector with source selected by default', () => {
+      const html = renderToStaticMarkup(
+        <SettingsModal
+          isOpen={true}
+          onClose={mockOnClose}
+          settings={DEFAULT_SETTINGS}
+          onUpdateSetting={mockOnUpdateSetting}
+          onResetSettings={mockOnResetSettings}
+          showToast={mockShowToast}
+        />
+      );
+
+      // The editor section explains that the switch is display-only.
+      expect(html).toContain('默认编辑方式');
+      expect(html).toContain('aria-label="默认编辑方式"');
+      expect(html).toContain('仅改变显示方式，不修改 Markdown 源码');
+      expect(html).toContain('切回源码编辑');
+
+      // Both presentations are offered as accessible radio options.
+      expect(html).toContain('>源码<');
+      expect(html).toContain('>可视化<');
+      const sourceButton = findRadioButtonTag(html, '使用源码模式');
+      const visualButton = findRadioButtonTag(html, '使用可视化模式');
+      expect(sourceButton).toContain('role="radio"');
+      expect(sourceButton).toContain('type="button"');
+      expect(visualButton).toContain('role="radio"');
+
+      // Existing users default to the source editor.
+      expect(DEFAULT_SETTINGS.editorPresentation).toBe('source');
+      expect(sourceButton).toContain('aria-checked="true"');
+      expect(visualButton).toContain('aria-checked="false"');
+    });
+
+    it('reflects editorPresentation="visual" in the selector state', () => {
+      const html = renderToStaticMarkup(
+        <SettingsModal
+          isOpen={true}
+          onClose={mockOnClose}
+          settings={{ ...DEFAULT_SETTINGS, editorPresentation: 'visual' }}
+          onUpdateSetting={mockOnUpdateSetting}
+          onResetSettings={mockOnResetSettings}
+          showToast={mockShowToast}
+        />
+      );
+
+      const sourceButton = findRadioButtonTag(html, '使用源码模式');
+      const visualButton = findRadioButtonTag(html, '使用可视化模式');
+      expect(sourceButton).toContain('aria-checked="false"');
+      expect(visualButton).toContain('aria-checked="true"');
+    });
+
+    it('renders English labels and explanation for the default editing mode selector', () => {
+      const html = renderToStaticMarkup(
+        <I18nProvider language="en-US">
+          <SettingsModal
+            isOpen={true}
+            onClose={mockOnClose}
+            settings={{ ...DEFAULT_SETTINGS, language: 'en-US', editorPresentation: 'visual' }}
+            onUpdateSetting={mockOnUpdateSetting}
+            onResetSettings={mockOnResetSettings}
+            showToast={mockShowToast}
+          />
+        </I18nProvider>
+      );
+
+      expect(html).toContain('Default Editing Mode');
+      expect(html).toContain('aria-label="Use visual mode"');
+      expect(html).toContain('Display only: Markdown source is untouched');
+      expect(html).toContain('>Visual<');
+      expect(html).toContain('>Source<');
+      expect(findRadioButtonTag(html, 'Use visual mode')).toContain('aria-checked="true"');
+      expect(findRadioButtonTag(html, 'Use source mode')).toContain('aria-checked="false"');
     });
 
     it('should render startup and session section with restore session switch and accessible label', () => {

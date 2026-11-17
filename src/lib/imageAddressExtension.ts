@@ -1,5 +1,7 @@
 import { EditorSelection, EditorState, Extension, Facet, Prec, RangeSetBuilder, StateEffect, StateField } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
+import { isVisualSourceLine, visualEditingOptions } from '@/lib/visualEditing';
+import { findVisualImageRanges, type VisualImageRange, type VisualImageSource, VisualImageWidget, visualImageTheme } from '@/lib/visualImageWidget';
 import { Decoration, DecorationSet, EditorView, hoverTooltip, keymap, showTooltip, Tooltip, WidgetType } from '@codemirror/view';
 import {
   findImageAddressRanges,
@@ -25,6 +27,7 @@ export interface ImageAddressLabels {
 interface AddressState {
   ranges: readonly ImageAddressRange[];
   decorations: DecorationSet;
+  images: readonly (VisualImageRange & { source: VisualImageSource })[];
 }
 
 const openAddress = StateEffect.define<ImageAddressRange | null>();
@@ -40,7 +43,7 @@ class ImageAddressWidget extends WidgetType {
   constructor(readonly label: string, readonly labels: ImageAddressLabels) { super(); }
 
   eq(other: ImageAddressWidget): boolean {
-    return this.label === other.label && this.labels === other.labels;
+    return this.label === other.label && this.labels.address === other.labels.address && this.labels.hint === other.labels.hint;
   }
 
   toDOM(view: EditorView): HTMLElement {
@@ -65,9 +68,16 @@ class ImageAddressWidget extends WidgetType {
   ignoreEvent(event: Event): boolean { return event.type !== 'mousemove' && event.type !== 'mouseover' && event.type !== 'mouseout'; }
 }
 
-function makeDecorations(state: EditorState, ranges: readonly ImageAddressRange[], labels: ImageAddressLabels): DecorationSet {
+function makeDecorations(state: EditorState, ranges: readonly ImageAddressRange[], labels: ImageAddressLabels,
+  images: AddressState['images']): DecorationSet {
   const builder = new RangeSetBuilder<Decoration>();
+  const visual = state.facet(visualEditingOptions);
+  const rendered = visual ? images.filter((image) => !isVisualSourceLine(state, image.from, image.to)) : [];
+  const entries: { from: number; to: number; decoration: Decoration }[] = [];
+  for (const image of rendered) entries.push({ from: image.from, to: image.to,
+    decoration: Decoration.replace({ widget: new VisualImageWidget(image.source, image.alt, visual!) }) });
   for (const range of ranges) {
+    if (rendered.some((image) => range.from >= image.from && range.to <= image.to)) continue;
     const length = range.to - range.from;
     // Read only the MIME prefix for embedded payloads; rebuilding a display
     // label must not copy megabytes from the document on every keystroke.
@@ -78,8 +88,9 @@ function makeDecorations(state: EditorState, ranges: readonly ImageAddressRange[
     // URL tokens may span a line in hand-written Markdown; direct StateField
     // decorations can hide those line breaks without violating view layout.
     const label = escapeLabel(formatImageAddressLabel(raw, range.alt, labels.embedded));
-    builder.add(range.from, range.to, Decoration.replace({ widget: new ImageAddressWidget(label, labels) }));
+    entries.push({ from: range.from, to: range.to, decoration: Decoration.replace({ widget: new ImageAddressWidget(label, labels) }) });
   }
+  for (const entry of entries.sort((a, b) => a.from - b.from)) builder.add(entry.from, entry.to, entry.decoration);
   return builder.finish();
 }
 
@@ -88,14 +99,30 @@ function makeDecorations(state: EditorState, ranges: readonly ImageAddressRange[
 export const imageAddresses = StateField.define<AddressState>({
   create(state) {
     const ranges = findImageAddressRanges(state);
-    return { ranges, decorations: makeDecorations(state, ranges, state.facet(addressLabels)) };
+    const images = state.facet(visualEditingOptions) ? findVisualImageRanges(state).map((image) => ({ ...image,
+      source: { doc: state.doc, from: image.urlFrom, to: image.urlTo } })) : [];
+    return { ranges, images, decorations: makeDecorations(state, ranges, state.facet(addressLabels), images) };
   },
   update(value, transaction) {
-    if (transaction.docChanged || syntaxTree(transaction.startState) !== syntaxTree(transaction.state) ||
-        transaction.startState.facet(addressLabels) !== transaction.state.facet(addressLabels)) {
-      const ranges = findImageAddressRanges(transaction.state);
-      return { ranges, decorations: makeDecorations(transaction.state, ranges, transaction.state.facet(addressLabels)) };
+    const state = transaction.state;
+    const visual = state.facet(visualEditingOptions);
+    const presentationChanged = transaction.startState.facet(visualEditingOptions) !== visual;
+    if (transaction.docChanged || syntaxTree(transaction.startState) !== syntaxTree(state) ||
+        transaction.startState.facet(addressLabels) !== state.facet(addressLabels) || presentationChanged) {
+      const ranges = findImageAddressRanges(state);
+      const images = visual ? findVisualImageRanges(state).map((image) => {
+        const previous = value.images.find((item) => transaction.changes.mapPos(item.from, 1) === image.from &&
+          transaction.changes.mapPos(item.urlFrom, 1) === image.urlFrom && transaction.changes.mapPos(item.urlTo, -1) === image.urlTo);
+        let changed = false;
+        if (previous) transaction.changes.iterChangedRanges((from, to) => {
+          if (from <= previous.urlTo && to >= previous.urlFrom) changed = true;
+        });
+        return { ...image, source: previous && !changed ? previous.source : { doc: state.doc, from: image.urlFrom, to: image.urlTo } };
+      }) : [];
+      return { ranges, images, decorations: makeDecorations(state, ranges, state.facet(addressLabels), images) };
     }
+    if (visual && transaction.selection) return { ...value,
+      decorations: makeDecorations(state, value.ranges, state.facet(addressLabels), value.images) };
     return value;
   },
   provide: (field) => [
@@ -107,7 +134,10 @@ export const imageAddresses = StateField.define<AddressState>({
 /** Image files dropped on a chip belong beside that image, not inside its URL. */
 export function safeImageInsertionPosition(state: EditorState, position: number): number {
   const range = state.field(imageAddresses, false)?.ranges.find((item) => position >= item.from && position <= item.to);
-  return range ? range.imageTo : position;
+  if (range) return range.imageTo;
+  const image = state.field(imageAddresses, false)?.images.find((item) => position > item.from && position < item.to &&
+    !isVisualSourceLine(state, item.from, item.to));
+  return image ? image.to : position;
 }
 
 /** Display-only replacements: saved/copied Markdown continues to contain the real URLs. */
@@ -174,6 +204,7 @@ export function createImageAddressExtension(labels: ImageAddressLabels): Extensi
       } },
     ])),
     addressTheme,
+    visualImageTheme,
   ];
 }
 

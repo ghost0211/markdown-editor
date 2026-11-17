@@ -13,7 +13,7 @@ import { oneDark } from '@codemirror/theme-one-dark';
 import { EditorView, ViewUpdate } from '@codemirror/view';
 import { EditorState, Text } from '@codemirror/state';
 import { isolateHistory } from '@codemirror/commands';
-import { indentUnit } from '@codemirror/language';
+import { indentUnit, syntaxTree } from '@codemirror/language';
 import { MarkdownAction, executeCodeMirrorAction } from '@/lib/markdownCommands';
 import { createMarkdownEditingKeymap } from '@/lib/editorKeymap';
 import { createTypewriterExtension } from '@/lib/typewriterMode';
@@ -21,6 +21,14 @@ import { createFocusModeExtension } from '@/lib/focusMode';
 import { createSearchMatchCountExtension } from '@/lib/searchMatchCount';
 import { createEmbeddedResourceProtection } from '@/lib/embeddedResourceProtection';
 import { createImageAddressExtension, safeImageInsertionPosition } from '@/lib/imageAddressExtension';
+import { createVisualEditingExtension } from '@/lib/visualEditing';
+import { editorMarkdownFallbacks } from '@/lib/editorMarkdown';
+import { createVisualImageContextExtension } from '@/lib/visualImageContext';
+import { createVisualSelectionToolbar } from '@/lib/visualSelectionToolbar';
+import { createSlashCommandExtension } from '@/lib/slashCommands';
+import { applyFocusedVisualTableAction, createVisualTableExtension } from '@/lib/visualTable';
+import { getActiveMarkdownFormats } from '@/lib/markdownFormatting';
+import type { EditorPresentation } from '@/types';
 import {
   isSingleUrl,
   isTableRowLine,
@@ -84,6 +92,9 @@ interface EditorProps {
   /** Receives pasted/dropped image files and the source position to insert at. */
   onImageFiles?: (files: File[], position: number) => void;
   onProtectedReplace?: () => void;
+  presentation?: EditorPresentation;
+  sourcePath?: string | null;
+  onFormatsChange?: (formats: readonly MarkdownAction[]) => void;
 }
 
 export { cachedEditorStateIds, dropCachedEditorState };
@@ -142,6 +153,9 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       initialCursorCol = 1,
       onImageFiles,
       onProtectedReplace,
+      presentation = 'source',
+      sourcePath,
+      onFormatsChange,
     },
     ref
   ) => {
@@ -156,6 +170,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     onImageFilesRef.current = onImageFiles;
     const onProtectedReplaceRef = useRef(onProtectedReplace);
     onProtectedReplaceRef.current = onProtectedReplace;
+    const onFormatsChangeRef = useRef(onFormatsChange);
+    onFormatsChangeRef.current = onFormatsChange;
+    const lastFormatsRef = useRef('');
+    const reportFormats = useCallback((state: EditorState, force = false) => {
+      if (!onFormatsChangeRef.current) return;
+      const formats = getActiveMarkdownFormats(state);
+      const signature = formats.join(',');
+      if (force || signature !== lastFormatsRef.current) {
+        lastFormatsRef.current = signature;
+        onFormatsChangeRef.current(formats);
+      }
+    }, []);
 
     // Stable for as long as the user's line-number preference is unchanged.
     const basicSetup = useMemo(() => ({ ...BASE_BASIC_SETUP, lineNumbers }), [lineNumbers]);
@@ -172,7 +198,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         createMarkdownEditingKeymap({ t, language }),
         createSearchMatchCountExtension(),
         createEmbeddedResourceProtection(() => onProtectedReplaceRef.current?.()),
-        markdown({ base: markdownLanguage, codeLanguages: languages }),
+        markdown({ base: markdownLanguage, codeLanguages: languages, extensions: editorMarkdownFallbacks }),
         createImageAddressExtension({
           embedded: t('editor.embeddedImage'),
           address: t('editor.imageAddress'),
@@ -192,7 +218,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             fontSize: `${fontSize}px`,
           },
           '.cm-scroller': {
-            fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
+            fontFamily: presentation === 'visual' ? "'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif" : "'JetBrains Mono', 'Fira Code', 'Cascadia Code', Consolas, monospace",
             lineHeight: `${lineHeight}`,
           },
         }),
@@ -298,6 +324,47 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         }),
       ];
 
+      if (presentation === 'visual') {
+        ext.push(createVisualEditingExtension({
+          sourcePath,
+          taskToggle: t('editor.visualTaskToggle'),
+          imageEdit: t('visualImage.open'),
+          imageLoading: t('editor.visualImageLoading'),
+          imageFailed: t('editor.visualImageFailed'),
+        }));
+        ext.push(createVisualTableExtension({
+          label: t('visualTable.label'), toolbar: t('visualTable.toolbar'),
+          cellLabel: t('visualTable.cellLabel'), headerLabel: t('visualTable.headerLabel'), hint: t('visualTable.hint'),
+          addRow: t('visualTable.addRow'), deleteRow: t('visualTable.deleteRow'),
+          addColumn: t('visualTable.addColumn'), deleteColumn: t('visualTable.deleteColumn'),
+          alignGroup: t('visualTable.alignGroup'), alignLeft: t('visualTable.alignLeft'), alignCenter: t('visualTable.alignCenter'),
+          alignRight: t('visualTable.alignRight'), alignDefault: t('visualTable.alignDefault'),
+          editSource: t('visualTable.editSource'), stale: t('visualTable.stale'),
+          rowAdded: t('visualTable.rowAdded'), rowDeleted: t('visualTable.rowDeleted'),
+          columnAdded: t('visualTable.columnAdded'), columnDeleted: t('visualTable.columnDeleted'),
+          alignmentChanged: t('visualTable.alignmentChanged'), rowLimit: t('visualTable.rowLimit'), columnLimit: t('visualTable.columnLimit'),
+        }));
+        ext.push(createVisualImageContextExtension({
+          title: t('visualImage.title'), alt: t('visualImage.alt'), address: t('visualImage.address'),
+          embedded: t('visualImage.embedded'), apply: t('visualImage.apply'), close: t('visualImage.close'),
+          source: t('visualImage.source'), replace: t('visualImage.replace'), remove: t('visualImage.remove'),
+          confirmRemove: t('visualImage.confirmRemove'), removeHint: t('visualImage.removeHint'),
+          invalid: t('visualImage.invalid'), fileFailed: t('visualImage.fileFailed'), busy: t('visualImage.busy'),
+        }));
+        ext.push(createVisualSelectionToolbar({
+          label: t('visualTools.toolbarLabel'), hint: t('visualTools.toolbarHint'),
+          bold: t('visualTools.bold'), italic: t('visualTools.italic'), strike: t('visualTools.strike'),
+          inlineCode: t('visualTools.inlineCode'), link: t('visualTools.link'),
+        }, { t, language }));
+        ext.push(createSlashCommandExtension({
+          menuLabel: t('visualTools.slashMenuLabel'), paragraph: t('visualTools.slashParagraph'),
+          heading1: t('visualTools.slashHeading1'), heading2: t('visualTools.slashHeading2'), heading3: t('visualTools.slashHeading3'),
+          list: t('visualTools.slashList'), task: t('visualTools.slashTask'), quote: t('visualTools.slashQuote'),
+          codeBlock: t('visualTools.slashCodeBlock'), table: t('visualTools.slashTable'),
+          image: t('visualTools.slashImage'), link: t('visualTools.slashLink'), divider: t('visualTools.slashDivider'),
+        }, { t, language }));
+      }
+
       if (wordWrap) {
         ext.push(EditorView.lineWrapping);
       }
@@ -315,7 +382,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       }
 
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, t, language]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, presentation, sourcePath, t, language]);
 
     /**
      * Editor state to start this document from.
@@ -377,13 +444,14 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     const handleUpdate = useCallback(
       (viewUpdate: ViewUpdate) => {
         rememberState(docId, viewUpdate.state);
-        if (!onCursorChange) return;
+        if (viewUpdate.docChanged || viewUpdate.selectionSet || syntaxTree(viewUpdate.startState) !== syntaxTree(viewUpdate.state)) reportFormats(viewUpdate.state);
+        if (!onCursorChange || (!viewUpdate.docChanged && !viewUpdate.selectionSet)) return;
         const pos = viewUpdate.state.selection.main.head;
         const line = viewUpdate.state.doc.lineAt(pos);
         const col = pos - line.from + 1;
         onCursorChange(line.number, col);
       },
-      [docId, onCursorChange, rememberState]
+      [docId, onCursorChange, rememberState, reportFormats]
     );
 
     // Expose imperative actions to parent
@@ -433,6 +501,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         applyAction: (action: MarkdownAction) => {
           const view = cmRef.current?.view;
           if (!view) return;
+          if (applyFocusedVisualTableAction(view, action, { t, language })) return;
           executeCodeMirrorAction(view, action, { t, language });
         },
 
@@ -541,7 +610,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           extensions={extensions}
           onChange={onChange}
           onUpdate={handleUpdate}
-          onCreateEditor={(_view, state) => rememberState(docId, state)}
+          onCreateEditor={(_view, state) => { rememberState(docId, state); reportFormats(state, true); }}
           basicSetup={basicSetup}
           className="h-full font-mono"
         />

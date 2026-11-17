@@ -18,7 +18,7 @@ import {
   Download,
 } from 'lucide-react';
 import clsx from 'clsx';
-import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption, Language } from '@/types';
+import { EditorSettings, ThemeMode, StartupViewMode, TabSizeOption, Language, EditorPresentation } from '@/types';
 import { SETTINGS_BOUNDS } from '@/lib/settings';
 import { openWindowsDefaultAppsSettings, isTauri } from '@/lib/native';
 import { useI18n } from '@/i18n';
@@ -273,6 +273,57 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <div className="bg-panel rounded-lg p-3 border border-slate-200/80 dark:border-slate-800 space-y-3.5">
+              {/* Default editing presentation (source / visual) */}
+              <div className="flex items-center justify-between pb-2 border-b border-slate-200/60 dark:border-slate-800">
+                <div className="pr-3">
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.editorPresentation')}
+                  </span>
+                  <span className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.editorPresentationDesc')}
+                  </span>
+                </div>
+                <div
+                  role="radiogroup"
+                  aria-label={t('settings.editorPresentationAria')}
+                  className="flex items-center space-x-1 bg-white dark:bg-slate-800 p-0.5 rounded border border-slate-200 dark:border-slate-700 shrink-0"
+                >
+                  {(
+                    [
+                      {
+                        value: 'source',
+                        label: t('settings.editorPresentationSource'),
+                        ariaLabel: t('settings.editorPresentationSourceAria'),
+                      },
+                      {
+                        value: 'visual',
+                        label: t('settings.editorPresentationVisual'),
+                        ariaLabel: t('settings.editorPresentationVisualAria'),
+                      },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.value}
+                      type="button"
+                      role="radio"
+                      aria-checked={settings.editorPresentation === opt.value}
+                      aria-label={opt.ariaLabel}
+                      onClick={() =>
+                        onUpdateSetting('editorPresentation', opt.value as EditorPresentation)
+                      }
+                      className={clsx(
+                        'px-2.5 py-1 rounded font-medium text-[11px] transition-colors',
+                        settings.editorPresentation === opt.value
+                          ? 'bg-blue-600 text-white shadow-sm'
+                          : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-700/60'
+                      )}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
               {/* Font Size */}
               <div className="flex items-center justify-between">
                 <div>

@@ -113,6 +113,9 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
         { key: 'Ctrl + Z / Y', desc: t('shortcutsModal.undoRedo') },
         { key: 'Ctrl + F', desc: t('shortcutsModal.find') },
         { key: 'Ctrl + H', desc: t('shortcutsModal.replace') },
+        { key: 'Alt + F10', desc: t('visualTools.toolbarHint') },
+        { key: '/', desc: t('visualTools.slashMenuLabel') },
+        { key: 'Tab / Shift + Tab / Esc', desc: t('visualTable.hint') },
       ],
     },
   ];

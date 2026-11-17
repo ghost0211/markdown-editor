@@ -7,6 +7,12 @@ export type ThemeMode = 'light' | 'dark' | 'system';
 export type StartupViewMode = 'remember-last' | ViewMode;
 export type TabSizeOption = 2 | 4 | 8;
 export type Language = 'zh-CN' | 'en-US';
+/**
+ * How the editor presents a Markdown buffer.
+ * - 'source': CodeMirror source editing (the legacy, always-available view).
+ * - 'visual': render inline widgets/decorations while the underlying text stays source.
+ */
+export type EditorPresentation = 'source' | 'visual';
 
 export interface EditorSettings {
   version: 1;
@@ -27,6 +33,12 @@ export interface EditorSettings {
   typewriterMode: boolean;
   /** Dim paragraphs outside the active block so the current paragraph stands out. */
   focusMode: boolean;
+  /**
+   * Default editing presentation. 'source' keeps the classic CodeMirror editor
+   * and is the default for existing users (their stored settings lack the key).
+   * 'visual' only changes display; it never rewrites the Markdown source.
+   */
+  editorPresentation: EditorPresentation;
   /** Inline local images as data URLs when exporting HTML, so the file is self-contained. */
   exportEmbedImages: boolean;
   /**
