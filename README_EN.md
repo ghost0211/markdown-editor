@@ -49,23 +49,23 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 ### Local Document History
 
 - Successful saves of local Markdown / XMD documents automatically create snapshots, including Auto Save; consecutive identical content is skipped. Closing a tab retains its history.
-- Open the title-bar History button to select a snapshot and compare it with the current buffer in a read-only side-by-side diff. Restore changes the undoable editing buffer only; inspect and save afterward instead of overwriting the file immediately.
+- Open Document tools → History to select a snapshot and compare it with the current buffer in a read-only side-by-side diff. Restore changes the undoable editing buffer only; inspect and save afterward instead of overwriting the file immediately.
 - Keep up to 50 snapshots per document and 64 MiB overall, pruning oldest first. Snapshots and indexes are written atomically; body length and SHA-256 are validated before reading. A damaged index can be rebuilt from safe snapshots; malformed snapshots are preserved rather than restored or overwritten.
 - Stored locally in `history/v1/<normalized-path-hash>/` under the application data directory, as plaintext only: no upload, Git dependency, or encryption. XMD snapshots preserve its current editor Markdown, including embedded resources; historical versions of external asset files are not separately copied.
 
 ### Templates & Snippets
 
-- The title-bar Templates action offers bilingual GFM meeting minutes, weekly report, technical proposal, and reading-notes templates. Create a separate document or insert at the cursor; new documents retain normal unsaved-change protection.
+- Document tools → Templates and reusable snippets offers bilingual GFM meeting minutes, weekly report, technical proposal, and reading-notes templates. Create a separate document or insert at the cursor; new documents retain normal unsaved-change protection.
 - Create, edit, and delete up to 50 local snippets (256 KiB body each), with a remembered author. `{{date}}`, `{{time}}`, `{{datetime}}`, `{{title}}`, and `{{author}}` use local text substitution only, never code execution.
 
 ### Document Quality Checks
 
-- The title-bar Quality action uses the real Markdown AST to check heading-level jumps, empty headings/links, missing image alt text, unclosed code/front matter, duplicate headings, and missing/unresolved local resources.
+- Document tools → Check document quality uses the real Markdown AST to check heading-level jumps, empty headings/links, missing image alt text, unclosed code/front matter, duplicate headings, and missing/unresolved local resources.
 - Filter errors, warnings, and informational findings; select one to locate its source line. Code, math, comments, and escaped Markdown are not mistaken for content. Local files receive metadata-only stat checks; no file bodies are read and no remote links are contacted. Reports never auto-fix or rewrite the document.
 
 ### Export Style Themes
 
-- Configure system/serif/monospace fonts, 10–20px body text, light/sepia/dark palettes, cover, table of contents, header text, and page numbers. Save up to 10 named local presets.
+- Open Export → Export theme to configure system/serif/monospace fonts, 10–20px body text, light/sepia/dark palettes, cover, table of contents, header text, and page numbers. Save up to 10 named local presets.
 - HTML/PDF share a fixed safe style whitelist. Word supports a real TOC field, cover, header, and optional page-number footer. Without a saved custom theme, existing export behavior is retained; XMD is unchanged.
 - PDF page numbers use Edge's native print header/footer. Custom header text applies to HTML/Word. HTML print page numbers use progressive `counter(page)` enhancement; unsupported browsers do not receive fabricated page numbers.
 
@@ -76,7 +76,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 - Mutations stay inside the chosen root. Creating/renaming never overwrites an existing target; root renames and moving a folder into itself are rejected. Open-tab paths and local references to renamed paths are synchronized with undoable, dirty-state-preserving edits. Snapshots under the old path are not migrated.
 
 ### Image & Attachment Resource Manager
-   - Open the image icon labelled Resources in the title bar to browse resources referenced by the current document. Search/filter All, Images, Attachments or Missing; preview images, copy full paths, inspect sizes/reference counts, and jump to each source line.
+   - Open Document tools → Image and attachment resource manager in the title bar to browse resources referenced by the current document. Search/filter All, Images, Attachments or Missing; preview images, copy full paths, inspect sizes/reference counts, and jump to each source line.
    - Local files are checked on disk. Remote images remain unknown until used, with no bulk downloading. Export original resource bytes (up to 32 MiB each) or reveal local files in Explorer; attachment downloads never navigate to executable content. A conversion batch is limited to 128 MiB.
    - Saved desktop Markdown documents can convert one/all embedded images into sibling `assets/` files with relative references. New files never overwrite existing assets; source changes only after every file has been written and can be undone. Save afterward (or use enabled Auto Save). XMD resources remain bundled.
    - Only referenced resources are inventoried; no disk-wide scanning or file deletion. Compression/format conversion, embedding external files and orphan-file cleanup are not included yet.

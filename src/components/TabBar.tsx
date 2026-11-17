@@ -301,7 +301,7 @@ export const TabBar: React.FC<TabBarProps> = ({
 
   return (
     <div
-      className="h-9 bg-chrome border-b border-slate-300 dark:border-slate-800 flex items-center px-1 select-none shrink-0 overflow-hidden"
+      className="h-10 bg-chrome border-b border-slate-200 dark:border-slate-800 flex items-center px-2 select-none shrink-0 overflow-hidden"
       onWheel={handleWheel}
       onContextMenu={handleBarContextMenu}
       role="tablist"
@@ -361,10 +361,10 @@ export const TabBar: React.FC<TabBarProps> = ({
                 }
               }}
               className={clsx(
-                'group relative flex items-center h-7 px-2.5 max-w-[200px] min-w-[110px] text-xs rounded-t-md cursor-pointer border-t border-x transition-all select-none',
+                'group relative flex items-center h-8 px-2.5 max-w-[200px] min-w-[110px] text-xs rounded-md cursor-pointer border transition-all select-none',
                 'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-inset',
                 isActive
-                  ? 'bg-app text-slate-800 dark:text-slate-100 border-slate-300 dark:border-slate-800 border-b-app font-medium shadow-sm z-10'
+                  ? 'bg-app text-slate-800 dark:text-slate-100 border-slate-200 dark:border-slate-700 font-medium shadow-sm z-10'
                   : 'bg-transparent text-slate-600 dark:text-slate-400 border-transparent hover:bg-slate-300/60 dark:hover:bg-slate-800/60'
               )}
               title={tab.filePath || tab.title}

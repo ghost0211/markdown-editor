@@ -1,38 +1,15 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React from 'react';
 import {
-  FileText,
-  FilePlus,
-  FolderOpen,
-  Save,
-  HelpCircle,
-  Sun,
-  Moon,
-  Monitor,
-  Columns2,
-  Edit3,
-  BookOpen,
-  GitCompareArrows,
-  PanelLeft,
-  Download,
-  LoaderCircle,
-  ChevronDown,
-  FileType,
-  FileCode,
-  ClipboardCopy,
-  FileArchive,
-  Images,
-  Search,
-  Settings,
-  History,
+  FileText, FilePlus, FolderOpen, Save, HelpCircle, Sun, Moon, Monitor,
+  Columns2, Edit3, BookOpen, GitCompareArrows, PanelLeft, Search, Settings,
   FolderTree,
-  LayoutTemplate,
-  ShieldCheck,
-  Palette,
 } from 'lucide-react';
-import { ThemeMode, ViewMode, DocumentTab } from '@/types';
-import type { RecentFile } from '@/lib/recentFiles';
-import { useI18n } from '@/i18n';
 import clsx from 'clsx';
+import type { ThemeMode, ViewMode, DocumentTab } from '@/types';
+import { useI18n } from '@/i18n';
+import { DocumentToolsMenu } from './titleBar/DocumentToolsMenu';
+import { ExportMenu } from './titleBar/ExportMenu';
+import { RecentFilesMenu } from './titleBar/RecentFilesMenu';
 
 interface TitleBarProps {
   activeTab?: DocumentTab;
@@ -56,7 +33,7 @@ interface TitleBarProps {
   onOpenShortcuts: () => void;
   onOpenSettings: () => void;
   onCompare?: () => void;
-  recentFiles?: RecentFile[];
+  recentFiles?: import('@/lib/recentFiles').RecentFile[];
   onOpenRecent?: (path: string) => void;
   onClearRecent?: () => void;
   onOpenResources?: () => void;
@@ -68,625 +45,87 @@ interface TitleBarProps {
   onOpenWorkspace?: () => void;
 }
 
+const iconButtonClass = 'p-1.5 rounded-md text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+
 export const TitleBar: React.FC<TitleBarProps> = ({
-  activeTab,
-  viewMode,
-  onSetViewMode,
-  theme,
-  onSetTheme,
-  isSidebarOpen,
-  onToggleSidebar,
-  onNew,
-  onOpen,
-  onSave,
-  onSaveAs,
-  onExportWord,
-  onExportPdf,
-  onExportHtml,
-  onExportXmd,
-  onCopyRichText,
-  isExporting = false,
-  exportingType = null,
-  onOpenShortcuts,
-  onOpenSettings,
-  onCompare,
-  recentFiles = [],
-  onOpenRecent,
-  onClearRecent,
-  onOpenResources,
-  onOpenSearch,
-  onOpenHistory,
-  onOpenTemplates,
-  onOpenQuality,
-  onOpenExportTheme,
-  onOpenWorkspace,
+  activeTab, viewMode, onSetViewMode, theme, onSetTheme, isSidebarOpen, onToggleSidebar,
+  onNew, onOpen, onSave, onSaveAs, onExportWord, onExportPdf, onExportHtml, onExportXmd,
+  onCopyRichText, isExporting = false, exportingType = null, onOpenShortcuts, onOpenSettings,
+  onCompare, recentFiles = [], onOpenRecent, onClearRecent, onOpenResources, onOpenSearch,
+  onOpenHistory, onOpenTemplates, onOpenQuality, onOpenExportTheme, onOpenWorkspace,
 }) => {
   const { t } = useI18n();
-  const [isExportMenuOpen, setIsExportMenuOpen] = useState(false);
-  const exportDropdownRef = useRef<HTMLDivElement>(null);
-  const [isRecentMenuOpen, setIsRecentMenuOpen] = useState(false);
-  const recentDropdownRef = useRef<HTMLDivElement>(null);
-
-  // Close the recent-files menu on outside click or Escape
-  useEffect(() => {
-    if (!isRecentMenuOpen) return;
-
-    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (
-        recentDropdownRef.current &&
-        !recentDropdownRef.current.contains(e.target as Node)
-      ) {
-        setIsRecentMenuOpen(false);
-      }
-    };
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setIsRecentMenuOpen(false);
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isRecentMenuOpen]);
-
-  // Close dropdown on outside click or Escape
-  useEffect(() => {
-    if (!isExportMenuOpen) return;
-
-    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
-      if (
-        exportDropdownRef.current &&
-        !exportDropdownRef.current.contains(e.target as Node)
-      ) {
-        setIsExportMenuOpen(false);
-      }
-    };
-
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setIsExportMenuOpen(false);
-      }
-    };
-
-    document.addEventListener('mousedown', handlePointerDown);
-    document.addEventListener('touchstart', handlePointerDown);
-    document.addEventListener('keydown', handleKeyDown);
-
-    return () => {
-      document.removeEventListener('mousedown', handlePointerDown);
-      document.removeEventListener('touchstart', handlePointerDown);
-      document.removeEventListener('keydown', handleKeyDown);
-    };
-  }, [isExportMenuOpen]);
-
-  const hasActiveTab = Boolean(activeTab);
-  const isButtonDisabled = !hasActiveTab || isExporting;
-  const isResourcesDisabled = !hasActiveTab || activeTab?.kind === 'diff';
-
-  const themeLabel =
-    theme === 'light'
-      ? t('titleBar.themeLight')
-      : theme === 'dark'
-      ? t('titleBar.themeDark')
-      : t('titleBar.themeSystem');
+  const themeLabel = theme === 'light' ? t('titleBar.themeLight') : theme === 'dark' ? t('titleBar.themeDark') : t('titleBar.themeSystem');
+  const modes: { mode: ViewMode; icon: React.ReactNode; label: string; tooltip: string }[] = [
+    { mode: 'edit', icon: <Edit3 className="w-3.5 h-3.5" />, label: t('titleBar.editMode'), tooltip: t('titleBar.editModeTooltip') },
+    { mode: 'split', icon: <Columns2 className="w-3.5 h-3.5" />, label: t('titleBar.splitMode'), tooltip: t('titleBar.splitModeTooltip') },
+    { mode: 'read', icon: <BookOpen className="w-3.5 h-3.5" />, label: t('titleBar.readMode'), tooltip: t('titleBar.readModeTooltip') },
+  ];
 
   return (
-    <header className="h-10 bg-chrome border-b border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-xs text-slate-600 dark:text-slate-300 shrink-0">
-      {/* Left: App Logo & Quick File Actions */}
-      <div className="flex items-center space-x-1.5">
-        <button
-          type="button"
-          onClick={onToggleSidebar}
-          aria-label={
-            isSidebarOpen
-              ? t('titleBar.collapseOutline')
-              : t('titleBar.expandOutline')
-          }
+    <header className="relative z-30 h-12 px-3 flex items-center justify-between gap-3 bg-chrome border-b border-slate-200 dark:border-slate-800/80 select-none text-xs text-slate-600 dark:text-slate-300 shrink-0">
+      <div className="flex min-w-0 items-center gap-1 shrink-0">
+        <button type="button" onClick={onToggleSidebar}
+          aria-label={isSidebarOpen ? t('titleBar.collapseOutline') : t('titleBar.expandOutline')}
           aria-expanded={isSidebarOpen}
-          title={
-            isSidebarOpen
-              ? t('titleBar.collapseOutline')
-              : t('titleBar.expandOutline')
-          }
-          className={clsx(
-            'p-1.5 rounded transition-colors',
-            isSidebarOpen
-              ? 'bg-blue-100 text-blue-600 dark:bg-blue-900/40 dark:text-blue-400'
-              : 'hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-500'
-          )}
-        >
-          <PanelLeft className="w-3.5 h-3.5" />
+          title={isSidebarOpen ? t('titleBar.collapseOutline') : t('titleBar.expandOutline')}
+          className={clsx('p-1.5 rounded-md transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', isSidebarOpen ? 'bg-blue-100 text-blue-600 dark:bg-blue-950/60 dark:text-blue-300' : 'text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-700/60')}>
+          <PanelLeft className="w-4 h-4" />
         </button>
 
-        <div className="flex items-center space-x-1.5 font-semibold text-slate-800 dark:text-slate-100 mr-2">
-          <div className="w-5 h-5 rounded bg-blue-600 flex items-center justify-center text-white shadow-sm font-bold text-[10px]">
-            MD
-          </div>
-          <span className="hidden sm:inline tracking-tight font-medium text-xs">Markdown Editor</span>
+        <div className="flex items-center gap-2 font-semibold text-slate-800 dark:text-slate-100 px-1 mr-1 shrink-0">
+          <div className="w-6 h-6 rounded-md bg-blue-600 flex items-center justify-center text-white shadow-sm shadow-blue-600/15 font-bold text-[10px] tracking-tight">MD</div>
+          <span className="hidden xl:inline tracking-tight font-medium text-xs">Markdown Editor</span>
         </div>
+        <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
 
-        <div className="h-3.5 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
-
-        <button
-          type="button"
-          onClick={onNew}
-          title={t('titleBar.newDocTooltip')}
-          aria-label={t('titleBar.newDocTooltip')}
-          className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
-        >
-          <FilePlus className="w-3.5 h-3.5 text-blue-500" />
-          <span className="hidden md:inline">{t('titleBar.newDoc')}</span>
+        <button type="button" onClick={onNew} title={t('titleBar.newDocTooltip')} aria-label={t('titleBar.newDocTooltip')} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <FilePlus className="w-3.5 h-3.5 text-blue-500" /><span className="hidden md:inline">{t('titleBar.newDoc')}</span>
         </button>
-
-        <button
-          type="button"
-          onClick={onOpen}
-          title={t('titleBar.openDocTooltip')}
-          aria-label={t('titleBar.openDocTooltip')}
-          className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
-        >
-          <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-          <span className="hidden md:inline">{t('titleBar.openDoc')}</span>
+        <button type="button" onClick={onOpen} title={t('titleBar.openDocTooltip')} aria-label={t('titleBar.openDocTooltip')} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <FolderOpen className="w-3.5 h-3.5 text-amber-500" /><span className="hidden md:inline">{t('titleBar.openDoc')}</span>
         </button>
+        <RecentFilesMenu recentFiles={recentFiles} onOpenRecent={onOpenRecent} onClearRecent={onClearRecent} />
 
-        {onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} title={t('titleBar.workspaceTooltip')} aria-label={t('titleBar.workspaceTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><FolderTree className="w-3.5 h-3.5 text-emerald-500" /><span className="hidden lg:inline">{t('titleBar.workspace')}</span></button>}
+        {onOpenWorkspace && <button type="button" onClick={onOpenWorkspace} title={t('titleBar.workspaceTooltip')} aria-label={t('titleBar.workspaceTooltip')} className="flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <FolderTree className="w-3.5 h-3.5 text-emerald-500" /><span className="hidden 2xl:inline">{t('titleBar.workspace')}</span>
+        </button>}
 
-        {/* Recent files dropdown */}
-        {onOpenRecent && (
-          <div className="relative -ml-1" ref={recentDropdownRef}>
-            <button
-              type="button"
-              onClick={() => setIsRecentMenuOpen((prev) => !prev)}
-              aria-label={t('titleBar.recentFilesTooltip')}
-              aria-expanded={isRecentMenuOpen}
-              aria-haspopup="menu"
-              title={t('titleBar.recentFilesTooltip')}
-              className={clsx(
-                'p-1 rounded transition-colors text-slate-400 hover:text-slate-700 dark:hover:text-slate-200',
-                isRecentMenuOpen
-                  ? 'bg-slate-200 dark:bg-slate-700'
-                  : 'hover:bg-slate-200 dark:hover:bg-slate-700/60'
-              )}
-            >
-              <ChevronDown
-                className={clsx(
-                  'w-3 h-3 transition-transform duration-150',
-                  isRecentMenuOpen && 'rotate-180'
-                )}
-              />
-            </button>
+        {(onOpenResources || onOpenTemplates || onOpenQuality || onOpenHistory) && <DocumentToolsMenu activeTab={activeTab} onOpenResources={onOpenResources} onOpenTemplates={onOpenTemplates} onOpenQuality={onOpenQuality} onOpenHistory={onOpenHistory} />}
 
-            {isRecentMenuOpen && (
-              <div
-                role="menu"
-                aria-label={t('titleBar.recentFiles')}
-                className="absolute left-0 top-full mt-1.5 w-72 max-h-80 overflow-y-auto bg-elevated border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
-              >
-                {recentFiles.length === 0 ? (
-                  <div className="px-3 py-2 text-slate-400 dark:text-slate-500">
-                    {t('titleBar.recentFilesEmpty')}
-                  </div>
-                ) : (
-                  <>
-                    {recentFiles.map((file) => (
-                      <button
-                        key={file.path}
-                        type="button"
-                        role="menuitem"
-                        title={file.path}
-                        onClick={() => {
-                          setIsRecentMenuOpen(false);
-                          onOpenRecent(file.path);
-                        }}
-                        className="w-full px-3 py-1.5 text-left flex flex-col hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors"
-                      >
-                        <span className="text-xs font-medium text-slate-700 dark:text-slate-200 truncate">
-                          {file.name}
-                        </span>
-                        <span className="text-[10px] text-slate-400 dark:text-slate-500 truncate">
-                          {file.path}
-                        </span>
-                      </button>
-                    ))}
-                    {onClearRecent && (
-                      <>
-                        <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
-                        <button
-                          type="button"
-                          role="menuitem"
-                          onClick={() => {
-                            setIsRecentMenuOpen(false);
-                            onClearRecent();
-                          }}
-                          className="w-full px-3 py-1.5 text-left hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-500 dark:text-slate-400"
-                        >
-                          {t('titleBar.clearRecentFiles')}
-                        </button>
-                      </>
-                    )}
-                  </>
-                )}
-              </div>
-            )}
-          </div>
-        )}
-
-        {onOpenResources && (
-          <button
-            type="button"
-            onClick={() => {
-              if (!isResourcesDisabled) onOpenResources();
-            }}
-            disabled={isResourcesDisabled}
-            title={
-              isResourcesDisabled
-                ? activeTab
-                  ? t('titleBar.resourcesDiffUnavailable')
-                  : t('titleBar.noOpenDocTooltip')
-                : t('titleBar.resourcesTooltip')
-            }
-            aria-label={t('titleBar.resourcesTooltip')}
-            className={clsx(
-              'flex items-center space-x-1 px-2 py-1 rounded transition-colors',
-              isResourcesDisabled
-                ? 'opacity-45 cursor-not-allowed text-slate-400 dark:text-slate-500'
-                : 'hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200'
-            )}
-          >
-            <Images
-              className={clsx(
-                'w-3.5 h-3.5',
-                isResourcesDisabled ? 'text-slate-400 dark:text-slate-500' : 'text-violet-500'
-              )}
-            />
-            <span className="hidden md:inline">{t('titleBar.resources')}</span>
-          </button>
-        )}
-
-        {onOpenTemplates && <button type="button" onClick={onOpenTemplates} title={t('titleBar.templatesTooltip')} aria-label={t('titleBar.templatesTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><LayoutTemplate className="w-3.5 h-3.5 text-blue-500" /><span className="hidden lg:inline">{t('titleBar.templates')}</span></button>}
-        {onOpenQuality && <button type="button" onClick={onOpenQuality} disabled={!activeTab || activeTab.kind === 'diff'} title={t('titleBar.qualityTooltip')} aria-label={t('titleBar.qualityTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 disabled:opacity-40"><ShieldCheck className="w-3.5 h-3.5 text-teal-500" /><span className="hidden lg:inline">{t('titleBar.quality')}</span></button>}
-
-        {onOpenHistory && (
-          <button
-            type="button"
-            onClick={onOpenHistory}
-            disabled={!activeTab || activeTab.kind === 'diff' || !activeTab.filePath || activeTab.filePath.startsWith('browser://')}
-            title={t('titleBar.historyTooltip')}
-            aria-label={t('titleBar.historyTooltip')}
-            className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200 disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            <History className="w-3.5 h-3.5 text-blue-500" />
-            <span className="hidden lg:inline">{t('titleBar.history')}</span>
-          </button>
-        )}
-
-        <button
-          type="button"
-          onClick={onSave}
-          title={t('titleBar.saveDocTooltip')}
-          aria-label={t('titleBar.saveDocTooltip')}
-          className="flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
-        >
-          <Save className="w-3.5 h-3.5 text-emerald-500" />
-          <span className="hidden md:inline">{t('titleBar.saveDoc')}</span>
+        <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
+        <button type="button" onClick={onSave} title={t('titleBar.saveDocTooltip')} aria-label={t('titleBar.saveDocTooltip')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-600/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900">
+          <Save className="w-3.5 h-3.5" /><span className="hidden md:inline">{t('titleBar.saveDoc')}</span>
         </button>
-
-        <button
-          type="button"
-          onClick={onSaveAs}
-          title={t('titleBar.saveAsTooltip')}
-          aria-label={t('titleBar.saveAsTooltip')}
-          className="hidden lg:flex items-center space-x-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors"
-        >
-          <FileText className="w-3.5 h-3.5 text-slate-400" />
-          <span>{t('titleBar.saveAs')}</span>
+        <button type="button" onClick={onSaveAs} title={t('titleBar.saveAsTooltip')} aria-label={t('titleBar.saveAsTooltip')} className="hidden lg:flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
+          <FileText className="w-3.5 h-3.5 text-slate-400" /><span>{t('titleBar.saveAs')}</span>
         </button>
-
-        {/* Export Dropdown Menu Button */}
-        {onOpenExportTheme && <button type="button" onClick={onOpenExportTheme} title={t('titleBar.exportThemeTooltip')} aria-label={t('titleBar.exportThemeTooltip')} className="flex items-center gap-1 px-2 py-1 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60"><Palette className="w-3.5 h-3.5 text-fuchsia-500" /><span className="hidden lg:inline">{t('titleBar.exportTheme')}</span></button>}
-
-        <div className="relative" ref={exportDropdownRef}>
-          <button
-            type="button"
-            onClick={() => {
-              if (!isButtonDisabled) {
-                setIsExportMenuOpen((prev) => !prev);
-              }
-            }}
-            disabled={isButtonDisabled}
-            aria-label={t('titleBar.exportFormatsTooltip')}
-            aria-expanded={isExportMenuOpen}
-            aria-haspopup="menu"
-            title={
-              !hasActiveTab
-                ? t('titleBar.noOpenDocTooltip')
-                : isExporting
-                ? t('titleBar.exportingTypeTooltip', { type: exportingType?.toUpperCase() || '' })
-                : t('titleBar.exportFormatsTooltip')
-            }
-            className={clsx(
-              'flex items-center space-x-1 px-2 py-1 rounded transition-colors',
-              isButtonDisabled
-                ? 'opacity-45 cursor-not-allowed text-slate-400 dark:text-slate-500'
-                : isExportMenuOpen
-                ? 'bg-slate-200 dark:bg-slate-700 text-slate-900 dark:text-slate-100'
-                : 'hover:bg-slate-200 dark:hover:bg-slate-700/60 text-slate-700 dark:text-slate-200'
-            )}
-          >
-            {isExporting ? (
-              <LoaderCircle className="w-3.5 h-3.5 text-blue-500 animate-spin" />
-            ) : (
-              <Download className="w-3.5 h-3.5 text-indigo-500" />
-            )}
-            <span className="hidden md:inline">
-              {isExporting ? t('titleBar.exporting') : t('titleBar.export')}
-            </span>
-            <ChevronDown
-              className={clsx(
-                'w-3 h-3 text-slate-400 transition-transform duration-150',
-                isExportMenuOpen && 'rotate-180'
-              )}
-            />
-          </button>
-
-          {/* Export Dropdown Popup Menu */}
-          {isExportMenuOpen && (
-            <div
-              role="menu"
-              aria-label={t('titleBar.exportMenuAriaLabel')}
-              className="absolute left-0 top-full mt-1.5 w-52 bg-elevated border border-slate-200 dark:border-slate-700 rounded-md shadow-lg py-1 z-50 animate-in fade-in zoom-in-95 duration-100"
-            >
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setIsExportMenuOpen(false);
-                  onExportWord();
-                }}
-                className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
-              >
-                <div className="w-6 h-6 rounded bg-blue-50 dark:bg-blue-950/50 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                  <FileText className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs">{t('titleBar.exportWord')}</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportWordDesc')}</span>
-                </div>
-              </button>
-
-              <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setIsExportMenuOpen(false);
-                  onExportPdf();
-                }}
-                className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
-              >
-                <div className="w-6 h-6 rounded bg-rose-50 dark:bg-rose-950/50 flex items-center justify-center text-rose-600 dark:text-rose-400">
-                  <FileType className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs">{t('titleBar.exportPdf')}</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportPdfDesc')}</span>
-                </div>
-              </button>
-
-              <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
-
-              <button
-                type="button"
-                role="menuitem"
-                onClick={() => {
-                  setIsExportMenuOpen(false);
-                  onExportHtml();
-                }}
-                className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
-              >
-                <div className="w-6 h-6 rounded bg-emerald-50 dark:bg-emerald-950/50 flex items-center justify-center text-emerald-600 dark:text-emerald-400">
-                  <FileCode className="w-3.5 h-3.5" />
-                </div>
-                <div className="flex flex-col">
-                  <span className="text-xs">{t('titleBar.exportHtml')}</span>
-                  <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportHtmlDesc')}</span>
-                </div>
-              </button>
-
-              {onExportXmd && (
-                <>
-                  <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setIsExportMenuOpen(false);
-                      onExportXmd();
-                    }}
-                    title={t('titleBar.exportXmdDesc')}
-                    className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
-                  >
-                    <div className="w-6 h-6 rounded bg-violet-50 dark:bg-violet-950/50 flex items-center justify-center text-violet-600 dark:text-violet-400">
-                      <FileArchive className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs">{t('titleBar.exportXmd')}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.exportXmdDesc')}</span>
-                    </div>
-                  </button>
-                </>
-              )}
-
-              {onCopyRichText && (
-                <>
-                  <div className="h-[1px] bg-slate-100 dark:bg-slate-800 my-0.5" />
-
-                  <button
-                    type="button"
-                    role="menuitem"
-                    onClick={() => {
-                      setIsExportMenuOpen(false);
-                      onCopyRichText();
-                    }}
-                    className="w-full px-3 py-2 text-left flex items-center space-x-2.5 hover:bg-slate-100 dark:hover:bg-slate-700/60 transition-colors text-slate-700 dark:text-slate-200 font-medium"
-                  >
-                    <div className="w-6 h-6 rounded bg-amber-50 dark:bg-amber-950/50 flex items-center justify-center text-amber-600 dark:text-amber-400">
-                      <ClipboardCopy className="w-3.5 h-3.5" />
-                    </div>
-                    <div className="flex flex-col">
-                      <span className="text-xs">{t('titleBar.copyRichText')}</span>
-                      <span className="text-[10px] text-slate-400 dark:text-slate-500">{t('titleBar.copyRichTextDesc')}</span>
-                    </div>
-                  </button>
-                </>
-              )}
-            </div>
-          )}
-        </div>
+        <ExportMenu disabled={!activeTab || isExporting} isExporting={isExporting} exportingType={exportingType} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportHtml={onExportHtml} onExportXmd={onExportXmd} onCopyRichText={onCopyRichText} onOpenExportTheme={onOpenExportTheme} />
       </div>
 
-      {/* Center: Current Document Title / Path */}
-      <div className="flex-1 max-w-md mx-2 truncate text-center font-medium text-slate-700 dark:text-slate-200 text-xs flex items-center justify-center space-x-1.5">
-        <span className="truncate">
-          {activeTab ? activeTab.title : t('titleBar.noDocOpen')}
-        </span>
-        {activeTab?.isDirty && (
-          <span
-            className="w-2 h-2 rounded-full bg-amber-500 inline-block"
-            title={t('titleBar.unsavedChanges')}
-            aria-label={t('titleBar.unsavedChanges')}
-            role="status"
-          />
-        )}
+      <div className="flex-1 min-w-0 max-w-md mx-1 text-center font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5">
+        <span className="truncate" title={activeTab?.filePath || activeTab?.title || t('titleBar.noDocOpen')}>{activeTab ? activeTab.title : t('titleBar.noDocOpen')}</span>
+        {activeTab?.isDirty && <span className="w-2 h-2 rounded-full bg-amber-500 shrink-0" title={t('titleBar.unsavedChanges')} aria-label={t('titleBar.unsavedChanges')} role="status" />}
       </div>
 
-      {/* Right: View Mode, Theme Switcher & Shortcuts Help */}
-      <div className="flex items-center space-x-1.5">
-        {/* Advanced find & replace */}
-        {onOpenSearch && (
-          <button
-            type="button"
-            onClick={onOpenSearch}
-            title={t('search.tooltip')}
-            aria-label={t('search.open')}
-            className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-          >
-            <Search className="w-3.5 h-3.5" />
-          </button>
-        )}
+      <div className="flex items-center gap-1 shrink-0">
+        {onOpenSearch && <button type="button" onClick={onOpenSearch} title={t('search.tooltip')} aria-label={t('search.open')} className={iconButtonClass}><Search className="w-4 h-4" /></button>}
+        {onCompare && <button type="button" onClick={onCompare} title={t('titleBar.compareTooltip')} aria-label={t('titleBar.compareTooltip')} className={iconButtonClass}><GitCompareArrows className="w-4 h-4" /></button>}
 
-        {/* Compare two documents */}
-        {onCompare && (
-          <button
-            onClick={onCompare}
-            title={t('titleBar.compareTooltip')}
-            aria-label={t('titleBar.compareTooltip')}
-            className="p-1.5 rounded-md text-slate-500 hover:text-slate-800 dark:text-slate-400 dark:hover:text-slate-100 hover:bg-slate-200 dark:hover:bg-slate-800 transition-colors"
-          >
-            <GitCompareArrows className="w-3.5 h-3.5" />
-          </button>
-        )}
+        {activeTab?.kind !== 'diff' && <div className="flex items-center bg-slate-200/70 dark:bg-slate-800/70 p-0.5 rounded-lg" role="group" aria-label={t('titleBar.viewModeGroupLabel')}>
+          {modes.map(({ mode, icon, label, tooltip }) => <button key={mode} type="button" onClick={() => onSetViewMode(mode)} title={tooltip} aria-label={label} aria-pressed={viewMode === mode} className={clsx('flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500', viewMode === mode ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-300 shadow-sm' : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200')}>
+            {icon}<span className="hidden 2xl:inline">{label}</span>
+          </button>)}
+        </div>}
 
-        {/* View Mode Segmented Controls (not applicable to diff tabs) */}
-        {activeTab?.kind !== 'diff' && (
-        <div
-          className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md text-xs"
-          role="group"
-          aria-label={t('titleBar.viewModeGroupLabel')}
-        >
-          <button
-            type="button"
-            onClick={() => onSetViewMode('edit')}
-            title={t('titleBar.editModeTooltip')}
-            aria-label={t('titleBar.editMode')}
-            aria-pressed={viewMode === 'edit'}
-            className={clsx(
-              'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
-              viewMode === 'edit'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            )}
-          >
-            <Edit3 className="w-3 h-3" />
-            <span className="hidden lg:inline">{t('titleBar.editMode')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetViewMode('split')}
-            title={t('titleBar.splitModeTooltip')}
-            aria-label={t('titleBar.splitMode')}
-            aria-pressed={viewMode === 'split'}
-            className={clsx(
-              'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
-              viewMode === 'split'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            )}
-          >
-            <Columns2 className="w-3 h-3" />
-            <span className="hidden lg:inline">{t('titleBar.splitMode')}</span>
-          </button>
-          <button
-            type="button"
-            onClick={() => onSetViewMode('read')}
-            title={t('titleBar.readModeTooltip')}
-            aria-label={t('titleBar.readMode')}
-            aria-pressed={viewMode === 'read'}
-            className={clsx(
-              'flex items-center space-x-1 px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
-              viewMode === 'read'
-                ? 'bg-white dark:bg-slate-700 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-            )}
-          >
-            <BookOpen className="w-3 h-3" />
-            <span className="hidden lg:inline">{t('titleBar.readMode')}</span>
-          </button>
-        </div>
-        )}
-
-        <div className="h-3.5 w-[1px] bg-slate-300 dark:bg-slate-700 mx-0.5" />
-
-        {/* Theme Mode Switcher */}
-        <div className="flex items-center bg-slate-200 dark:bg-slate-800 p-0.5 rounded-md">
-          <button
-            type="button"
-            onClick={() => onSetTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
-            title={t('titleBar.themeTooltip', { theme: themeLabel })}
-            aria-label={t('titleBar.themeTooltip', { theme: themeLabel })}
-            className="p-1 rounded text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-100 transition-colors"
-          >
-            {theme === 'light' && <Sun className="w-3.5 h-3.5 text-amber-500" />}
-            {theme === 'dark' && <Moon className="w-3.5 h-3.5 text-blue-400" />}
-            {theme === 'system' && <Monitor className="w-3.5 h-3.5 text-slate-500 dark:text-slate-400" />}
-          </button>
-        </div>
-
-        {/* Settings */}
-        <button
-          onClick={onOpenSettings}
-          title={t('titleBar.settingsTooltip')}
-          aria-label={t('titleBar.settings')}
-          className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-        >
-          <Settings className="w-3.5 h-3.5" />
+        <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1" />
+        <button type="button" onClick={() => onSetTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')} title={t('titleBar.themeTooltip', { theme: themeLabel })} aria-label={t('titleBar.themeTooltip', { theme: themeLabel })} className={iconButtonClass}>
+          {theme === 'light' && <Sun className="w-4 h-4 text-amber-500" />}
+          {theme === 'dark' && <Moon className="w-4 h-4 text-blue-400" />}
+          {theme === 'system' && <Monitor className="w-4 h-4 text-slate-500 dark:text-slate-400" />}
         </button>
-
-        {/* Shortcuts Help */}
-        <button
-          onClick={onOpenShortcuts}
-          title={t('titleBar.shortcutsTooltip')}
-          aria-label={t('titleBar.shortcuts')}
-          className="p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors text-slate-500 hover:text-slate-800 dark:hover:text-slate-200"
-        >
-          <HelpCircle className="w-3.5 h-3.5" />
-        </button>
+        <button type="button" onClick={onOpenSettings} title={t('titleBar.settingsTooltip')} aria-label={t('titleBar.settings')} className={iconButtonClass}><Settings className="w-4 h-4" /></button>
+        <button type="button" onClick={onOpenShortcuts} title={t('titleBar.shortcutsTooltip')} aria-label={t('titleBar.shortcuts')} className={iconButtonClass}><HelpCircle className="w-4 h-4" /></button>
       </div>
     </header>
   );

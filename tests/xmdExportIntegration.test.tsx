@@ -289,9 +289,11 @@ describe('XMD export menu item wiring (TitleBar.tsx / App.tsx / locales)', () =>
       'utf-8'
     );
     expect(titleBarSource).toContain('onExportXmd');
-    expect(titleBarSource).toContain("t('titleBar.exportXmd')");
-    expect(titleBarSource).toContain("t('titleBar.exportXmdDesc')");
-    expect(titleBarSource).toContain('FileArchive');
+    expect(titleBarSource).toContain('<ExportMenu');
+    const exportMenuSource = readFileSync(resolve(__dirname, '../src/components/titleBar/ExportMenu.tsx'), 'utf-8');
+    expect(exportMenuSource).toContain("t('titleBar.exportXmd')");
+    expect(exportMenuSource).toContain("t('titleBar.exportXmdDesc')");
+    expect(exportMenuSource).toContain('FileArchive');
 
     const appSource = readFileSync(resolve(__dirname, '../src/App.tsx'), 'utf-8');
     expect(appSource).toContain('exportXmd');

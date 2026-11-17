@@ -1,6 +1,6 @@
 import React from 'react';
 import { TextStats, ViewMode } from '@/types';
-import { CheckCircle2, Clock, FileEdit, Sparkles } from 'lucide-react';
+import { CheckCircle2, Clock, FileEdit, PanelTop } from 'lucide-react';
 import { useI18n } from '@/i18n';
 
 interface StatusBarProps {
@@ -27,7 +27,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   }[viewMode];
 
   return (
-    <footer className="h-6 bg-chrome border-t border-slate-200 dark:border-slate-800/80 px-3 flex items-center justify-between select-none text-[11px] text-slate-500 dark:text-slate-400 font-sans shrink-0">
+    <footer className="h-7 bg-chrome border-t border-slate-200 dark:border-slate-800/80 px-4 flex items-center justify-between select-none text-[11px] text-slate-500 dark:text-slate-400 font-sans tabular-nums shrink-0">
       {/* Left: Document Statistics */}
       <div className="flex items-center space-x-3">
         <div className="flex items-center space-x-1" title={t('statusBar.wordsTooltip')}>
@@ -94,7 +94,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
 
         {/* Mode Badge */}
         <div className="flex items-center space-x-1 text-blue-600 dark:text-blue-400 font-medium">
-          <Sparkles className="w-3 h-3" />
+          <PanelTop className="w-3 h-3" />
           <span>{viewModeLabel}</span>
         </div>
       </div>

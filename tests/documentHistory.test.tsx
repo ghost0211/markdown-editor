@@ -2,8 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { I18nProvider } from '../src/i18n';
 import { DocumentHistory } from '../src/components/DocumentHistory';
-import { TitleBar } from '../src/components/TitleBar';
-import { DEFAULT_SETTINGS } from '../src/lib/settings';
+import { getDocumentToolAvailability } from '../src/components/titleBar/DocumentToolsMenu';
 import type { DocumentTab } from '../src/types';
 
 vi.mock('@/lib/native', () => ({ readDocumentHistory: vi.fn(async () => []), readDocumentSnapshot: vi.fn(async () => ''), isTauri: vi.fn(() => true) }));
@@ -24,10 +23,10 @@ describe('local history UI', () => {
     expect(history(null)).toContain('保存文档后即可使用本地历史版本');
   });
 
-  it('provides a title-bar history action and disables it for unsaved/diff tabs', () => {
-    const render = (tab: DocumentTab) => renderToStaticMarkup(<I18nProvider language="zh-CN"><TitleBar activeTab={tab} viewMode="edit" onSetViewMode={() => {}} theme={DEFAULT_SETTINGS.theme} onSetTheme={() => {}} isSidebarOpen onToggleSidebar={() => {}} onNew={() => {}} onOpen={() => {}} onSave={() => {}} onSaveAs={() => {}} onExportWord={() => {}} onExportPdf={() => {}} onExportHtml={() => {}} onOpenShortcuts={() => {}} onOpenSettings={() => {}} onOpenHistory={() => {}} /></I18nProvider>);
-    expect(render({ id: 'saved', title: 'saved.md', filePath: 'C:\\docs\\saved.md', content: '', savedContent: '', isDirty: false, cursorLine: 1, cursorCol: 1 })).toContain('查看、对比并恢复本地历史版本');
-    expect(render({ id: 'draft', title: 'draft', filePath: null, content: '', savedContent: '', isDirty: false, cursorLine: 1, cursorCol: 1 })).toContain('disabled=""');
-    expect(render({ id: 'diff', title: 'diff', filePath: 'C:\\docs\\saved.md', kind: 'diff', content: '', savedContent: '', isDirty: false, cursorLine: 1, cursorCol: 1 })).toContain('disabled=""');
+  it('enables history only for saved local documents, not unsaved or diff tabs', () => {
+    const base: DocumentTab = { id: 'saved', title: 'saved.md', filePath: 'C:\\docs\\saved.md', content: '', savedContent: '', isDirty: false, cursorLine: 1, cursorCol: 1 };
+    expect(getDocumentToolAvailability(base).history).toBe(true);
+    expect(getDocumentToolAvailability({ ...base, filePath: null }).history).toBe(false);
+    expect(getDocumentToolAvailability({ ...base, kind: 'diff' }).history).toBe(false);
   });
 });

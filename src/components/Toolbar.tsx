@@ -28,11 +28,11 @@ interface ToolbarProps {
 export const Toolbar: React.FC<ToolbarProps> = ({ onAction, disabled = false }) => {
   const { t } = useI18n();
   const btnClass =
-    'p-1.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
+    'h-7 w-7 inline-flex items-center justify-center rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/80 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white transition-colors disabled:opacity-40 disabled:pointer-events-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500';
 
   return (
     <div
-      className="h-9 bg-panel border-b border-slate-200 dark:border-slate-800 px-3 flex items-center space-x-1 select-none overflow-x-auto no-scrollbar shrink-0 text-xs"
+      className="h-10 bg-panel border-b border-slate-200 dark:border-slate-800 px-4 flex items-center space-x-1 select-none overflow-x-auto no-scrollbar shrink-0 text-xs"
       role="toolbar"
       aria-label={t('toolbar.ariaLabel')}
     >

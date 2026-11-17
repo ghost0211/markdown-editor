@@ -13,7 +13,7 @@ import {
   summarizeResources,
   type ResourceManagerProps,
 } from '../src/components/ResourceManager';
-import { TitleBar } from '../src/components/TitleBar';
+import { getDocumentToolAvailability } from '../src/components/titleBar/DocumentToolsMenu';
 import { I18nProvider } from '../src/i18n';
 import type { DocumentResource } from '../src/lib/documentResources';
 import type { DocumentTab } from '../src/types';
@@ -681,70 +681,23 @@ describe('ResourceManager accessible modal (SSR)', () => {
   });
 });
 
-describe('TitleBar resource manager entry (SSR)', () => {
-  const titleBarProps = {
-    viewMode: 'split' as const,
-    onSetViewMode: vi.fn(),
-    theme: 'system' as const,
-    onSetTheme: vi.fn(),
-    isSidebarOpen: true,
-    onToggleSidebar: vi.fn(),
-    onNew: vi.fn(),
-    onOpen: vi.fn(),
-    onSave: vi.fn(),
-    onSaveAs: vi.fn(),
-    onExportWord: vi.fn(),
-    onExportPdf: vi.fn(),
-    onExportHtml: vi.fn(),
-    onOpenShortcuts: vi.fn(),
-    onOpenSettings: vi.fn(),
-    onOpenResources: vi.fn(),
-  };
-
+describe('Document tools menu availability', () => {
   const documentTab: DocumentTab = {
-    id: 'tab-1',
-    title: 'notes.md',
-    filePath: 'D:\\docs\\notes.md',
-    content: '',
-    savedContent: '',
-    isDirty: false,
-    cursorLine: 1,
-    cursorCol: 1,
+    id: 'tab-1', title: 'notes.md', filePath: 'D:\\docs\\notes.md',
+    content: '', savedContent: '', isDirty: false, cursorLine: 1, cursorCol: 1,
     kind: 'document',
   };
 
-  it('renders an enabled resource manager button for a normal document', () => {
-    const html = renderToStaticMarkup(
-      <I18nProvider language="en-US">
-        <TitleBar {...titleBarProps} activeTab={documentTab} />
-      </I18nProvider>
-    );
-
-    expect(html).toContain('aria-label="Image and attachment resource manager"');
-    expect(html).toContain('title="Image and attachment resource manager"');
-    expect(html).toContain('Resources');
-    expect(html).toContain('lucide-images');
+  it('keeps resources, quality and history available for a saved document', () => {
+    expect(getDocumentToolAvailability(documentTab)).toEqual({ resources: true, quality: true, history: true });
   });
 
-  it('disables the resource manager button in a diff tab', () => {
-    const diffTab: DocumentTab = { ...documentTab, id: 'tab-diff', kind: 'diff' };
-    const html = renderToStaticMarkup(
-      <I18nProvider language="en-US">
-        <TitleBar {...titleBarProps} activeTab={diffTab} />
-      </I18nProvider>
-    );
-
-    expect(html).toContain('title="Resource manager is unavailable in diff view"');
-    expect(html).toMatch(/disabled=""[^>]*title="Resource manager is unavailable in diff view"/);
+  it('disables document-bound tools in a diff tab', () => {
+    expect(getDocumentToolAvailability({ ...documentTab, kind: 'diff' })).toEqual({ resources: false, quality: false, history: false });
   });
 
-  it('keeps the button disabled when no document tab is open', () => {
-    const html = renderToStaticMarkup(
-      <I18nProvider language="zh-CN">
-        <TitleBar {...titleBarProps} />
-      </I18nProvider>
-    );
-
-    expect(html).toContain('title="暂无打开的文档"');
+  it('requires a saved local document for history but permits unsaved document tools', () => {
+    expect(getDocumentToolAvailability({ ...documentTab, filePath: null })).toEqual({ resources: true, quality: true, history: false });
+    expect(getDocumentToolAvailability(undefined)).toEqual({ resources: false, quality: false, history: false });
   });
 });
