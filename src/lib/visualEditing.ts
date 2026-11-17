@@ -67,6 +67,17 @@ class BulletWidget extends WidgetType {
   }
 }
 
+class HorizontalRuleWidget extends WidgetType {
+  eq(): boolean { return true; }
+  toDOM(view: EditorView): HTMLElement {
+    const rule = view.dom.ownerDocument.createElement('span');
+    rule.className = 'cm-visual-hr';
+    rule.setAttribute('role', 'separator');
+    rule.setAttribute('aria-orientation', 'horizontal');
+    return rule;
+  }
+}
+
 const INLINE_CLASSES: Record<string, string> = {
   StrongEmphasis: 'cm-visual-strong', Emphasis: 'cm-visual-em',
   Strikethrough: 'cm-visual-strike', InlineCode: 'cm-visual-code', Link: 'cm-visual-link',
@@ -102,6 +113,10 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
         seenNodes.add(key);
         if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name)) {
           addLine(node.from, `cm-visual-h${node.name.slice(-1)}`);
+        } else if (node.name === 'HorizontalRule') {
+          if (!isVisualSourceLine(state, node.from, node.to)) {
+            decorations.push(Decoration.replace({ widget: new HorizontalRuleWidget() }).range(node.from, node.to));
+          }
         } else if (node.name === 'HeaderMark') {
           const line = state.doc.lineAt(node.from);
           let end = node.to;
@@ -187,4 +202,6 @@ const visualTheme = EditorView.baseTheme({
   '.cm-visual-list-number': { color: '#64748b', fontVariantNumeric: 'tabular-nums' },
   '.cm-visual-task': { margin: '0 3px 0 0', width: '1em', height: '1em', verticalAlign: 'middle', accentColor: '#2563eb', cursor: 'pointer' },
   '.cm-visual-task:focus-visible': { outline: '2px solid #3b82f6', outlineOffset: '2px' },
+  '.cm-visual-hr': { display: 'block', boxSizing: 'border-box', width: '100%', height: '1px', margin: '0.65em 0', borderTop: '1px solid #cbd5e1' },
+  '&dark .cm-visual-hr': { borderTopColor: '#475569' },
 });

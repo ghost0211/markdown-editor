@@ -47,6 +47,24 @@ describe('source-preserving visual editing', () => {
     expect(editing.doc).toBe(state.doc);
   });
 
+  it('renders all Markdown horizontal-rule markers and reveals only the selected source line', () => {
+    const doc = '# Title\n\n---\n\n***\n\n___\n\nend';
+    const state = makeState(doc);
+    const rendered = (value: EditorState) => visual(value)
+      .filter(({ decoration }) => decoration.spec.widget)
+      .map(({ from, to }) => value.sliceDoc(from, to));
+    expect(rendered(state)).toEqual(['---', '***', '___']);
+    const editing = state.update({ selection: { anchor: doc.indexOf('---') + 1 } }).state;
+    expect(rendered(editing)).toEqual(['***', '___']);
+    expect(editing.doc).toBe(state.doc);
+  });
+
+  it('does not mistake front matter, Setext headings, code or table delimiters for horizontal rules', () => {
+    const doc = ['---', 'title: metadata', '---', '', 'Setext heading', '---', '', '```md', '---', '```', '', '| A |', '| --- |', '| text --- text |', '', 'end'].join('\n');
+    const widgets = visual(makeState(doc)).filter(({ decoration }) => decoration.spec.widget);
+    expect(widgets).toEqual([]);
+  });
+
   it('reveals all selection lines and secondary cursor lines', () => {
     const state = makeState('# One\n\n## Two\n\n### Three\n\nend');
     const selected = state.update({ selection: EditorSelection.create([EditorSelection.cursor(3), EditorSelection.cursor(12)]) }).state;
