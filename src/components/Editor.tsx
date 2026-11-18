@@ -27,6 +27,7 @@ import { createVisualImageContextExtension } from '@/lib/visualImageContext';
 import { createVisualSelectionToolbar } from '@/lib/visualSelectionToolbar';
 import { createSlashCommandExtension } from '@/lib/slashCommands';
 import { applyFocusedVisualTableAction, createVisualTableExtension } from '@/lib/visualTable';
+import { createVisualCodeBlockExtension } from '@/lib/visualCodeBlocks';
 import { getActiveMarkdownFormats } from '@/lib/markdownFormatting';
 import type { EditorPresentation } from '@/types';
 import {
@@ -331,6 +332,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           imageEdit: t('visualImage.open'),
           imageLoading: t('editor.visualImageLoading'),
           imageFailed: t('editor.visualImageFailed'),
+        }));
+        ext.push(createVisualCodeBlockExtension({
+          label: t('visualCode.label'),
+          copy: t('common.copyCode'), copied: t('common.copied'), copyFailed: t('visualCode.copyFailed'),
+          mermaidRendering: t('preview.mermaidRendering'), mermaidError: t('preview.mermaidSyntaxError'),
         }));
         ext.push(createVisualTableExtension({
           label: t('visualTable.label'), toolbar: t('visualTable.toolbar'),

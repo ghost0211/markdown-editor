@@ -9,6 +9,10 @@ export const zhCN = {
     invalid: '请输入有效的单行图片地址和不超过 4096 字的替代文本。',
     fileFailed: '请选择支持的图片文件，大小不超过 32 MiB。', busy: '正在读取图片…',
   },
+  visualCode: {
+    label: '代码块',
+    copyFailed: '复制失败，请切换源码复制',
+  },
   common: {
     ok: '我知道了',
     confirm: '确认',

@@ -11,6 +11,7 @@ import {
   setVisualTableColumnAlignment,
   updateVisualTableCell,
 } from '@/lib/visualTableCommands';
+import { renderInlineMarkdownInto } from '@/lib/inlineMarkdown';
 import {
   collectVisualTables,
   findVisualTableAt,
@@ -44,9 +45,23 @@ export function syncVisualTableCellInputs(container: HTMLElement, model: VisualT
     if (active !== input) {
       if (input.value !== source) input.value = source;
       input.dataset.source = source;
+      // The read-only preview mirrors the committed source whenever the cell is
+      // not being edited, so formatting stays rendered between keystrokes.
+      const preview = input.parentElement?.querySelector<HTMLElement>('.cm-visual-table-preview');
+      // Re-parsing every cell on each keystroke would be quadratic; only cells
+      // whose committed source actually changed are re-rendered.
+      if (preview && preview.dataset.source !== source) {
+        preview.dataset.source = source;
+        renderInlineMarkdownInto(preview, source);
+      }
+      const box = input.parentElement;
+      if (box?.dataset.editing === 'true') box.dataset.editing = 'false';
     }
     input.readOnly = container.dataset.readOnly === 'true';
-    input.style.textAlign = alignmentCss(model.alignments[column] ?? 'none');
+    const align = alignmentCss(model.alignments[column] ?? 'none');
+    input.style.textAlign = align;
+    const preview = input.parentElement?.querySelector<HTMLElement>('.cm-visual-table-preview');
+    if (preview) preview.style.textAlign = align;
   }
 }
 
@@ -567,6 +582,28 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     return input;
   };
 
+  const createCellBox = (row: number, column: number, template: string): HTMLElement => {
+    const box = doc.createElement('div');
+    box.className = 'cm-visual-table-cellbox';
+    box.dataset.editing = 'false';
+    const preview = doc.createElement('div');
+    preview.className = 'cm-visual-table-preview';
+    preview.setAttribute('aria-hidden', 'true');
+    preview.style.textAlign = alignmentCss(model.alignments[column] ?? 'none');
+    renderInlineMarkdownInto(preview, model.cells[row][column]);
+    preview.dataset.source = model.cells[row][column];
+    const input = createInput(row, column, template);
+    input.addEventListener('focus', () => { box.dataset.editing = 'true'; });
+    input.addEventListener('blur', () => {
+      box.dataset.editing = 'false';
+      const committed = serializeVisualTableCell(input.value);
+      preview.dataset.source = committed;
+      renderInlineMarkdownInto(preview, committed);
+    });
+    box.append(preview, input);
+    return box;
+  };
+
   const head = doc.createElement('thead');
   const headRow = doc.createElement('tr');
   headRow.setAttribute('role', 'row');
@@ -576,7 +613,7 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     cell.setAttribute('role', 'columnheader');
     cell.setAttribute('scope', 'col');
     cell.setAttribute('aria-colindex', String(column + 1));
-    cell.appendChild(createInput(0, column, labels.headerLabel));
+    cell.appendChild(createCellBox(0, column, labels.headerLabel));
     headRow.appendChild(cell);
   }
   head.appendChild(headRow);
@@ -590,14 +627,15 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       const cell = doc.createElement('td');
       cell.setAttribute('role', 'gridcell');
       cell.setAttribute('aria-colindex', String(column + 1));
-      const input = createInput(row, column, labels.cellLabel);
+      const cellBox = createCellBox(row, column, labels.cellLabel);
+      const input = cellBox.querySelector<HTMLInputElement>('input');
       cell.addEventListener('mousedown', (event) => {
-        if (event.target !== input) {
+        if (event.target !== cellBox && event.target !== input) {
           event.preventDefault();
-          input.focus();
+          input?.focus();
         }
       });
-      cell.appendChild(input);
+      cell.appendChild(cellBox);
       tr.appendChild(cell);
     }
     body.appendChild(tr);

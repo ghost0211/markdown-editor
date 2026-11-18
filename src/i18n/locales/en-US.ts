@@ -10,6 +10,10 @@ export const enUS: TranslationsSchema = {
     invalid: 'Enter a valid single-line image address and alternative text of up to 4096 characters.',
     fileFailed: 'Choose a supported image file no larger than 32 MiB.', busy: 'Reading image…',
   },
+  visualCode: {
+    label: 'Code block',
+    copyFailed: 'Copy failed; use the source view',
+  },
   common: {
     ok: 'Got it',
     confirm: 'Confirm',
