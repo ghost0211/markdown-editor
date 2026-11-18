@@ -113,17 +113,20 @@ export function createVisualTableExtension(labels: VisualTableLabels): Extension
 }
 
 const visualTableTheme = EditorView.baseTheme({
+  // Include the space around the panel in the block widget's measured height.
   '.cm-visual-table': {
     display: 'block',
+    paddingBlock: '0.6em',
+  },
+  '.cm-visual-table-panel': {
     boxSizing: 'border-box',
-    margin: '0.6em 0',
     padding: '4px 6px 6px',
     border: '1px solid #cbd5e1',
     borderRadius: '8px',
     color: '#0f172a',
     background: 'transparent',
   },
-  '&dark .cm-visual-table': { borderColor: '#475569', color: '#e2e8f0' },
+  '&dark .cm-visual-table-panel': { borderColor: '#475569', color: '#e2e8f0' },
   '.cm-visual-table-toolbar': {
     display: 'flex',
     flexWrap: 'wrap',

@@ -648,7 +648,10 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
   hint.id = `${instance}-hint`;
   hint.textContent = labels.hint;
 
-  container.append(toolbar, grid, hint, status);
+  const panel = doc.createElement('div');
+  panel.className = 'cm-visual-table-panel';
+  panel.append(toolbar, grid, hint, status);
+  container.append(panel);
   refreshToolbar(container, model, model.rows > 1 ? 1 : 0, 0);
   return container;
 }

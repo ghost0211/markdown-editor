@@ -224,11 +224,14 @@ class VisualCodeWidget extends WidgetType {
       themeObserver.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
       render();
     }
-    this.cleanups.set(container, () => {
+    const wrapper = document.createElement('div');
+    wrapper.className = 'cm-visual-code-block';
+    wrapper.append(container);
+    this.cleanups.set(wrapper, () => {
       disposed = true;
       themeObserver?.disconnect();
     });
-    return container;
+    return wrapper;
   }
 
   destroy(dom: HTMLElement): void {
@@ -360,9 +363,10 @@ export function createVisualCodeBlockExtension(labels: VisualCodeBlockLabels): E
 }
 
 const visualCodeTheme = EditorView.baseTheme({
+  // CodeMirror measures the widget's border box, which excludes margins.
+  '.cm-visual-code-block': { paddingBlock: '0.55em' },
   '.cm-visual-code': {
     boxSizing: 'border-box',
-    margin: '0.55em 0',
     border: '1px solid #e2e8f0',
     borderRadius: '7px',
     overflow: 'hidden',
