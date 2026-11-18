@@ -13,8 +13,8 @@ import { importXmdPackage } from '../src/lib/xmd';
 
 const options = { taskToggle: 'Toggle task', imageEdit: 'Edit image', imageLoading: 'Loading', imageFailed: 'Failed', sourcePath: 'C:/docs/note.md' };
 const labels = { embedded: 'Embedded', address: 'Address', hint: 'Edit', edit: 'Edit', copy: 'Copy', copied: 'Copied', copyFailed: 'Failed', apply: 'Apply', close: 'Close', invalid: 'Invalid' };
-function makeState(doc: string, at = doc.length) {
-  const state = EditorState.create({ doc, selection: { anchor: at }, extensions: [EditorState.allowMultipleSelections.of(true), markdown({ base: markdownLanguage, extensions: editorMarkdownFallbacks }), history(), createImageAddressExtension(labels), createVisualEditingExtension(options)] });
+function makeState(doc: string, at = doc.length, renderHtml = false) {
+  const state = EditorState.create({ doc, selection: { anchor: at }, extensions: [EditorState.allowMultipleSelections.of(true), markdown({ base: markdownLanguage, extensions: editorMarkdownFallbacks }), history(), createImageAddressExtension(labels), createVisualEditingExtension({ ...options, renderHtml })] });
   // EditorState's initial parser has a wall-clock budget. Under a heavily
   // parallel test run even this small fixture can stop after its first block.
   // Commit the ensured tree with a no-op transaction so assertions are
@@ -36,6 +36,20 @@ const hidden = (state: EditorState) => visual(state).filter(({ from, to, decorat
 // Both state-only tests and real browser coverage are intentional: node tests
 // exercise source fidelity/history without relying on a synthetic DOM layout.
 describe('source-preserving visual editing', () => {
+  it('replaces HTML breaks only when enabled and reveals the original text for editing', () => {
+    const doc = '甲<br>乙<BR />丙\n\n<br/>\n文字\n\n' +
+      '示例：`<br>` 或 \\<br> 或 &lt;br&gt;\n\nend';
+    const breaks = (state: EditorState) => visual(state)
+      .filter(({ decoration }) => decoration.spec.widget?.lineBreaks === 1)
+      .map(({ from, to }) => state.sliceDoc(from, to));
+    expect(breaks(makeState(doc))).toEqual([]);
+    const enabled = makeState(doc, doc.length, true);
+    expect(breaks(enabled)).toEqual(['<br>', '<BR />', '<br/>']);
+    const active = enabled.update({ selection: { anchor: 1 } }).state;
+    expect(breaks(active)).toEqual(['<br/>']);
+    expect(active.doc.toString()).toBe(doc);
+  });
+
   it('styles every heading level and hides heading/inline markers only off the selected line', () => {
     const doc = '# Heading\n\n**bold** *italic* ~~gone~~ `code`\n\nend';
     const state = makeState(doc);

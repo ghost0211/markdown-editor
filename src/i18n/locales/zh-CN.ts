@@ -414,6 +414,8 @@ export const zhCN = {
     wordWrap: '自动折行',
     wordWrapDesc: '长行文本超出视口宽度时自动换行',
     wordWrapAria: '自动折行',
+    renderHtml: '渲染 HTML',
+    renderHtmlDesc: '预览中渲染安全的 HTML，可视化编辑中显示 <br> 换行。',
     lineNumbers: '显示行号',
     lineNumbersDesc: '在编辑器左侧显示行号栏',
     lineNumbersAria: '显示行号',

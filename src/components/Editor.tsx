@@ -94,6 +94,7 @@ interface EditorProps {
   onImageFiles?: (files: File[], position: number) => void;
   onProtectedReplace?: () => void;
   presentation?: EditorPresentation;
+  renderHtml?: boolean;
   sourcePath?: string | null;
   onFormatsChange?: (formats: readonly MarkdownAction[]) => void;
 }
@@ -155,6 +156,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       onImageFiles,
       onProtectedReplace,
       presentation = 'source',
+      renderHtml = false,
       sourcePath,
       onFormatsChange,
     },
@@ -328,6 +330,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       if (presentation === 'visual') {
         ext.push(createVisualEditingExtension({
           sourcePath,
+          renderHtml,
           taskToggle: t('editor.visualTaskToggle'),
           imageEdit: t('visualImage.open'),
           imageLoading: t('editor.visualImageLoading'),
@@ -349,7 +352,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           rowAdded: t('visualTable.rowAdded'), rowDeleted: t('visualTable.rowDeleted'),
           columnAdded: t('visualTable.columnAdded'), columnDeleted: t('visualTable.columnDeleted'),
           alignmentChanged: t('visualTable.alignmentChanged'), rowLimit: t('visualTable.rowLimit'), columnLimit: t('visualTable.columnLimit'),
-        }));
+        }, renderHtml));
         ext.push(createVisualImageContextExtension({
           title: t('visualImage.title'), alt: t('visualImage.alt'), address: t('visualImage.address'),
           embedded: t('visualImage.embedded'), apply: t('visualImage.apply'), close: t('visualImage.close'),
@@ -388,7 +391,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       }
 
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, presentation, sourcePath, t, language]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, presentation, renderHtml, sourcePath, t, language]);
 
     /**
      * Editor state to start this document from.

@@ -39,6 +39,7 @@ export const DEFAULT_SETTINGS: EditorSettings = {
   typewriterMode: false,
   focusMode: false,
   editorPresentation: 'source',
+  renderHtml: false,
   exportEmbedImages: false,
 };
 
@@ -161,6 +162,7 @@ export function validateSettings(raw: unknown): EditorSettings {
     typewriterMode,
     focusMode,
     editorPresentation,
+    renderHtml: typeof obj.renderHtml === 'boolean' ? obj.renderHtml : DEFAULT_SETTINGS.renderHtml,
     exportEmbedImages,
     ...(exportStyle ? { exportStyle } : {}),
   };

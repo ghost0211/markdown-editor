@@ -9,6 +9,17 @@ import { collectVisualCodeBlocks, createVisualCodeBlockExtension, visualCodeBloc
 import { parseInlineMarkdown } from '../src/lib/inlineMarkdown';
 import { buildVisualDecorations, createVisualEditingExtension } from '../src/lib/visualEditing';
 
+it('parses breaks in visual table cells without expanding Markdown escapes or code', () => {
+  expect(parseInlineMarkdown('甲<br>乙')).toEqual([{ type: 'text', text: '甲<br>乙' }]);
+  expect(parseInlineMarkdown('**甲<BR />乙**', true)).toEqual([{
+    type: 'strong',
+    children: [{ type: 'text', text: '甲' }, { type: 'break' }, { type: 'text', text: '乙' }],
+  }]);
+  expect(parseInlineMarkdown('`<br>`', true))
+    .toEqual([{ type: 'code', text: '<br>' }]);
+  expect(parseInlineMarkdown('\\<br>', true)).toEqual([{ type: 'text', text: '<br>' }]);
+});
+
 const labels = {
   label: 'Code block', copy: 'Copy', copied: 'Copied', copyFailed: 'Copy failed',
   mermaidRendering: 'Rendering', mermaidError: 'Syntax error',

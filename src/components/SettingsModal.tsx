@@ -324,6 +324,36 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               </div>
 
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <span className="font-medium text-slate-700 dark:text-slate-200 block">
+                    {t('settings.renderHtml')}
+                  </span>
+                  <span id="settings-render-html-description" className="text-[11px] text-slate-400 dark:text-slate-500">
+                    {t('settings.renderHtmlDesc')}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label={t('settings.renderHtml')}
+                  aria-describedby="settings-render-html-description"
+                  aria-checked={settings.renderHtml}
+                  onClick={() => onUpdateSetting('renderHtml', !settings.renderHtml)}
+                  className={clsx(
+                    'w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 shrink-0',
+                    settings.renderHtml ? 'bg-blue-600' : 'bg-slate-300 dark:bg-slate-700'
+                  )}
+                >
+                  <span
+                    className={clsx(
+                      'w-4 h-4 rounded-full bg-white transition-transform transform shadow-sm',
+                      settings.renderHtml ? 'translate-x-4' : 'translate-x-0'
+                    )}
+                  />
+                </button>
+              </div>
+
               {/* Font Size */}
               <div className="flex items-center justify-between">
                 <div>

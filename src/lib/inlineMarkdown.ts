@@ -1,7 +1,7 @@
 import type { SyntaxNode } from '@lezer/common';
 import type { MarkdownParser } from '@lezer/markdown';
 import { markdownLanguage } from '@codemirror/lang-markdown';
-import { editorMarkdownFallbacks } from '@/lib/editorMarkdown';
+import { editorMarkdownFallbacks, isHtmlLineBreak } from '@/lib/editorMarkdown';
 
 /**
  * Display-only inline Markdown for surfaces that cannot run the full editor
@@ -10,7 +10,7 @@ import { editorMarkdownFallbacks } from '@/lib/editorMarkdown';
  * exactly like the surrounding prose. Nothing here rewrites the source.
  */
 
-export type InlineRunType = 'text' | 'strong' | 'emphasis' | 'strike' | 'code' | 'link' | 'math';
+export type InlineRunType = 'text' | 'strong' | 'emphasis' | 'strike' | 'code' | 'link' | 'math' | 'break';
 
 export interface InlineRun {
   type: InlineRunType;
@@ -38,7 +38,7 @@ function codeTextOf(source: string, node: SyntaxNode): string {
   return source.slice(node.from, node.to);
 }
 
-function convert(source: string, node: SyntaxNode): InlineRun[] {
+function convert(source: string, node: SyntaxNode, renderHtml: boolean): InlineRun[] {
   switch (node.name) {
     case 'Text':
       return textRun(source.slice(node.from, node.to));
@@ -47,12 +47,17 @@ function convert(source: string, node: SyntaxNode): InlineRun[] {
     case 'HardBreak':
     case 'SoftBreak':
       return textRun(' ');
+    case 'HTMLTag':
+    case 'HTMLBlock': {
+      const text = source.slice(node.from, node.to);
+      return renderHtml && isHtmlLineBreak(text) ? [{ type: 'break' }] : textRun(text);
+    }
     case 'StrongEmphasis':
-      return [{ type: 'strong', children: walk(source, node) }];
+      return [{ type: 'strong', children: walk(source, node, renderHtml) }];
     case 'Emphasis':
-      return [{ type: 'emphasis', children: walk(source, node) }];
+      return [{ type: 'emphasis', children: walk(source, node, renderHtml) }];
     case 'Strikethrough':
-      return [{ type: 'strike', children: walk(source, node) }];
+      return [{ type: 'strike', children: walk(source, node, renderHtml) }];
     case 'InlineCode':
       return [{ type: 'code', text: codeTextOf(source, node) }];
     case 'InlineMath':
@@ -62,7 +67,7 @@ function convert(source: string, node: SyntaxNode): InlineRun[] {
       // so only their description is ever displayed here.
       return textRun(source.slice(node.from + 2, Math.min(node.to, node.from + 162)));
     case 'Link':
-      return [{ type: 'link', children: walk(source, node) }];
+      return [{ type: 'link', children: walk(source, node, renderHtml) }];
     case 'EmphasisMark':
     case 'StrikethroughMark':
     case 'CodeMark':
@@ -71,16 +76,16 @@ function convert(source: string, node: SyntaxNode): InlineRun[] {
     case 'LinkTitle':
       return [];
     default:
-      return node.firstChild ? walk(source, node) : textRun(source.slice(node.from, node.to));
+      return node.firstChild ? walk(source, node, renderHtml) : textRun(source.slice(node.from, node.to));
   }
 }
 
-function walk(source: string, parent: SyntaxNode): InlineRun[] {
+function walk(source: string, parent: SyntaxNode, renderHtml: boolean): InlineRun[] {
   const runs: InlineRun[] = [];
   let position = parent.from;
   for (let child = parent.firstChild; child; child = child.nextSibling) {
     if (child.from > position) runs.push(...textRun(source.slice(position, child.from)));
-    runs.push(...convert(source, child));
+    runs.push(...convert(source, child, renderHtml));
     position = Math.max(position, child.to);
   }
   if (position < parent.to) runs.push(...textRun(source.slice(position, parent.to)));
@@ -103,14 +108,14 @@ function mergeText(runs: InlineRun[]): InlineRun[] {
 }
 
 /** Pure inline runs for one cell/paragraph; never returns raw HTML. */
-export function parseInlineMarkdown(source: string): InlineRun[] {
+export function parseInlineMarkdown(source: string, renderHtml = false): InlineRun[] {
   if (!source.trim()) return [];
   if (source.length > MAX_INLINE_RENDER_BYTES) return [{ type: 'text', text: source }];
   const tree = inlineParser.parse(source);
-  return mergeText(walk(source, tree.topNode));
+  return mergeText(walk(source, tree.topNode, renderHtml));
 }
 
-const RUN_ELEMENTS: Record<Exclude<InlineRunType, 'text'>, [string, string]> = {
+const RUN_ELEMENTS: Record<Exclude<InlineRunType, 'text' | 'break'>, [string, string]> = {
   strong: ['strong', 'cm-inline-strong'],
   emphasis: ['em', 'cm-inline-emphasis'],
   strike: ['del', 'cm-inline-strike'],
@@ -127,6 +132,10 @@ export function renderInlineRuns(document: Document, runs: readonly InlineRun[])
       if (run.text) fragment.append(document.createTextNode(run.text));
       continue;
     }
+    if (run.type === 'break') {
+      fragment.append(document.createElement('br'));
+      continue;
+    }
     const [tag, className] = RUN_ELEMENTS[run.type];
     const element = document.createElement(tag);
     element.className = className;
@@ -138,6 +147,6 @@ export function renderInlineRuns(document: Document, runs: readonly InlineRun[])
 }
 
 /** Convenience wrapper for widgets that already own the cell element. */
-export function renderInlineMarkdownInto(element: HTMLElement, source: string): void {
-  element.replaceChildren(renderInlineRuns(element.ownerDocument, parseInlineMarkdown(source)));
+export function renderInlineMarkdownInto(element: HTMLElement, source: string, renderHtml = false): void {
+  element.replaceChildren(renderInlineRuns(element.ownerDocument, parseInlineMarkdown(source, renderHtml)));
 }

@@ -39,6 +39,7 @@ export interface EditorSettings {
    * 'visual' only changes display; it never rewrites the Markdown source.
    */
   editorPresentation: EditorPresentation;
+  renderHtml: boolean;
   /** Inline local images as data URLs when exporting HTML, so the file is self-contained. */
   exportEmbedImages: boolean;
   /**

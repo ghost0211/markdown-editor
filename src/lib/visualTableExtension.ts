@@ -41,6 +41,10 @@ export const visualTableLabels = Facet.define<VisualTableLabels, VisualTableLabe
   combine: (values) => values[0] ?? null,
 });
 
+const visualTableRenderHtml = Facet.define<boolean, boolean>({
+  combine: (values) => values[0] ?? false,
+});
+
 export interface VisualTableRenderState {
   /** Tables currently replaced by a grid (selection-revealed tables are absent). */
   tables: readonly VisualTableInfo[];
@@ -64,12 +68,13 @@ function selectionRevealsTable(state: EditorState, from: number, to: number): bo
 function compute(state: EditorState): VisualTableRenderState {
   const labels = state.facet(visualTableLabels);
   if (!labels) return EMPTY;
+  const renderHtml = state.facet(visualTableRenderHtml);
   const tables = collectVisualTables(state).filter((table) => !selectionRevealsTable(state, table.from, table.to));
   if (tables.length === 0) return EMPTY;
   const decorations = Decoration.set(tables.map((table) =>
     Decoration.replace({
       block: true,
-      widget: new VisualTableWidget(table, labels, state.readOnly),
+      widget: new VisualTableWidget(table, labels, state.readOnly, renderHtml),
     }).range(table.from, table.to)
   ), true);
   return { tables, decorations };
@@ -85,6 +90,7 @@ export const visualTableField = StateField.define<VisualTableRenderState>({
     if (!transaction.docChanged && !transaction.selection &&
         transaction.startState.readOnly === transaction.state.readOnly &&
         transaction.startState.facet(visualTableLabels) === transaction.state.facet(visualTableLabels) &&
+        transaction.startState.facet(visualTableRenderHtml) === transaction.state.facet(visualTableRenderHtml) &&
         syntaxTree(transaction.startState) === syntaxTree(transaction.state)) {
       return value;
     }
@@ -104,9 +110,10 @@ export function isVisualTableRendered(state: EditorState, from: number, to: numb
   return value.tables.some((table) => from < table.to && to > table.from);
 }
 
-export function createVisualTableExtension(labels: VisualTableLabels): Extension {
+export function createVisualTableExtension(labels: VisualTableLabels, renderHtml = false): Extension {
   return [
     visualTableLabels.of(labels),
+    visualTableRenderHtml.of(renderHtml),
     visualTableField,
     visualTableTheme,
   ];
@@ -198,6 +205,11 @@ const visualTableTheme = EditorView.baseTheme({
     pointerEvents: 'none',
   },
   '.cm-visual-table-cellbox[data-editing=true] .cm-visual-table-preview': { display: 'none' },
+  // A preview with explicit breaks sizes the cell while the input overlays it.
+  '.cm-visual-table-cellbox:has(br)': { display: 'grid' },
+  '.cm-visual-table-cellbox:has(br) > *': { gridArea: '1 / 1' },
+  '.cm-visual-table-preview:has(br)': { position: 'relative', minWidth: '0' },
+  '.cm-visual-table-cellbox[data-editing=true] .cm-visual-table-preview:has(br)': { display: 'block', visibility: 'hidden' },
   '.cm-visual-table-element th .cm-visual-table-preview': { fontWeight: '600' },
   '.cm-inline-strong': { fontWeight: '700' },
   '.cm-inline-emphasis': { fontStyle: 'italic' },

@@ -1,5 +1,9 @@
 import type { InlineContext, InlineParser, MarkdownConfig } from '@lezer/markdown';
 
+export function isHtmlLineBreak(text: string): boolean {
+  return /^<br[ \t]*\/?>$/i.test(text);
+}
+
 /**
  * Paired punctuation that Chinese prose uses as an emphasis boundary, mirroring
  * `remarkCjkFriendlyEmphasis` (used by the preview). CommonMark classifies these

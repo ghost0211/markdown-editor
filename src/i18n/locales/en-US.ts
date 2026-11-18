@@ -415,6 +415,8 @@ export const enUS: TranslationsSchema = {
     wordWrap: 'Word Wrap',
     wordWrapDesc: 'Wrap long lines within editor viewport',
     wordWrapAria: 'Word Wrap',
+    renderHtml: 'Render HTML',
+    renderHtmlDesc: 'Render safe HTML in preview and show <br> line breaks in visual editing.',
     lineNumbers: 'Line Numbers',
     lineNumbersDesc: 'Show line numbers in the left gutter',
     lineNumbersAria: 'Line Numbers',

@@ -1,9 +1,11 @@
 import { type Extension, Facet, type EditorState, type Range } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
+import { isHtmlLineBreak } from '@/lib/editorMarkdown';
 
 export interface VisualEditingOptions {
   sourcePath?: string | null;
+  renderHtml?: boolean;
   taskToggle: string;
   imageEdit: string;
   imageLoading: string;
@@ -78,12 +80,21 @@ class HorizontalRuleWidget extends WidgetType {
   }
 }
 
+class LineBreakWidget extends WidgetType {
+  get lineBreaks(): number { return 1; }
+  toDOM(view: EditorView): HTMLElement {
+    return view.dom.ownerDocument.createElement('br');
+  }
+}
+
+const lineBreak = Decoration.replace({ widget: new LineBreakWidget() });
+
 const INLINE_CLASSES: Record<string, string> = {
   StrongEmphasis: 'cm-visual-strong', Emphasis: 'cm-visual-em',
   Strikethrough: 'cm-visual-strike', InlineCode: 'cm-visual-code', Link: 'cm-visual-link',
 };
 const INLINE_MARKERS = new Set(['EmphasisMark', 'StrikethroughMark', 'CodeMark']);
-const OPAQUE_BLOCKS = new Set(['FencedCode', 'CodeBlock', 'HTMLBlock', 'HTMLTag', 'Table', 'LinkReference', 'FrontMatter', 'MathBlock', 'InlineMath']);
+const OPAQUE_BLOCKS = new Set(['FencedCode', 'CodeBlock', 'Table', 'LinkReference', 'FrontMatter', 'MathBlock', 'InlineMath']);
 
 /** Viewport-only decorations: no HTML round trip and no second Markdown parse. */
 export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visibleRanges'>): DecorationSet {
@@ -111,7 +122,16 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
         const key = `${node.name}:${node.from}:${node.to}`;
         if (seenNodes.has(key)) return;
         seenNodes.add(key);
-        if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name)) {
+        if (node.name === 'HTMLTag' || node.name === 'HTMLBlock') {
+          // CommonMark treats a line containing only <br> as an HTML block,
+          // which may include subsequent lines until the next blank line.
+          const end = Math.min(node.to, state.doc.lineAt(node.from).to);
+          if (options.renderHtml && !isVisualSourceLine(state, node.from, end) &&
+              isHtmlLineBreak(state.sliceDoc(node.from, end).trimEnd())) {
+            decorations.push(lineBreak.range(node.from, end));
+          }
+          return false;
+        } else if (/^(?:ATX|Setext)Heading[1-6]$/.test(node.name)) {
           addLine(node.from, `cm-visual-h${node.name.slice(-1)}`);
         } else if (node.name === 'HorizontalRule') {
           if (!isVisualSourceLine(state, node.from, node.to)) {

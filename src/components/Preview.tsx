@@ -23,6 +23,7 @@ import rehypeSlug from 'rehype-slug';
 import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
+import { previewHtmlPlugins } from '@/lib/previewHtml';
 import { downloadBundledAttachment } from '@/lib/bundledAttachments';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
@@ -63,8 +64,11 @@ export { MermaidBlock } from './MermaidBlock';
  */
 const REHYPE_PLUGINS_WITH_MATH: PluggableList = [rehypeKatex, rehypeSlug, rehypeHighlight];
 const REHYPE_PLUGINS_NO_MATH: PluggableList = [rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_WITH_HTML_AND_MATH = [...previewHtmlPlugins, ...REHYPE_PLUGINS_WITH_MATH];
+const REHYPE_PLUGINS_WITH_HTML = [...previewHtmlPlugins, ...REHYPE_PLUGINS_NO_MATH];
 
-function getRehypePlugins(withMath: boolean): PluggableList {
+function getRehypePlugins(withMath: boolean, renderHtml: boolean): PluggableList {
+  if (renderHtml) return withMath ? REHYPE_PLUGINS_WITH_HTML_AND_MATH : REHYPE_PLUGINS_WITH_HTML;
   return withMath ? REHYPE_PLUGINS_WITH_MATH : REHYPE_PLUGINS_NO_MATH;
 }
 
@@ -113,6 +117,7 @@ export interface PreviewHandle {
 }
 
 interface PreviewProps {
+  renderHtml?: boolean;
   content: string;
   onOpenLink?: (href: string) => Promise<void>;
   /**
@@ -541,12 +546,14 @@ interface MarkdownChunkBlockProps {
   chunk: MarkdownChunk;
   language: string;
   components: Components;
+  renderHtml: boolean;
 }
 
 const MarkdownChunkBlock: React.FC<MarkdownChunkBlockProps> = ({
   chunk,
   language,
   components,
+  renderHtml,
 }) => {
   const withMath = hasPotentialMathSyntax(chunk.text);
   const allowFrontMatter = chunk.startLine === 1;
@@ -556,7 +563,7 @@ const MarkdownChunkBlock: React.FC<MarkdownChunkBlockProps> = ({
     <Markdown
       urlTransform={documentUrlTransform}
       remarkPlugins={getRemarkPlugins(language, withMath, allowFrontMatter)}
-      rehypePlugins={getRehypePlugins(withMath)}
+      rehypePlugins={getRehypePlugins(withMath, renderHtml)}
       components={components}
     >
       {chunk.text}
@@ -580,6 +587,7 @@ const MemoizedMarkdownChunk = React.memo(
     prev.chunk.text === next.chunk.text &&
     prev.chunk.startLine === next.chunk.startLine &&
     prev.language === next.language &&
+    prev.renderHtml === next.renderHtml &&
     prev.components === next.components
 );
 
@@ -587,6 +595,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
   (
     {
       content,
+      renderHtml = false,
       onOpenLink,
       onToggleTask,
       showLineNumbers = false,
@@ -694,7 +703,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
 
     useEffect(() => {
       lineAnchorsRef.current = null;
-    }, [content, visibleChunkCount]);
+    }, [content, renderHtml, visibleChunkCount]);
 
     const getLineAnchors = useCallback((): LineAnchor[] => {
       const container = containerRef.current;
@@ -978,6 +987,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
               chunk={chunk}
               language={language}
               components={components}
+              renderHtml={renderHtml}
             />
           ))}
         </div>

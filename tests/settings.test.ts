@@ -40,6 +40,13 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
   });
 
   describe('validateSettings', () => {
+    it('defaults to HTML rendering off and persists a boolean opt-in', () => {
+      expect(validateSettings({ version: 1 }).renderHtml).toBe(false);
+      expect(validateSettings({ renderHtml: 'true' }).renderHtml).toBe(false);
+      saveSettings({ ...DEFAULT_SETTINGS, renderHtml: true });
+      expect(loadSettings().renderHtml).toBe(true);
+    });
+
     it('should return default settings for null or non-object input', () => {
       expect(validateSettings(null)).toEqual(DEFAULT_SETTINGS);
       expect(validateSettings(undefined)).toEqual(DEFAULT_SETTINGS);
@@ -65,6 +72,7 @@ describe('Settings Validation and Persistence (settings.ts)', () => {
         typewriterMode: true,
         focusMode: true,
         editorPresentation: 'visual' as const,
+        renderHtml: true,
         exportEmbedImages: true,
       };
       expect(validateSettings(valid)).toEqual(valid);

@@ -725,6 +725,7 @@ const AppContent: React.FC<AppContentProps> = ({
       onChange={handleEditorChange}
       onCursorChange={handleCursorChange}
       presentation={settings.editorPresentation}
+      renderHtml={settings.renderHtml}
       sourcePath={activeTab?.filePath}
       onFormatsChange={setActiveFormats}
       onScroll={handleEditorScroll}
@@ -748,6 +749,7 @@ const AppContent: React.FC<AppContentProps> = ({
       content={activeTab?.content || ''}
       sourcePath={activeTab?.filePath}
       showLineNumbers={settings.lineNumbers}
+      renderHtml={settings.renderHtml}
       onScroll={handlePreviewScroll}
     />
   );

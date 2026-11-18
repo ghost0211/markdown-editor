@@ -35,7 +35,7 @@ function alignmentCss(alignment: VisualTableAlignment): 'left' | 'center' | 'rig
   return alignment === 'center' || alignment === 'right' ? alignment : 'left';
 }
 
-export function syncVisualTableCellInputs(container: HTMLElement, model: VisualTableInfo): void {
+export function syncVisualTableCellInputs(container: HTMLElement, model: VisualTableInfo, renderHtml = false): void {
   const active = container.ownerDocument.activeElement;
   for (const input of container.querySelectorAll<HTMLInputElement>('input[data-row]')) {
     const row = Number(input.dataset.row);
@@ -52,7 +52,7 @@ export function syncVisualTableCellInputs(container: HTMLElement, model: VisualT
       // whose committed source actually changed are re-rendered.
       if (preview && preview.dataset.source !== source) {
         preview.dataset.source = source;
-        renderInlineMarkdownInto(preview, source);
+        renderInlineMarkdownInto(preview, source, renderHtml);
       }
       const box = input.parentElement;
       if (box?.dataset.editing === 'true') box.dataset.editing = 'false';
@@ -110,7 +110,8 @@ export class VisualTableWidget extends WidgetType {
   constructor(
     readonly model: VisualTableInfo,
     readonly labels: VisualTableLabels,
-    readonly readOnly: boolean
+    readonly readOnly: boolean,
+    readonly renderHtml = false
   ) {
     super();
   }
@@ -120,7 +121,8 @@ export class VisualTableWidget extends WidgetType {
       other.model.from === this.model.from &&
       other.model.source === this.model.source &&
       other.labels === this.labels &&
-      other.readOnly === this.readOnly;
+      other.readOnly === this.readOnly &&
+      other.renderHtml === this.renderHtml;
   }
 
   get estimatedHeight(): number {
@@ -135,7 +137,8 @@ export class VisualTableWidget extends WidgetType {
     if (!(old instanceof VisualTableWidget)) return false;
     // Structure and labels need a fresh grid; a pure value/position/read-only
     // change keeps the focused input (and the IME composition) alive.
-    if (old.model.rows !== this.model.rows || old.model.columns !== this.model.columns || old.labels !== this.labels) {
+    if (old.model.rows !== this.model.rows || old.model.columns !== this.model.columns ||
+        old.labels !== this.labels || old.renderHtml !== this.renderHtml) {
       return false;
     }
     const container = dom;
@@ -143,7 +146,7 @@ export class VisualTableWidget extends WidgetType {
     container.dataset.tableSource = this.model.source;
     container.dataset.readOnly = String(this.readOnly);
     (container as HTMLElement & { visualTableLabels?: VisualTableLabels }).visualTableLabels = this.labels;
-    syncVisualTableCellInputs(container, this.model);
+    syncVisualTableCellInputs(container, this.model, this.renderHtml);
     const active = activeCoordinates(container, this.model);
     refreshToolbar(container, this.model, active.row, active.column);
     return true;
@@ -590,7 +593,7 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     preview.className = 'cm-visual-table-preview';
     preview.setAttribute('aria-hidden', 'true');
     preview.style.textAlign = alignmentCss(model.alignments[column] ?? 'none');
-    renderInlineMarkdownInto(preview, model.cells[row][column]);
+    renderInlineMarkdownInto(preview, model.cells[row][column], widget.renderHtml);
     preview.dataset.source = model.cells[row][column];
     const input = createInput(row, column, template);
     input.addEventListener('focus', () => { box.dataset.editing = 'true'; });
@@ -598,7 +601,8 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       box.dataset.editing = 'false';
       const committed = serializeVisualTableCell(input.value);
       preview.dataset.source = committed;
-      renderInlineMarkdownInto(preview, committed);
+      renderInlineMarkdownInto(preview, committed, widget.renderHtml);
+      if (widget.renderHtml) view.requestMeasure();
     });
     box.append(preview, input);
     return box;
