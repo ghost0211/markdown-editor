@@ -77,6 +77,20 @@ describe('Toolbar formatting controls', () => {
     expect(html).toContain('Code Block (```lang ... ```)');
   });
 
+  it('places the complete editor and three shortcuts in a separate XMD group', () => {
+    const html = renderToolbar('zh-CN', { onTypography: vi.fn(), openTypographyField: 'color' });
+    const separator = html.indexOf('role="separator" aria-orientation="vertical"');
+    const xmdGroup = html.indexOf('role="group" aria-label="XMD 扩展样式"');
+    expect(separator).toBeGreaterThan(html.indexOf('插入表格'));
+    expect(xmdGroup).toBeGreaterThan(separator);
+    const group = html.slice(xmdGroup);
+    expect(countOccurrences(group, '<button')).toBe(4);
+    expect(group).toContain('aria-label="XMD 文字样式"');
+    expect(group).toMatch(/title="字体"[^>]*aria-expanded="false"/);
+    expect(group).toMatch(/title="字号"[^>]*aria-expanded="false"/);
+    expect(group).toMatch(/title="颜色"[^>]*aria-expanded="true"/);
+  });
+
   it('disables the presentation switch until a handler is supplied', () => {
     const html = renderToolbar('zh-CN', { presentation: 'source' });
     expect(html).toMatch(/aria-label="源码模式"[^>]*disabled/);

@@ -1,6 +1,7 @@
 import React from 'react';
 import {
   Bold,
+  ArrowUpDown,
   Code,
   CodeXml,
   Eye,
@@ -12,8 +13,10 @@ import {
   ListTodo,
   Image as ImageIcon,
   Minus,
+  Palette,
   Quote,
   Strikethrough,
+  SlidersHorizontal,
   Table as TableIcon,
   Type,
 } from 'lucide-react';
@@ -21,6 +24,7 @@ import type { LucideIcon } from 'lucide-react';
 import { MarkdownAction } from '@/lib/markdownCommands';
 import { useI18n } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
+import type { XmdTypographyQuickRequest } from './XmdTypographyQuickPopover';
 
 export type ToolbarPresentation = 'source' | 'visual';
 
@@ -32,7 +36,8 @@ export interface ToolbarProps {
   onPresentationChange?: (value: ToolbarPresentation) => void;
   /** Formats reported by `getActiveMarkdownFormats` for the main selection. */
   activeFormats?: readonly MarkdownAction[];
-  onTypography?: () => void;
+  onTypography?: (quick?: XmdTypographyQuickRequest) => void;
+  openTypographyField?: XmdTypographyQuickRequest['field'];
 }
 
 interface ToolbarButtonConfig {
@@ -80,6 +85,12 @@ const HEADING_OPTIONS: ReadonlyArray<{ value: MarkdownAction; labelKey: Translat
 
 const HEADING_ACTIONS: readonly MarkdownAction[] = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
+const XMD_QUICK_BUTTONS: readonly { field: XmdTypographyQuickRequest['field']; label: TranslationKey; icon: LucideIcon }[] = [
+  { field: 'font', label: 'xmdTypography.font', icon: Type },
+  { field: 'size', label: 'xmdTypography.sizeShort', icon: ArrowUpDown },
+  { field: 'color', label: 'xmdTypography.colorShort', icon: Palette },
+];
+
 export const Toolbar: React.FC<ToolbarProps> = ({
   onAction,
   disabled = false,
@@ -87,6 +98,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   onPresentationChange,
   activeFormats,
   onTypography,
+  openTypographyField,
 }) => {
   const { t } = useI18n();
   const btnBase =
@@ -188,15 +200,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
       {/* Inline styles */}
-      <div className="flex items-center space-x-0.5">
-        {INLINE_BUTTONS.map(renderButton)}
-        {onTypography && (
-          <button type="button" className={btnClass} disabled={disabled} onMouseDown={keepEditorSelection} onClick={onTypography}
-            title={t('xmdTypography.title')} aria-label={t('xmdTypography.title')}>
-            <Type className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
+      <div className="flex items-center space-x-0.5">{INLINE_BUTTONS.map(renderButton)}</div>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
@@ -212,6 +216,30 @@ export const Toolbar: React.FC<ToolbarProps> = ({
 
       {/* Links, Media & Structure (insert-only, no toggle highlight) */}
       <div className="flex items-center space-x-0.5">{INSERT_BUTTONS.map(renderButton)}</div>
+
+      {onTypography && (
+        <>
+          <div role="separator" aria-orientation="vertical" className="mx-2 h-6 w-px shrink-0 bg-slate-300 dark:bg-slate-700" />
+          <div role="group" aria-label={t('xmdTypography.group')} className="flex shrink-0 items-center gap-0.5">
+            <span aria-hidden className="mr-1 text-xs font-semibold text-slate-500 dark:text-slate-400">XMD</span>
+            <button type="button" className={btnClass} disabled={disabled} onMouseDown={keepEditorSelection} onClick={() => onTypography()}
+              title={t('xmdTypography.title')} aria-label={t('xmdTypography.title')} aria-haspopup="dialog">
+              <SlidersHorizontal className="h-3.5 w-3.5" aria-hidden />
+            </button>
+            {XMD_QUICK_BUTTONS.map(({ field, label, icon: Icon }) => {
+              const open = openTypographyField === field;
+              const name = t(label);
+              return (
+                <button key={field} type="button" disabled={disabled} title={name} aria-haspopup="dialog" aria-expanded={open}
+                  className={(open ? activeBtnClass : btnClass) + ' !w-auto gap-1 px-2'}
+                  onMouseDown={keepEditorSelection} onClick={(event) => onTypography({ field, anchor: event.currentTarget })}>
+                  <Icon className="h-3.5 w-3.5" aria-hidden />{name}
+                </button>
+              );
+            })}
+          </div>
+        </>
+      )}
     </div>
   );
 };
