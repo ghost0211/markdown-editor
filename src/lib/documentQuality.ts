@@ -1,9 +1,6 @@
-import { unified } from 'unified';
-import remarkParse from 'remark-parse';
-import remarkGfm from 'remark-gfm';
-import remarkFrontmatter from 'remark-frontmatter';
-import remarkMath from 'remark-math';
 import type { Language } from '@/i18n/types';
+import type { AnchorRepair } from '@/lib/documentAnchors';
+import { documentStructureParser } from '@/lib/documentStructure';
 import { scanDocumentResources } from '@/lib/documentResources';
 import { getFileSize } from '@/lib/native';
 
@@ -21,7 +18,8 @@ export type QualityRule =
   | 'unclosed-frontmatter'
   | 'duplicate-heading'
   | 'resource-missing'
-  | 'resource-unresolved';
+  | 'resource-unresolved'
+  | 'link-anchor-missing';
 
 export interface QualityIssue {
   id: string;
@@ -30,6 +28,7 @@ export interface QualityIssue {
   line: number;
   column: number;
   message: string;
+  repair?: AnchorRepair;
 }
 
 /** Reads a local file's size. Injected in tests so no native runtime is needed. */
@@ -54,13 +53,6 @@ const SEVERITY_RANK: Record<QualitySeverity, number> = {
   warning: 1,
   info: 2,
 };
-
-const markdownProcessor = unified()
-  .use(remarkParse)
-  .use(remarkGfm)
-  .use(remarkFrontmatter, ['yaml', 'toml'])
-  .use(remarkMath)
-  .freeze();
 
 /** Locale-independent ordering shared by the analyzer and the panel. */
 export function compareQualityIssues(
@@ -240,7 +232,7 @@ export function analyzeDocumentQuality(
 
   let tree: AstNode;
   try {
-    tree = markdownProcessor.parse(body) as unknown as AstNode;
+    tree = documentStructureParser.parse(body) as unknown as AstNode;
   } catch {
     // A parser failure is not a document defect we can describe; return no
     // syntax findings instead of leaking parser internals to the UI.

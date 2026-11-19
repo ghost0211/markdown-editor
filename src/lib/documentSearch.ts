@@ -43,6 +43,7 @@ export interface SearchTabInput {
   id: string;
   title: string;
   content: string;
+  filePath?: string | null;
   /** Diff tabs are always excluded from document search. */
   kind?: 'document' | 'diff' | string;
 }

@@ -2,6 +2,7 @@ import { unified } from 'unified';
 import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
+import { transformExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import { transformCallouts } from '@/lib/remarkCallouts';
 import {
   Document,
@@ -837,6 +838,7 @@ export async function exportMarkdownToDocx(
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .parse(markdown) as Root;
   transformCallouts(tree, lang);
+  transformExportHtmlBreaks(tree);
 
   const content: FileChild[] = [];
   for (const node of tree.children) {

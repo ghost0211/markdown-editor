@@ -34,6 +34,7 @@ import {
   type QualityLanguage,
   type QualitySeverity,
 } from '@/lib/documentQuality';
+import { checkDocumentAnchors, repairDocumentAnchor } from '@/lib/documentAnchors';
 
 export type QualityFilter = 'all' | 'error' | 'warning' | 'info';
 export type QualityPanelStatus = 'loading' | 'ready' | 'error';
@@ -44,6 +45,9 @@ export interface QualityPanelProps {
   content: string;
   sourceFilePath?: string | null;
   onLocate: (line: number) => void;
+  renderHtml?: boolean;
+  readTarget?: (path: string) => Promise<string>;
+  onRepair?: (original: string, content: string) => boolean;
 }
 
 /**
@@ -287,6 +291,7 @@ export interface QualityPanelViewProps {
   isOpen: boolean;
   onClose: () => void;
   onLocate: (line: number) => void;
+  onRepair?: (issue: QualityIssue, slug: string) => boolean;
   onRefresh: () => void;
   status: QualityPanelStatus;
   issues: readonly QualityIssue[];
@@ -305,6 +310,7 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
   isOpen,
   onClose,
   onLocate,
+  onRepair,
   onRefresh,
   status,
   issues,
@@ -319,6 +325,8 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
   const titleId = useId();
   const descriptionId = useId();
   const listId = useId();
+  const [repairSelection, setRepairSelection] = useState<{ issue: string; slug: string } | null>(null);
+  const [repairFailed, setRepairFailed] = useState(false);
 
   const modalRef = useRef<HTMLDivElement>(null);
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -517,6 +525,7 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
         {visibleIssues.map((issue) => {
           const meta = SEVERITY_META[issue.severity];
           const Icon = meta.icon;
+          const picking = repairSelection?.issue === issue.id;
           return (
             <li key={issue.id}>
               <button
@@ -556,6 +565,47 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
                 </span>
                 <ChevronRight className="w-4 h-4 mt-0.5 shrink-0 text-slate-300 dark:text-slate-600" />
               </button>
+              {onRepair && issue.repair && issue.repair.headings.length > 0 && (
+                picking ? (
+                  <div className="my-1 flex flex-wrap items-center gap-2 px-2 text-xs">
+                    <select
+                      value={repairSelection.slug}
+                      aria-label={t('quality.chooseTargetHeading')}
+                      onChange={(event) => { setRepairFailed(false); setRepairSelection({ issue: issue.id, slug: event.target.value }); }}
+                      className="min-w-0 flex-1 rounded border border-slate-200 bg-elevated px-2 py-1 dark:border-slate-700"
+                    >
+                      <option value="">{t('quality.chooseTargetHeading')}</option>
+                      {issue.repair.headings.map((heading) => (
+                        <option key={heading.slug} value={heading.slug}>{heading.text} · #{heading.slug}</option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!repairSelection.slug}
+                      onClick={() => {
+                        if (onRepair(issue, repairSelection.slug)) setRepairSelection(null);
+                        else setRepairFailed(true);
+                      }}
+                      className="rounded bg-blue-600 px-2 py-1 text-white disabled:opacity-50"
+                    >
+                      {t('quality.applyAnchorRepair')}
+                    </button>
+                    <button type="button" onClick={() => setRepairSelection(null)} className="rounded px-2 py-1 hover:bg-panel">
+                      {t('common.cancel')}
+                    </button>
+                    {issue.repair.shared && <p className="w-full text-slate-500">{t('quality.sharedAnchor')}</p>}
+                    {repairFailed && <p role="status" className="w-full text-amber-600">{t('quality.anchorRepairStale')}</p>}
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setRepairFailed(false); setRepairSelection({ issue: issue.id, slug: '' }); }}
+                    className="mx-2 my-1 rounded px-2 py-1 text-xs text-blue-600 hover:bg-panel dark:text-blue-400"
+                  >
+                    {t('quality.repairAnchor')}
+                  </button>
+                )
+              )}
             </li>
           );
         })}
@@ -682,7 +732,7 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
         <div className="flex-1 min-h-0 overflow-y-auto p-4">{renderBody()}</div>
 
         <div className="px-4 py-2 border-t border-slate-200 dark:border-slate-700/80 text-[10px] text-slate-400 dark:text-slate-500 shrink-0">
-          {t('quality.noAutoFix')}
+          {t(onRepair ? 'quality.manualRepairs' : 'quality.noAutoFix')}
         </div>
       </div>
     </div>
@@ -694,8 +744,8 @@ export const QualityPanelView: React.FC<QualityPanelViewProps> = ({
  *
  * Opening the panel and every content edit schedule a deferred, debounced
  * check. Requests carry a monotonically increasing id, so a slow earlier
- * analysis can never overwrite the newest result. The panel never edits the
- * document.
+ * analysis can never overwrite the newest result. Repairs require a selected
+ * replacement heading and confirmation.
  */
 export const QualityPanel: React.FC<QualityPanelProps> = ({
   isOpen,
@@ -703,6 +753,9 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
   content,
   sourceFilePath,
   onLocate,
+  renderHtml,
+  readTarget,
+  onRepair,
 }) => {
   const { language } = useI18n();
   const [issues, setIssues] = useState<QualityIssue[]>([]);
@@ -710,6 +763,7 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [filter, setFilter] = useState<QualityFilter>('all');
   const requestIdRef = useRef(0);
+  const checkedContentRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -731,15 +785,17 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
           sourceFilePath,
           language
         );
-        const resourceIssues = await checkLocalDocumentResources(
-          content,
-          sourceFilePath,
-          undefined,
-          language
-        );
+        const [resourceIssues, anchorIssues] = await Promise.all([
+          checkLocalDocumentResources(content, sourceFilePath, undefined, language),
+          checkDocumentAnchors(content, {
+            sourcePath: sourceFilePath, language, renderHtml, readTarget,
+            cancelled: () => requestId !== requestIdRef.current,
+          }),
+        ]);
         if (requestId !== requestIdRef.current) return;
+        checkedContentRef.current = content;
         setIssues(
-          [...syntaxIssues, ...resourceIssues].sort(compareQualityIssues)
+          [...syntaxIssues, ...resourceIssues, ...anchorIssues].sort(compareQualityIssues)
         );
         setStatus('ready');
         setError(null);
@@ -749,7 +805,7 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
         setError(formatQualityError(caught, language));
       }
     },
-    [content, sourceFilePath, language]
+    [content, sourceFilePath, language, renderHtml, readTarget]
   );
 
   useEffect(() => {
@@ -794,11 +850,18 @@ export const QualityPanel: React.FC<QualityPanelProps> = ({
     void runAnalysis(requestId);
   }, [content, runAnalysis]);
 
+  const handleRepair = useCallback((issue: QualityIssue, slug: string) => {
+    if (!onRepair || !issue.repair || status !== 'ready' || checkedContentRef.current !== content) return false;
+    const next = repairDocumentAnchor(content, issue.repair, slug);
+    return next !== null && onRepair(content, next);
+  }, [content, onRepair, status]);
+
   return (
     <QualityPanelView
       isOpen={isOpen}
       onClose={onClose}
       onLocate={onLocate}
+      onRepair={onRepair ? handleRepair : undefined}
       onRefresh={handleRefresh}
       status={status}
       issues={issues}

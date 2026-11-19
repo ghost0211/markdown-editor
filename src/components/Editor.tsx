@@ -352,6 +352,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           rowAdded: t('visualTable.rowAdded'), rowDeleted: t('visualTable.rowDeleted'),
           columnAdded: t('visualTable.columnAdded'), columnDeleted: t('visualTable.columnDeleted'),
           alignmentChanged: t('visualTable.alignmentChanged'), rowLimit: t('visualTable.rowLimit'), columnLimit: t('visualTable.columnLimit'),
+          pasteLimit: t('visualTable.pasteLimit'),
         }, renderHtml));
         ext.push(createVisualImageContextExtension({
           title: t('visualImage.title'), alt: t('visualImage.alt'), address: t('visualImage.address'),

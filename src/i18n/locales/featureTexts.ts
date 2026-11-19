@@ -25,7 +25,13 @@ export const QUALITY_ZH = {
   "listLabel": "质量问题列表",
   "position": "第 {line} 行，第 {column} 列",
   "locateAria": "定位到第 {line} 行并关闭面板",
-  "noAutoFix": "仅提示，不会自动修改文档"
+  "noAutoFix": "仅提示，不会自动修改文档",
+  "manualRepairs": "选择目标标题并确认后才会修改链接。",
+  "repairAnchor": "重新选择目标标题",
+  "chooseTargetHeading": "选择目标标题",
+  "applyAnchorRepair": "替换链接锚点",
+  "anchorRepairStale": "文档内容已变化，请重新检查。",
+  "sharedAnchor": "此修复会更新共用该定义的所有链接。"
 };
 export const QUALITY_EN = {
   "title": "Document quality",
@@ -53,7 +59,13 @@ export const QUALITY_EN = {
   "listLabel": "Quality issue list",
   "position": "Line {line}, column {column}",
   "locateAria": "Go to line {line} and close the panel",
-  "noAutoFix": "Reports only; your document is never changed"
+  "noAutoFix": "Reports only; your document is never changed",
+  "manualRepairs": "Links change only after you choose a heading and confirm.",
+  "repairAnchor": "Choose a new target heading",
+  "chooseTargetHeading": "Target heading",
+  "applyAnchorRepair": "Replace link anchor",
+  "anchorRepairStale": "The document changed. Run the check again.",
+  "sharedAnchor": "This repair updates every link that shares the definition."
 };
 export const WORKSPACE_ZH = {
   "panelTitle": "工作区",

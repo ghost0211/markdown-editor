@@ -7,6 +7,7 @@ interface ConfirmModalProps {
   isOpen: boolean;
   title: string;
   message: string;
+  details?: React.ReactNode;
   confirmLabel?: string;
   cancelLabel?: string;
   secondaryLabel?: string;
@@ -20,6 +21,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
   isOpen,
   title,
   message,
+  details,
   confirmLabel,
   cancelLabel,
   secondaryLabel,
@@ -153,6 +155,7 @@ export const ConfirmModal: React.FC<ConfirmModalProps> = ({
           className="p-4 text-xs text-slate-600 dark:text-slate-300 leading-relaxed"
         >
           {message}
+          {details}
         </div>
 
         {/* Footer */}

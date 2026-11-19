@@ -3,6 +3,7 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
+import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import type { Element, Root } from 'hast';
@@ -105,6 +106,7 @@ export async function buildRichTextHtml(markdown: string, lang?: string): Promis
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .use(remarkDropFrontMatter)
     .use(remarkCallouts, { lang })
+    .use(remarkExportHtmlBreaks)
     .use(remarkRehype)
     .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeInlineStyles)

@@ -36,13 +36,16 @@ import { I18nProvider, useI18n } from '@/i18n';
 
 import { applyCachedDocumentChange, cachedEditorStateIds, dropCachedEditorState } from '@/lib/editorStateCache';
 import { extractOutline } from '@/lib/outline';
+import { moveOutlineSection, renumberOutline, type OutlineNumberingChange, type OutlinePlacement } from '@/lib/outlineEditing';
 import { calculateStats } from '@/lib/stats';
 import { ViewMode, ThemeMode, EditorSettings, DiffSideRef, type EditorPresentation } from '@/types';
 import { MarkdownAction } from '@/lib/markdownCommands';
-import { showInFolder, openExternalUrl, setWindowTheme, isTauri, chooseWorkspaceFolder, listWorkspace, createWorkspaceDocument, createWorkspaceFolder, renameWorkspacePath as renameWorkspaceFile } from '@/lib/native';
+import { showInFolder, openExternalUrl, setWindowTheme, isTauri, chooseWorkspaceFolder, listWorkspace, createWorkspaceDocument, createWorkspaceFolder, readDocumentOutlineSource, renameWorkspacePath as renameWorkspaceFile } from '@/lib/native';
 import { workspaceEntryAbsolutePath, type WorkspaceEntry, type WorkspaceListing } from '@/lib/workspace';
 import { DEFAULT_EXPORT_STYLE, type ExportStyle } from '@/lib/exportStyle';
 import { resolveDocumentLink } from '@/lib/documentLinks';
+import { normalizePathKey } from '@/lib/documentUtils';
+import type { SearchMatch } from '@/lib/documentSearch';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
 import { cycleTabIndex } from '@/lib/tabNavigation';
@@ -128,6 +131,7 @@ const AppContent: React.FC<AppContentProps> = ({
     openDocument,
     openFilesByPaths,
     openFileByPath,
+    openTabByPath,
     openRecentFile,
     openDroppedDocument,
     reopenClosedFile,
@@ -225,12 +229,18 @@ const AppContent: React.FC<AppContentProps> = ({
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isQualityOpen, setIsQualityOpen] = useState(false);
   const [isExportThemeOpen, setIsExportThemeOpen] = useState(false);
+  const [numberingPreview, setNumberingPreview] = useState<{
+    id: string; original: string; content: string; changes: OutlineNumberingChange[];
+  } | null>(null);
   const closeFeatureModals = useCallback(() => {
+    setNumberingPreview(null);
     setIsSearchOpen(false); setIsResourceManagerOpen(false); setHistoryTabId(null);
     setIsTemplatesOpen(false); setIsQualityOpen(false); setIsExportThemeOpen(false);
   }, []);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
-  const [searchSelection, setSearchSelection] = useState<{ id: string; from: number; to: number; content: string } | null>(null);
+  const [searchSelection, setSearchSelection] = useState<{
+    id: string; from: number; to: number; content: string; fallbackLine?: number;
+  } | null>(null);
   const [isResourceManagerOpen, setIsResourceManagerOpen] = useState(false);
   const [historyTabId, setHistoryTabId] = useState<string | null>(null);
   const isHistoryOpen = historyTabId !== null;
@@ -517,6 +527,11 @@ const AppContent: React.FC<AppContentProps> = ({
 
   const tabsRef = useRef(tabs);
   tabsRef.current = tabs;
+  const readQualityTarget = useCallback(async (path: string) => {
+    const key = normalizePathKey(path);
+    const tab = tabsRef.current.find((item) => item.kind !== 'diff' && normalizePathKey(item.filePath) === key);
+    return tab?.content ?? readDocumentOutlineSource(path);
+  }, []);
   const activeTabIdRef = useRef(activeTabId);
   activeTabIdRef.current = activeTabId;
 
@@ -589,6 +604,35 @@ const AppContent: React.FC<AppContentProps> = ({
     if (deferredActiveContent === undefined) return [];
     return extractOutline(deferredActiveContent);
   }, [deferredActiveContent]);
+  const canEditOutline = Boolean(activeTab && activeTab.kind !== 'diff' && viewMode !== 'read');
+  const handleMoveSection = useCallback((line: number, target: { line: number; placement: OutlinePlacement } | { direction: -1 | 1 }) => {
+    if (!activeTab || activeTab.content !== deferredActiveContent) return;
+    const next = moveOutlineSection(activeTab.content, line, target);
+    if (!next) {
+      showToast(t('sidebar.moveUnavailable'), 'info');
+      return;
+    }
+    if (!editorRef.current?.replaceDocument(activeTab.content, next)) showToast(t('sidebar.outlineChanged'), 'warning');
+  }, [activeTab, deferredActiveContent, showToast, t]);
+  const handlePreviewNumbering = useCallback(() => {
+    if (!activeTab) return;
+    const plan = renumberOutline(activeTab.content);
+    if (!plan.changes.length) {
+      showToast(t('sidebar.numberingUnchanged'), 'info');
+      return;
+    }
+    closeFeatureModals();
+    setNumberingPreview({ ...plan, id: activeTab.id, original: activeTab.content });
+  }, [activeTab, closeFeatureModals, showToast, t]);
+  const closeNumberingPreview = useCallback(() => setNumberingPreview(null), []);
+  const applyNumbering = useCallback(() => {
+    if (!numberingPreview) return;
+    if (numberingPreview.id !== activeTab?.id ||
+        !editorRef.current?.replaceDocument(numberingPreview.original, numberingPreview.content)) {
+      showToast(t('sidebar.outlineChanged'), 'warning');
+    }
+    setNumberingPreview(null);
+  }, [activeTab?.id, numberingPreview, showToast, t]);
 
   const stats = useMemo(() => {
     if (deferredActiveContent === undefined) {
@@ -623,18 +667,34 @@ const AppContent: React.FC<AppContentProps> = ({
     if ((tab.viewMode ?? defaultViewMode) === 'read') updateViewMode(id, 'edit');
     setSearchSelection({ id, from, to, content: tab.content });
   }, [defaultViewMode, setActiveTabId, updateViewMode]);
+  const handleLocateWorkspaceSearch = useCallback(async (filePath: string, match: SearchMatch, original: string) => {
+    const key = normalizePathKey(filePath);
+    const existing = tabsRef.current.find((tab) => tab.kind !== 'diff' && normalizePathKey(tab.filePath) === key);
+    const id = existing?.id ?? await openTabByPath(filePath);
+    if (!id) return false;
+    setIsSearchOpen(false);
+    setActiveTabId(id);
+    if ((existing?.viewMode ?? defaultViewMode) === 'read') updateViewMode(id, 'edit');
+    setSearchSelection({ id, from: match.from, to: match.to, content: original, fallbackLine: match.line });
+    return true;
+  }, [defaultViewMode, openTabByPath, setActiveTabId, updateViewMode]);
   useEffect(() => {
     if (!searchSelection || activeTab?.id !== searchSelection.id) return;
     let frame = 0;
     let attempts = 0;
     const apply = () => {
-      if (editorRef.current?.selectRange(searchSelection.from, searchSelection.to, searchSelection.content) || ++attempts >= 120) {
+      const editor = editorRef.current;
+      if (editor && searchSelection.fallbackLine && activeTab.content !== searchSelection.content) {
+        editor.jumpToLine(searchSelection.fallbackLine);
+        showToast(t('search.workspaceResultChanged'), 'warning');
+        setSearchSelection(null);
+      } else if (editor?.selectRange(searchSelection.from, searchSelection.to, searchSelection.content) || ++attempts >= 120) {
         setSearchSelection(null);
       } else frame = requestAnimationFrame(apply);
     };
     frame = requestAnimationFrame(apply);
     return () => cancelAnimationFrame(frame);
-  }, [activeTab?.id, searchSelection, viewMode]);
+  }, [activeTab?.id, activeTab?.content, searchSelection, showToast, t, viewMode]);
   const handleApplySearch = useCallback((updates: { id: string; original: string; content: string }[]) => {
     const currentId = activeTabIdRef.current;
     const currentUpdate = updates.find((update) => update.id === currentId);
@@ -646,9 +706,13 @@ const AppContent: React.FC<AppContentProps> = ({
     }
     return true;
   }, [applyContentUpdates]);
+  const handleRepairAnchor = useCallback((original: string, content: string) =>
+    Boolean(activeTab && activeTab.kind !== 'diff' && handleApplySearch([{ id: activeTab.id, original, content }])),
+    [activeTab, handleApplySearch]
+  );
 
   const isModalOpen =
-    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || workspaceDialogOpen || confirmDialog.isOpen;
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
 
   useKeyboardShortcuts({
     onNew: handleNewTab,
@@ -844,10 +908,13 @@ const AppContent: React.FC<AppContentProps> = ({
           </Suspense>
         ) : activeTab?.kind !== 'diff' && (
           <Sidebar
+            key={activeTab?.id}
             headings={headings}
             isOpen={isSidebarOpen}
             onClose={handleCloseSidebar}
             onSelectHeading={handleSelectHeading}
+            onMoveSection={canEditOutline ? handleMoveSection : undefined}
+            onRenumber={canEditOutline ? handlePreviewNumbering : undefined}
             currentLine={activeTab?.cursorLine || 1}
           />
         )}
@@ -960,10 +1027,36 @@ const AppContent: React.FC<AppContentProps> = ({
             tabs={tabs}
             activeTabId={activeTabId}
             onLocate={handleLocateSearch}
+            workspaceRoot={workspaceRoot}
+            onChooseWorkspace={isTauri() ? chooseWorkspace : undefined}
+            onLocateWorkspace={isTauri() ? handleLocateWorkspaceSearch : undefined}
             onApply={handleApplySearch}
             showToast={showToast}
           />
         </Suspense>
+      )}
+
+      {numberingPreview && (
+        <ConfirmModal
+          isOpen
+          title={t('sidebar.renumber')}
+          message={t('sidebar.numberingPreview', { count: numberingPreview.changes.length })}
+          onConfirm={applyNumbering}
+          onCancel={closeNumberingPreview}
+          details={(
+            <ul className="mt-2 max-h-56 space-y-2 overflow-auto rounded border border-slate-200 p-2 dark:border-slate-700">
+              {numberingPreview.changes.map(({ line, before, after }) => (
+                <li key={line} className="flex items-start gap-2">
+                  <span className="shrink-0 font-mono text-slate-500">L{line}</span>
+                  <span className="min-w-0 break-words">
+                    <del className="block text-slate-500">{before}</del>
+                    <span className="block font-medium">{after}</span>
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        />
       )}
 
       {isResourceManagerOpen && activeTab && activeTab.kind !== 'diff' && (
@@ -992,7 +1085,21 @@ const AppContent: React.FC<AppContentProps> = ({
 
       {isTemplatesOpen && <Suspense fallback={null}><LazyTemplateManager isOpen={isTemplatesOpen} onClose={handleCloseTemplates} onCreateDocument={handleCreateTemplate} onInsert={handleInsertTemplate} /></Suspense>}
 
-      {isQualityOpen && activeTab && activeTab.kind !== 'diff' && <Suspense fallback={null}><LazyQualityPanel isOpen={isQualityOpen} onClose={handleCloseQuality} content={activeTab.content} sourceFilePath={activeTab.filePath} onLocate={handleQualityLocate} /></Suspense>}
+      {isQualityOpen && activeTab && activeTab.kind !== 'diff' && (
+        <Suspense fallback={null}>
+          <LazyQualityPanel
+            key={activeTab.id}
+            isOpen={isQualityOpen}
+            onClose={handleCloseQuality}
+            content={activeTab.content}
+            sourceFilePath={activeTab.filePath}
+            onLocate={handleQualityLocate}
+            renderHtml={settings.renderHtml}
+            readTarget={readQualityTarget}
+            onRepair={handleRepairAnchor}
+          />
+        </Suspense>
+      )}
 
       {isExportThemeOpen && <Suspense fallback={null}><LazyExportStyleDialog isOpen={isExportThemeOpen} onClose={handleCloseExportTheme} value={settings.exportStyle ?? DEFAULT_EXPORT_STYLE} onSave={handleSaveExportTheme} /></Suspense>}
 

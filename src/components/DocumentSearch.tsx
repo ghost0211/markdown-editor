@@ -18,6 +18,7 @@ import {
   LoaderCircle,
   MapPin,
   Regex,
+  RefreshCw,
   Replace,
   ReplaceAll,
   Search,
@@ -27,6 +28,7 @@ import {
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import type { ToastType } from '@/types';
+import { loadWorkspaceSearch, workspaceSearchDocuments, type WorkspaceSearchSnapshot } from '@/lib/workspaceSearch';
 import {
   MAX_REPLACEMENT_OUTPUT_LENGTH,
   PER_TAB_MATCH_LIMIT,
@@ -60,6 +62,9 @@ export interface DocumentSearchProps {
   activeTabId: string;
   /** Reveals a match in the editor (offsets are UTF-16 offsets in the buffer). */
   onLocate: (tabId: string, from: number, to: number) => void;
+  workspaceRoot?: string | null;
+  onChooseWorkspace?: () => Promise<void>;
+  onLocateWorkspace?: (filePath: string, match: SearchMatch, original: string) => Promise<boolean>;
   /**
    * Applies buffer replacements. `original` is the exact content the match
    * offsets were computed against; the host must reject the whole batch when
@@ -107,11 +112,14 @@ interface PendingWorkerRequest {
 }
 
 const RESULT_PAGE_SIZE = 200;
+type Scope = SearchScope | 'workspace';
+const OPEN_TAB_SCOPES: readonly Scope[] = ['current', 'all'];
+const ALL_SCOPES: readonly Scope[] = ['current', 'all', 'workspace'];
 
 function makeSearchSignature(
   docs: readonly SearchTabInput[],
   options: SearchOptions,
-  scope: SearchScope
+  scope: Scope
 ): string {
   return JSON.stringify({
     scope,
@@ -140,6 +148,9 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
   tabs,
   activeTabId,
   onLocate,
+  workspaceRoot,
+  onChooseWorkspace,
+  onLocateWorkspace,
   onApply,
   showToast,
 }) => {
@@ -153,7 +164,18 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
 
   const [query, setQuery] = useState('');
   const [replacement, setReplacement] = useState('');
-  const [scope, setScope] = useState<SearchScope>('current');
+  const [scope, setScope] = useState<Scope>('current');
+  const workspace = scope === 'workspace';
+  const [workspaceRevision, setWorkspaceRevision] = useState(0);
+  const [workspaceScan, setWorkspaceScan] = useState<{
+    key: string;
+    snapshot?: WorkspaceSearchSnapshot;
+    error?: string;
+  } | null>(null);
+  const workspaceKey = JSON.stringify([workspaceRoot, workspaceRevision]);
+  const workspaceState = workspaceScan?.key === workspaceKey ? workspaceScan : null;
+  const workspaceLoading = workspace && Boolean(workspaceRoot) && !workspaceState;
+  const locateWorkspaceBusy = useRef(false);
   const [caseSensitive, setCaseSensitive] = useState(false);
   const [wholeWord, setWholeWord] = useState(false);
   const [regex, setRegex] = useState(false);
@@ -191,10 +213,30 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     [query, caseSensitive, wholeWord, regex, skipCode]
   );
 
-  const selection = useMemo(
-    () => selectSearchTabs(tabs, activeTabId, scope),
-    [tabs, activeTabId, scope]
-  );
+  useEffect(() => {
+    if (!isOpen || !workspace || !workspaceRoot) return;
+    const controller = new AbortController();
+    loadWorkspaceSearch(workspaceRoot, controller.signal).then(
+      (snapshot) => {
+        if (!controller.signal.aborted) setWorkspaceScan({ key: workspaceKey, snapshot });
+      },
+      (error: unknown) => {
+        if (!controller.signal.aborted) {
+          setWorkspaceScan({ key: workspaceKey, error: error instanceof Error ? error.message : String(error) });
+        }
+      }
+    );
+    return () => controller.abort();
+  }, [isOpen, workspace, workspaceKey, workspaceRoot]);
+
+  const workspaceSnapshot = workspaceState?.snapshot;
+  const selection = useMemo(() => {
+    if (scope !== 'workspace') return selectSearchTabs(tabs, activeTabId, scope);
+    return {
+      docs: workspaceSnapshot ? workspaceSearchDocuments(workspaceSnapshot, tabs) : [],
+      activeUnavailable: false,
+    };
+  }, [tabs, activeTabId, scope, workspaceSnapshot]);
   const docs = selection.docs;
   const searchSignature = useMemo(
     () => makeSearchSignature(docs, options, scope),
@@ -207,8 +249,8 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
   inputSignatureRef.current = inputSignature;
 
   const liveContent = useMemo(
-    () => new Map(tabs.map((tab) => [tab.id, tab.content])),
-    [tabs]
+    () => new Map((workspace ? docs : tabs).map((tab) => [tab.id, tab.content])),
+    [docs, tabs, workspace]
   );
 
   const isStale = useMemo(() => {
@@ -696,11 +738,24 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
    */
   const locateAndClose = useCallback(
     (match: SearchMatch) => {
+      if (workspace) {
+        const doc = run?.docs.find((item) => item.id === match.tabId);
+        if (!runIsCurrent || isStale || !doc?.filePath || !onLocateWorkspace || locateWorkspaceBusy.current) return;
+        locateWorkspaceBusy.current = true;
+        skipFocusRestoreRef.current = true;
+        void onLocateWorkspace(doc.filePath, match, doc.content).then((opened) => {
+          if (!opened) skipFocusRestoreRef.current = false;
+        }).catch((error: unknown) => {
+          skipFocusRestoreRef.current = false;
+          notify(error instanceof Error ? error.message : String(error), 'error');
+        }).finally(() => { locateWorkspaceBusy.current = false; });
+        return;
+      }
       skipFocusRestoreRef.current = true;
       onLocate(match.tabId, match.from, match.to);
       onCloseRef.current();
     },
-    [onLocate]
+    [isStale, notify, onLocate, onLocateWorkspace, run, runIsCurrent, workspace]
   );
 
   const handleLocateActive = useCallback(() => {
@@ -709,6 +764,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
   }, [activeMatch, flatMatches, locateAndClose]);
 
   const handlePreview = useCallback(() => {
+    if (workspace) return;
     if (!run || isStale || run.signature !== searchSignature) {
       notify(t('search.applyStale'), 'warning');
       setPreview(null);
@@ -781,6 +837,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
     run,
     searchSignature,
     t,
+    workspace,
   ]);
 
   const applyMatches = useCallback(
@@ -979,7 +1036,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
       : null;
 
   const canPreview = Boolean(
-    run &&
+    !workspace && run &&
       !isStale &&
       run.signature === searchSignature &&
       run.outcome.totalMatches > 0 &&
@@ -987,13 +1044,24 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
       !isPreviewing
   );
   const canApply = Boolean(
-    previewIsFresh && !isSearching && !isPreviewing && !isStale && run && runIsCurrent
+    !workspace && previewIsFresh && !isSearching && !isPreviewing && !isStale && run && runIsCurrent
   );
   const canApplyAll = Boolean(
     canApply && run && runIsCurrent && !run.outcome.truncated
   );
 
   const renderEmptyState = () => {
+    if (workspace && !workspaceRoot) {
+      return (
+        <EmptyState icon={<FileText className="w-9 h-9 opacity-50" />} title={t('search.workspaceChooseHint')} />
+      );
+    }
+    if (workspace && workspaceState?.error) {
+      return <EmptyState icon={<AlertTriangle className="w-9 h-9" />} title={t('search.workspaceScanFailed')} hint={workspaceState.error} />;
+    }
+    if (workspaceLoading) {
+      return <EmptyState icon={<LoaderCircle className="w-9 h-9 animate-spin" />} title={t('search.workspaceScanning')} />;
+    }
     if (selection.activeUnavailable) {
       return (
         <EmptyState
@@ -1078,7 +1146,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
               id={descriptionId}
               className="mt-0.5 text-[11px] text-slate-500 dark:text-slate-400"
             >
-              {t('search.description')}
+              {t(workspace ? 'search.workspaceDescription' : 'search.description')}
             </p>
           </div>
           <button
@@ -1100,11 +1168,16 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
               aria-label={t('search.scopeLabel')}
               className="flex items-center bg-slate-100 dark:bg-slate-800 p-0.5 rounded-md shrink-0"
             >
-              {(['current', 'all'] as const).map((item) => (
+              {(onLocateWorkspace ? ALL_SCOPES : OPEN_TAB_SCOPES).map((item) => (
                 <button
                   key={item}
                   type="button"
-                  onClick={() => setScope(item)}
+                  onClick={() => {
+                    if (item === scope) return;
+                    setRun(null);
+                    if (item === 'workspace') setWorkspaceRevision((value) => value + 1);
+                    setScope(item);
+                  }}
                   aria-pressed={scope === item}
                   className={clsx(
                     'px-2 py-0.5 rounded text-[11px] font-medium transition-colors',
@@ -1113,9 +1186,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                       : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200'
                   )}
                 >
-                  {item === 'current'
-                    ? t('search.scopeCurrent')
-                    : t('search.scopeAll')}
+                  {t(item === 'current' ? 'search.scopeCurrent' : item === 'all' ? 'search.scopeAll' : 'search.scopeWorkspace')}
                 </button>
               ))}
             </div>
@@ -1222,80 +1293,103 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
           </div>
         </div>
 
-        {/* Replace row */}
-        <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center gap-2 shrink-0">
-          <div className="relative flex-1 min-w-[220px]">
-            <Replace className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
-            <input
-              type="text"
-              value={replacement}
-              onChange={(event) => setReplacement(event.target.value)}
-              onKeyDown={(event) => {
-                if (event.key === 'Enter') {
-                  event.preventDefault();
-                  handlePreview();
-                }
-              }}
-              placeholder={t('search.replacePlaceholder')}
-              aria-label={t('search.replaceInputLabel')}
-              spellCheck={false}
-              className="w-full pl-7 pr-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 text-[11px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/60"
-            />
-          </div>
-
-          <button
-            type="button"
-            onClick={handlePreview}
-            disabled={!canPreview}
-            title={
-              canPreview
-                ? t('search.previewReplace')
-                : previewIsFresh
-                ? t('search.previewTitle')
-                : t('search.previewRequired')
-            }
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700/60 disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            {isPreviewing ? (
-              <LoaderCircle className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
-            ) : (
-              <Eye className="w-3.5 h-3.5 text-indigo-500" />
+        {workspace ? (
+          <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700/80 flex items-center gap-2 text-[11px]">
+            <span className="min-w-0 flex-1 truncate" title={workspaceRoot ?? undefined}>
+              {workspaceRoot ?? t('search.workspaceChooseHint')}
+            </span>
+            {workspaceRoot && (
+              <button
+                type="button"
+                onClick={() => { setRun(null); setWorkspaceRevision((value) => value + 1); }}
+                disabled={workspaceLoading}
+                className="flex items-center gap-1 rounded px-2 py-1 hover:bg-panel disabled:opacity-50"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                {t('search.workspaceRefresh')}
+              </button>
             )}
-            <span>{t('search.previewReplace')}</span>
-          </button>
+            {onChooseWorkspace && (
+              <button type="button" onClick={() => void onChooseWorkspace()} className="rounded px-2 py-1 hover:bg-panel">
+                {t('search.workspaceChoose')}
+              </button>
+            )}
+          </div>
+        ) : (
+          <div className="px-4 py-2 border-b border-slate-200 dark:border-slate-700/80 flex flex-wrap items-center gap-2 shrink-0">
+            <div className="relative flex-1 min-w-[220px]">
+              <Replace className="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-slate-400" />
+              <input
+                type="text"
+                value={replacement}
+                onChange={(event) => setReplacement(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter') {
+                    event.preventDefault();
+                    handlePreview();
+                  }
+                }}
+                placeholder={t('search.replacePlaceholder')}
+                aria-label={t('search.replaceInputLabel')}
+                spellCheck={false}
+                className="w-full pl-7 pr-2 py-1.5 rounded border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900/70 text-[11px] text-slate-700 dark:text-slate-200 placeholder:text-slate-400 focus:outline-none focus:ring-1 focus:ring-blue-500/60"
+              />
+            </div>
 
-          <button
-            type="button"
-            onClick={handleReplaceCurrent}
-            disabled={!canApply || flatMatches.length === 0}
-            title={
-              canApply
-                ? t('search.replaceCurrentTooltip')
-                : t('search.previewRequired')
-            }
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            <Replace className="w-3.5 h-3.5" />
-            <span>{t('search.applyCurrent')}</span>
-          </button>
+            <button
+              type="button"
+              onClick={handlePreview}
+              disabled={!canPreview}
+              title={
+                canPreview
+                  ? t('search.previewReplace')
+                  : previewIsFresh
+                  ? t('search.previewTitle')
+                  : t('search.previewRequired')
+              }
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700/60 disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              {isPreviewing ? (
+                <LoaderCircle className="w-3.5 h-3.5 text-indigo-500 animate-spin" />
+              ) : (
+                <Eye className="w-3.5 h-3.5 text-indigo-500" />
+              )}
+              <span>{t('search.previewReplace')}</span>
+            </button>
 
-          <button
-            type="button"
-            onClick={handleReplaceAll}
-            disabled={!canApplyAll}
-            title={
-              run?.outcome.truncated
-                ? t('search.truncatedReplaceAll')
-                : canApplyAll
-                ? t('search.replaceAllTooltip')
-                : t('search.previewRequired')
-            }
-            className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-45 disabled:cursor-not-allowed"
-          >
-            <ReplaceAll className="w-3.5 h-3.5" />
-            <span>{t('search.applyAll')}</span>
-          </button>
-        </div>
+            <button
+              type="button"
+              onClick={handleReplaceCurrent}
+              disabled={!canApply || flatMatches.length === 0}
+              title={
+                canApply
+                  ? t('search.replaceCurrentTooltip')
+                  : t('search.previewRequired')
+              }
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              <Replace className="w-3.5 h-3.5" />
+              <span>{t('search.applyCurrent')}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleReplaceAll}
+              disabled={!canApplyAll}
+              title={
+                run?.outcome.truncated
+                  ? t('search.truncatedReplaceAll')
+                  : canApplyAll
+                  ? t('search.replaceAllTooltip')
+                  : t('search.previewRequired')
+              }
+              className="flex items-center space-x-1 px-2.5 py-1.5 rounded text-[11px] font-medium text-white bg-emerald-600 hover:bg-emerald-700 disabled:opacity-45 disabled:cursor-not-allowed"
+            >
+              <ReplaceAll className="w-3.5 h-3.5" />
+              <span>{t('search.applyAll')}</span>
+            </button>
+          </div>
+        )}
 
         {/* Alerts */}
         {searchFailure && (
@@ -1336,8 +1430,14 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                 total: TOTAL_MATCH_LIMIT,
               })}
             </p>
-            <p className="mt-0.5">{t('search.truncatedReplaceAll')}</p>
+            {!workspace && <p className="mt-0.5">{t('search.truncatedReplaceAll')}</p>}
           </div>
+        )}
+
+        {workspace && workspaceSnapshot && (workspaceSnapshot.skipped > 0 || workspaceSnapshot.truncated) && (
+          <p role="status" className="mx-4 mt-2 rounded px-2 py-1 bg-amber-50 dark:bg-amber-950/40 text-[11px] text-amber-700 dark:text-amber-300">
+            {t('search.workspacePartial', { count: workspaceSnapshot.skipped })}
+          </p>
         )}
 
         {statusMessage && (
@@ -1442,13 +1542,13 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
                               key={`${match.tabId}-${match.from}-${index}`}
                               ref={isActive ? activeRowRef : null}
                               type="button"
-                              onClick={() => activateMatch(index)}
-                              onDoubleClick={() => locateAndClose(match)}
+                              onClick={() => workspace ? locateAndClose(match) : activateMatch(index)}
+                              onDoubleClick={workspace ? undefined : () => locateAndClose(match)}
                               aria-current={isActive ? 'true' : undefined}
                               title={`${t('search.matchAt', {
                                 line: match.line,
                                 column: match.column,
-                              })} · ${t('search.locateHint')}`}
+                              })} · ${t(workspace ? 'search.workspaceLocateHint' : 'search.locateHint')}`}
                               className={clsx(
                                 'w-full text-left px-2 py-1 rounded border transition-colors flex items-start gap-2',
                                 isActive
@@ -1492,7 +1592,7 @@ export const DocumentSearch: React.FC<DocumentSearchProps> = ({
               )}
             </div>
 
-            {preview && (
+            {!workspace && preview && (
               <div className="shrink-0 max-h-[190px] overflow-y-auto border-t border-slate-200 dark:border-slate-700/80 bg-panel/40 px-4 py-2">
                 <div className="flex items-center justify-between gap-2">
                   <div className="flex items-center gap-1.5 text-[11px] font-medium text-slate-700 dark:text-slate-200">

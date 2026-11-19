@@ -126,6 +126,17 @@ export async function readTextFile(path: string): Promise<string> {
   }
 }
 
+export async function readDocumentOutlineSource(path: string): Promise<string> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'browserFallback.webCannotReadByPath'));
+  const raw = new Uint8Array(await invoke<ArrayBuffer>('read_document_outline_source', { path }));
+  if (path.toLowerCase().endsWith('.xmd')) {
+    const { importXmd } = await import('@/lib/xmd');
+    const limit = 2 * 1024 * 1024;
+    return importXmd(raw, { maxEntryBytes: limit, maxTotalBytes: limit });
+  }
+  return new TextDecoder('utf-8', { fatal: true }).decode(raw);
+}
+
 /**
  * Reads binary file content for local preview media. Kept separate from text
  * reads so images are never decoded as UTF-8 or exposed through a broad asset
@@ -759,6 +770,11 @@ export async function listWorkspace(root: string): Promise<WorkspaceListing> {
   if (!isTauri()) return { root, entries: [], truncated: false };
   try { return await invoke<WorkspaceListing>('list_workspace', { root }); }
   catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function readWorkspaceSearchSources(root: string): Promise<import('@/lib/workspaceSearch').WorkspaceSearchSourceListing> {
+  if (!isTauri()) throw new Error(t(getCurrentLanguage(), 'workspace.desktopOnly'));
+  return invoke('workspace_search_sources', { root });
 }
 
 export async function createWorkspaceDocument(root: string, parent: string, name: string): Promise<string> {

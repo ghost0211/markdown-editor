@@ -16,7 +16,7 @@
 
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
-use std::io::ErrorKind;
+use std::io::{ErrorKind, Read};
 use std::path::{Path, PathBuf};
 
 use crate::path_utils::canonicalize_path;
@@ -26,6 +26,8 @@ pub const MAX_WORKSPACE_ENTRIES: usize = 5_000;
 
 /// Hard cap on directory nesting depth (root children are depth 1).
 pub const MAX_WORKSPACE_DEPTH: usize = 12;
+const MAX_SEARCH_FILE_BYTES: usize = 2 * 1024 * 1024;
+const MAX_SEARCH_WORKSPACE_BYTES: usize = 24 * 1024 * 1024;
 
 /// Document extensions the workspace tree surfaces, mirrored by the frontend.
 pub const WORKSPACE_DOCUMENT_EXTENSIONS: &[&str] =
@@ -61,6 +63,25 @@ pub struct WorkspaceListing {
     pub entries: Vec<WorkspaceEntry>,
     /// True when the walk stopped because a limit was reached.
     pub truncated: bool,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSearchSource {
+    path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    content: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive: Option<Vec<u8>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkspaceSearchListing {
+    root: String,
+    sources: Vec<WorkspaceSearchSource>,
+    skipped: usize,
+    truncated: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -448,6 +469,84 @@ pub fn list_workspace(root: String) -> Result<WorkspaceListing, String> {
     list_workspace_with_limits(&root, &WorkspaceLimits::default())
 }
 
+fn read_search_source(
+    root: &Path,
+    path: String,
+    budget: usize,
+) -> Option<(WorkspaceSearchSource, usize)> {
+    let candidate = path.split('/').collect::<PathBuf>();
+    let candidate = root.join(candidate);
+    let canonical = fs::canonicalize(&candidate).ok()?;
+    // The directory walk skips links. Recheck before reading in case the
+    // workspace changed after enumeration.
+    if !is_strictly_inside(&canonical, root) || canonical != candidate {
+        return None;
+    }
+    let file = fs::File::open(canonical).ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > budget as u64 {
+        return None;
+    }
+    let mut bytes = Vec::with_capacity(metadata.len() as usize);
+    file.take(budget as u64 + 1).read_to_end(&mut bytes).ok()?;
+    let length = bytes.len();
+    if length > budget {
+        return None;
+    }
+    let is_xmd = path.to_ascii_lowercase().ends_with(".xmd");
+    let (content, archive) = if is_xmd {
+        (None, Some(bytes))
+    } else {
+        (Some(String::from_utf8(bytes).ok()?), None)
+    };
+    Some((
+        WorkspaceSearchSource {
+            path,
+            content,
+            archive,
+        },
+        length,
+    ))
+}
+
+fn read_workspace_search_sources(root: &str) -> Result<WorkspaceSearchListing, String> {
+    let resolved = resolve_workspace_root(root)?;
+    let listing = list_workspace_with_limits(&resolved.display, &WorkspaceLimits::default())?;
+    let mut result = WorkspaceSearchListing {
+        root: listing.root,
+        sources: Vec::new(),
+        skipped: 0,
+        truncated: listing.truncated,
+    };
+    let mut remaining = MAX_SEARCH_WORKSPACE_BYTES;
+    for entry in listing
+        .entries
+        .into_iter()
+        .filter(|entry| entry.kind == "document")
+    {
+        if remaining > 0 {
+            if let Some((source, bytes)) = read_search_source(
+                &resolved.canonical,
+                entry.path,
+                remaining.min(MAX_SEARCH_FILE_BYTES),
+            ) {
+                result.sources.push(source);
+                remaining -= bytes;
+                continue;
+            }
+        }
+        result.skipped += 1;
+    }
+    Ok(result)
+}
+
+#[tauri::command]
+pub async fn workspace_search_sources(root: String) -> Result<WorkspaceSearchListing, String> {
+    tauri::async_runtime::spawn_blocking(move || read_workspace_search_sources(&root))
+        .await
+        .map_err(|error| error.to_string())?
+}
+
 #[tauri::command]
 pub fn create_workspace_document(
     root: String,
@@ -605,6 +704,35 @@ pub fn rename_workspace_path(
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn workspace_search_reads_nested_text_and_skips_unreadable_or_oversized_sources() {
+        let dir = temp_workspace();
+        let root = dir.path();
+        fs::create_dir(root.join("notes")).unwrap();
+        fs::create_dir(root.join(".git")).unwrap();
+        fs::write(root.join("notes").join("汉字.md"), "# heading\nsecond line").unwrap();
+        fs::write(root.join(".git").join("hidden.md"), "hidden").unwrap();
+        fs::write(root.join("bad.txt"), [0xff]).unwrap();
+        fs::write(root.join("large.md"), vec![b'x'; MAX_SEARCH_FILE_BYTES + 1]).unwrap();
+        fs::write(root.join("doc.xmd"), [1, 2, 3]).unwrap();
+
+        let listing = read_workspace_search_sources(&root.to_string_lossy()).unwrap();
+        assert_eq!(listing.skipped, 2);
+        assert_eq!(listing.sources.len(), 2);
+        let text = listing
+            .sources
+            .iter()
+            .find(|source| source.path == "notes/汉字.md")
+            .unwrap();
+        assert_eq!(text.content.as_deref(), Some("# heading\nsecond line"));
+        let archive = listing
+            .sources
+            .iter()
+            .find(|source| source.path == "doc.xmd")
+            .unwrap();
+        assert_eq!(archive.archive.as_deref(), Some(&[1, 2, 3][..]));
+    }
 
     fn temp_workspace() -> tempfile::TempDir {
         tempfile::Builder::new()

@@ -6,6 +6,7 @@ import { remarkCallouts } from '@/lib/remarkCallouts';
 import { remarkDropFrontMatter } from '@/lib/frontMatter';
 import { rehypeEmbedImages, type ImageResolver } from '@/lib/export/embedImages';
 import remarkRehype from 'remark-rehype';
+import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
@@ -265,6 +266,7 @@ export async function buildStandaloneHtml(
     .use(remarkFrontmatter, ['yaml', 'toml'])
     .use(remarkDropFrontMatter)
     .use(remarkCallouts, { lang: opts.lang })
+    .use(remarkExportHtmlBreaks)
     .use(remarkRehype)
     .use(rehypeHighlight)
     .use(rehypeSanitize, SANITIZE_SCHEMA);

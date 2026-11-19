@@ -17,6 +17,7 @@ import {
   type VisualTableLabels,
 } from '../src/lib/visualTable';
 import type { VisualTableView } from '../src/lib/visualTableCommands';
+import { pasteVisualTableCells } from '../src/lib/visualTableCommands';
 
 const labels: VisualTableLabels = {
   label: 'Markdown table',
@@ -41,6 +42,7 @@ const labels: VisualTableLabels = {
   columnDeleted: 'Column deleted',
   alignmentChanged: 'Alignment updated',
   rowLimit: 'Row limit {rows}',
+  pasteLimit: 'Paste exceeds the limit',
   columnLimit: 'Column limit {columns}',
 };
 
@@ -89,6 +91,20 @@ function info(state: EditorState, index = 0): VisualTableInfo {
 const DOC = '| A | B |\n| --- | --- |\n| a | b |\n| c | d |';
 
 describe('visual table cell transactions', () => {
+  it('pastes a spreadsheet rectangle, extends the grid, and undoes atomically', () => {
+    const h = harness(DOC);
+    const table = info(h.state);
+    expect(pasteVisualTableCells(h.view, table.from, 2, 1, [['x|y', 'top\nbottom'], ['next', 'last']], table.source))
+      .toBe('applied');
+    expect(info(h.state).cells).toEqual([['A', 'B', ''], ['a', 'b', ''], ['c', 'x\\|y', 'top<br>bottom'], ['', 'next', 'last']]);
+    expect(h.specs).toHaveLength(1);
+    expect(undo(h.view)).toBe(true);
+    expect(h.state.doc.toString()).toBe(DOC);
+    expect(pasteVisualTableCells(h.view, table.from, 2, 1, [['x']], 'stale')).toBe('stale');
+    expect(pasteVisualTableCells(h.view, table.from, 2, 1, Array.from({ length: 100 }, () => ['x']), table.source)).toBe('limit');
+    expect(h.state.doc.toString()).toBe(DOC);
+  });
+
   it('replaces only the edited row line and is undoable', () => {
     const h = harness(DOC);
     const table = info(h.state);

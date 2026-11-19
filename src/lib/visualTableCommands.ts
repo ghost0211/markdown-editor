@@ -13,6 +13,7 @@ import {
   serializeVisualTableCellWithMap,
   serializeVisualTable,
   serializeVisualTableRow,
+  VISUAL_TABLE_MAX_BYTES,
   VISUAL_TABLE_MAX_COLUMNS,
   VISUAL_TABLE_MAX_ROWS,
   visualTableAlignmentCell,
@@ -78,6 +79,46 @@ export function updateVisualTableCell(
     userEvent: 'input.visualTable.cell',
   });
   return true;
+}
+
+export function pasteVisualTableCells(
+  view: VisualTableView,
+  tableFrom: number,
+  row: number,
+  column: number,
+  pasted: readonly (readonly string[])[],
+  expectedTable: string
+): 'applied' | 'stale' | 'limit' {
+  const table = currentTable(view, tableFrom);
+  if (view.state.readOnly || !table || table.source !== expectedTable || !validCell(table, row, column)) return 'stale';
+  if (!pasted.length || !pasted.some((line) => line.length)) return 'stale';
+  const rowCount = Math.max(table.rows, row + pasted.length);
+  const columns = pasted.reduce((max, line) => Math.max(max, column + line.length), table.columns);
+  if (rowCount > VISUAL_TABLE_MAX_ROWS || columns > VISUAL_TABLE_MAX_COLUMNS) return 'limit';
+  const cells = Array.from({ length: rowCount }, (_, r) =>
+    Array.from({ length: columns }, (_, c) => table.cells[r]?.[c] ?? '')
+  );
+  for (const [r, line] of pasted.entries()) {
+    for (const [c, value] of line.entries()) {
+      cells[row + r][column + c] = serializeVisualTableCell(value.replace(/\r\n?|\n/g, '<br>'));
+    }
+  }
+  const alignments = Array.from({ length: columns }, (_, c) => table.alignments[c] ?? 'none');
+  const next = serializeVisualTable(table, cells, alignments);
+  if (next.length > VISUAL_TABLE_MAX_BYTES) return 'limit';
+  const changes = columns !== table.columns || rowCount !== table.rows
+    ? [{ from: table.from, to: table.to, insert: next }]
+    : pasted.flatMap((_, r) => {
+      const index = row + r;
+      const line = view.state.doc.line(visualTableRowLine(table, index));
+      return cells[index].some((value, c) => value !== table.cells[index][c])
+        ? [{ from: line.from, to: line.to, insert: serializeVisualTableRow(table.indent, cells[index]) }]
+        : [];
+    });
+  if (changes.length) {
+    view.dispatch({ changes, annotations: isolateHistory.of('full'), userEvent: 'input.visualTable.paste' });
+  }
+  return 'applied';
 }
 
 /** Inserts an empty row after `row` (header included). */

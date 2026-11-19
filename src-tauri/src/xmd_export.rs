@@ -76,6 +76,40 @@ pub fn read_xmd_document(path: String) -> Result<Response, String> {
 }
 
 #[tauri::command]
+pub async fn read_document_outline_source(path: String) -> Result<Response, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let normalized = path.replace('\\', "/");
+        if normalized.starts_with("//") || normalized.starts_with("/??/") {
+            return Err("不支持网络共享文档 / Network share documents are not supported".into());
+        }
+        let source = std::path::Path::new(&path);
+        let extension = source
+            .extension()
+            .and_then(|ext| ext.to_str())
+            .unwrap_or_default()
+            .to_ascii_lowercase();
+        if !source.is_absolute()
+            || !crate::workspace::WORKSPACE_DOCUMENT_EXTENSIONS.contains(&extension.as_str())
+        {
+            return Err("不支持的目标文档 / Unsupported target document".into());
+        }
+        let canonical = fs::canonicalize(source).map_err(|error| error.to_string())?;
+        let canonical = crate::path_utils::canonicalize_path(&canonical);
+        let canonical = canonical.to_string_lossy();
+        if canonical.replace('\\', "/").starts_with("//") {
+            return Err("不支持网络共享文档 / Network share documents are not supported".into());
+        }
+        let metadata = fs::metadata(&*canonical).map_err(|error| error.to_string())?;
+        if !metadata.is_file() {
+            return Err("目标不是常规文件 / Target is not a regular file".into());
+        }
+        read_bounded_file(&canonical, 2 * 1024 * 1024).map(Response::new)
+    })
+    .await
+    .map_err(|error| error.to_string())?
+}
+
+#[tauri::command]
 pub fn read_xmd_resource(path: String) -> Result<Response, String> {
     local_resource_bytes(&path).map(Response::new)
 }

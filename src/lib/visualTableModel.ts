@@ -47,6 +47,7 @@ export interface VisualTableLabels {
   alignmentChanged: string;
   /** `已达到 {rows} 行上限`. */
   rowLimit: string;
+  pasteLimit: string;
   /** `已达到 {columns} 列上限`. */
   columnLimit: string;
 }

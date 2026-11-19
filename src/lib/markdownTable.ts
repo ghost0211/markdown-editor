@@ -262,15 +262,40 @@ export function rowsToMarkdownTable(rows: string[][]): string {
 }
 
 /** Extracts the rows of the first `<table>` in clipboard HTML (browser only). */
-export function parseHtmlTable(html: string): string[][] | null {
+export function parseHtmlTable(html: string, forExistingTable = false): string[][] | null {
   if (typeof DOMParser === 'undefined' || !/<table[\s>]/i.test(html)) return null;
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const table = doc.querySelector('table');
   if (!table) return null;
-  const rows = Array.from(table.querySelectorAll('tr')).map((tr) =>
-    Array.from(tr.querySelectorAll('th,td')).map((cell) => cell.textContent ?? '')
+  const rows = Array.from(table.rows, (row) =>
+    Array.from(row.cells, (cell) => {
+      if (forExistingTable) {
+        for (const br of cell.querySelectorAll('br')) br.replaceWith('\n');
+      }
+      return cell.textContent ?? '';
+    })
   );
-  return rows.length >= 1 && rows.some((row) => row.length >= 2) ? rows : null;
+  return rows.some((row) => row.length >= (forExistingTable ? 1 : 2)) ? rows : null;
+}
+
+/** Excel and other spreadsheet apps supply a quoted, tab-delimited plain-text fallback. */
+export function parseSpreadsheetText(text: string): string[][] | null {
+  const source = text.replace(/\r\n?/g, '\n').replace(/\n$/, '');
+  if (!/[\t\n]/.test(source)) return null;
+  const rows: string[][] = [[]];
+  const quoted = /"((?:[^"]|"")*)"(?=[\t\n]|$)/y;
+  const unquoted = /[^\t\n]*/y;
+  let position = 0;
+  while (position <= source.length) {
+    quoted.lastIndex = unquoted.lastIndex = position;
+    const field = quoted.exec(source);
+    const value = field ? field[1].replace(/""/g, '"') : unquoted.exec(source)![0];
+    rows[rows.length - 1].push(value);
+    position = field ? quoted.lastIndex : unquoted.lastIndex;
+    if (source[position] === '\n') rows.push([]);
+    position++;
+  }
+  return rows;
 }
 
 const SINGLE_URL = /^https?:\/\/[^\s<>]+$/i;

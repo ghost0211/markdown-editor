@@ -72,6 +72,7 @@ pub fn run() {
             xmd_export::fetch_xmd_image,
             xmd_export::read_xmd_resource,
             xmd_export::read_xmd_document,
+            xmd_export::read_document_outline_source,
             xmd_export::write_xmd_file,
             history::record_document_history,
             history::list_document_history,
@@ -87,6 +88,7 @@ pub fn run() {
             commands::clear_session_data,
             workspace::choose_workspace_folder,
             workspace::list_workspace,
+            workspace::workspace_search_sources,
             workspace::create_workspace_document,
             workspace::create_workspace_folder,
             workspace::rename_workspace_path

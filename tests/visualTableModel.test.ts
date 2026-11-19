@@ -49,6 +49,7 @@ const labels: VisualTableLabels = {
   columnDeleted: 'Column deleted',
   alignmentChanged: 'Alignment updated',
   rowLimit: 'Row limit {rows}',
+  pasteLimit: 'Paste exceeds the limit',
   columnLimit: 'Column limit {columns}',
 };
 

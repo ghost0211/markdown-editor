@@ -308,25 +308,28 @@ export function useDocuments(
     [showToast, saveSession, rememberRecentFile, t]
   );
 
-  const openFileByPath = useCallback(
-    async (filePath: string): Promise<boolean> => {
+  const openTabByPath = useCallback(
+    async (filePath: string): Promise<string | null> => {
       const trimmed = filePath ? filePath.trim() : '';
-      if (!trimmed) return false;
+      if (!trimmed) return null;
 
       try {
         const content = await readTextFile(trimmed);
         const fileMtime = (await getFileMtime(trimmed)) ?? undefined;
         const fileName = getFileNameFromPath(trimmed);
-        openOrFocusDocument(trimmed, content, fileName, fileMtime);
-        return true;
+        return openOrFocusDocument(trimmed, content, fileName, fileMtime).tab.id;
       } catch (err: unknown) {
         const msg = (err as Error)?.message || String(err);
         const fileName = getFileNameFromPath(trimmed);
         showToast(t('toasts.openFailed', { name: fileName, error: msg }), 'error');
-        return false;
+        return null;
       }
     },
     [openOrFocusDocument, showToast, t]
+  );
+
+  const openFileByPath = useCallback(async (filePath: string): Promise<boolean> =>
+    Boolean(await openTabByPath(filePath)), [openTabByPath]
   );
 
   const openFilesByPaths = useCallback(
@@ -896,6 +899,7 @@ export function useDocuments(
     createDiffTab,
     openDocument,
     openFileByPath,
+    openTabByPath,
     openFilesByPaths,
     openRecentFile,
     openDroppedDocument,

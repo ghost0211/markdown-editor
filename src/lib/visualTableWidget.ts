@@ -7,16 +7,19 @@ import {
   insertVisualTableColumn,
   insertVisualTableRow,
   rememberVisualTableCellFocus,
+  pasteVisualTableCells,
   revealVisualTableSource,
   setVisualTableColumnAlignment,
   updateVisualTableCell,
 } from '@/lib/visualTableCommands';
 import { renderInlineMarkdownInto } from '@/lib/inlineMarkdown';
+import { parseHtmlTable, parseSpreadsheetText } from '@/lib/markdownTable';
 import {
   collectVisualTables,
   findVisualTableAt,
   formatVisualTableLabel,
   serializeVisualTableCell,
+  VISUAL_TABLE_MAX_BYTES,
   VISUAL_TABLE_MAX_COLUMNS,
   VISUAL_TABLE_MAX_ROWS,
   visualTableCellNeighbor,
@@ -516,6 +519,32 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       rememberVisualTableCellFocus(view, container, input);
       commitCell(input, row, column);
     });
+    input.addEventListener('paste', (event) => {
+      const clipboard = event.clipboardData;
+      if (!clipboard || input.readOnly || composing.get(input)) return;
+      const plain = clipboard.getData('text/plain');
+      if (plain.length > VISUAL_TABLE_MAX_BYTES) {
+        event.preventDefault();
+        announce(labels.pasteLimit);
+        return;
+      }
+      const html = clipboard.getData('text/html');
+      const fromHtml = html && html.length <= 1024 * 1024 ? parseHtmlTable(html, true) : null;
+      const cells = fromHtml ?? parseSpreadsheetText(plain);
+      if (!cells) return;
+      event.preventDefault();
+      const table = resolve();
+      const expected = container.dataset.tableSource;
+      if (!table || expected === undefined) { announce(labels.stale); return; }
+      const result = pasteVisualTableCells(view, table.from, row, column, cells, expected);
+      if (result === 'applied') {
+        const updated = resolve();
+        if (updated && input.isConnected) syncFocusedCell(input, updated, row, column);
+        else focusCellAfterUpdate(table.from, row, column);
+      } else {
+        announce(result === 'limit' ? labels.pasteLimit : labels.stale);
+      }
+    });
     input.addEventListener('blur', (event) => {
       composing.set(input, false);
       // Keep the cell target when focus moves to a toolbar outside the editor
@@ -555,6 +584,14 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
         event.preventDefault();
         event.stopPropagation();
         toolbar.querySelector<HTMLButtonElement>('button[data-action]')?.focus();
+        return;
+      }
+      if (event.altKey && !mod && event.key === 'Enter') {
+        event.preventDefault();
+        if (!input.readOnly) {
+          input.setRangeText('<br>', input.selectionStart ?? input.value.length, input.selectionEnd ?? input.value.length, 'end');
+          commitCell(input, row, column);
+        }
         return;
       }
       switch (event.key) {

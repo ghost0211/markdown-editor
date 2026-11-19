@@ -44,12 +44,14 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 - **Image context tools**: click an image to edit alternative text/address, replace it with a supported file (up to 32 MiB), or edit its source. Removal requires confirmation, affects this reference only, never deletes disk/shared resources, and is undoable. Replacement files are embedded and saved through the normal Markdown/XMD path; replacing a reference image's address detaches only this use.
 - **Floating selection toolbar**: selecting ordinary text offers bold, italic, strikethrough, inline code and links. `Alt+F10` focuses it, `Tab` moves between controls and `Escape` dismisses it. Code, math, resource URLs, multiple selections and large selections are excluded.
 - **`/` insertion menu**: type `/` at the start of an ordinary line, filter with Chinese or English terms, and insert headings, lists, tasks, quotes, code blocks, tables, images, links or dividers. Arrow keys select, `Enter` / `Tab` inserts and `Escape` cancels without deleting your query. Insertion is one undo step; composition-confirmation keys remain owned by the IME.
-- This is not a Word-style rich-text editor: cells edit Markdown rather than arbitrary HTML. Math, HTML, front matter and unsupported complex tables remain source-editable.
+- Press `Alt+Enter` in a cell to insert `<br>`. Excel columns and rectangles paste from the focused cell, expand the grid when needed, and undo in one step. Enable Preferences → Editor Preferences → Render HTML to display the breaks while editing.
+- Cells edit Markdown text. Use source mode for math, other HTML, front matter and complex tables.
 
 ### Advanced Find & Replace
 
 - Open the title-bar magnifier, `Ctrl+Shift+F`, or `Ctrl+H`. `Ctrl+F` retains the editor's quick search.
 - Search the current/all open documents with case, Unicode whole-word, regex and optional code skipping. Results are grouped by document and can locate source matches. Embedded image/attachment `data:` destinations are protected and excluded from Base64 snippets/replacements.
+- On desktop, choose Workspace for read-only search across Markdown, text and XMD files in the selected folder. Open files use their live buffers. Click a match to open and select it, or refresh files to rescan the folder. Skipped files are reported in the search panel.
 - Preview before applying the current/all matches. Multi-document changes validate every original buffer before applying as one batch. Replacements are undoable per tab; saving and Auto Save follow the existing settings.
 - Expensive search/regex replacement runs in a time-limited Web Worker. Results cap at 1000 per document / 5000 total; truncation disables Replace All instead of silently missing matches. Regex is disabled without Worker support.
 
@@ -75,13 +77,14 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
 ### Document Quality Checks
 
 - Document tools → Check document quality uses the real Markdown AST to check heading-level jumps, empty headings/links, missing image alt text, unclosed code/front matter, duplicate headings, and missing/unresolved local resources.
-- Filter errors, warnings, and informational findings; select one to locate its source line. Code, math, comments, and escaped Markdown are not mistaken for content. Local files receive metadata-only stat checks; no file bodies are read and no remote links are contacted. Reports never auto-fix or rewrite the document.
+- Filter issues and select one to locate its source line. Heading anchors are checked in the current document and readable local target documents. Choose a replacement heading and confirm to repair a broken anchor in one undoable edit. Remote links are excluded from these checks.
 
 ### Export Style Themes
 
 - Open Export → Export theme to configure system/serif/monospace fonts, 10–20px body text, light/sepia/dark palettes, cover, table of contents, header text, and page numbers. Save up to 10 named local presets.
 - HTML/PDF share a fixed safe style whitelist. Word supports a real TOC field, cover, header, and optional page-number footer. Without a saved custom theme, existing export behavior is retained; XMD is unchanged.
 - PDF page numbers use Edge's native print header/footer. Custom header text applies to HTML/Word. HTML print page numbers use progressive `counter(page)` enhancement; unsupported browsers do not receive fabricated page numbers.
+- `<br>` line breaks in text and tables are preserved in Word, PDF, HTML, and rich-text copy.
 
 ### Folder Workspace
 
@@ -136,6 +139,7 @@ Built from the ground up on **Tauri 2 + React + TypeScript + CodeMirror 6**, del
    - Real-time H1-H6 heading extraction, filtering out code block headings.
    - Live heading search and filter.
    - Two-way navigation: jumps to CodeMirror lines in Edit/Split modes and scrolls to preview anchors in Preview mode.
+   - In Edit or Split mode, drag an outline handle to reorder sibling sections with their body and subheadings. Renumber Sections previews changes to existing numeric prefixes and applies them in one undoable edit.
 
 8. **GFM Rich-Text Rendering & Security Sandbox**:
    - Full GitHub Flavored Markdown support (tables, clickable task lists, strikethrough, autolinks, and footnotes).

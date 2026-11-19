@@ -6,10 +6,13 @@ import {
   ChevronRight,
   Hash,
   FileQuestion,
+  GripVertical,
+  ListOrdered,
   X,
 } from 'lucide-react';
 import { useI18n } from '@/i18n';
 import clsx from 'clsx';
+import type { OutlinePlacement } from '@/lib/outlineEditing';
 
 interface SidebarProps {
   headings: HeadingItem[];
@@ -17,6 +20,8 @@ interface SidebarProps {
   onClose: () => void;
   onSelectHeading: (item: HeadingItem) => void;
   currentLine?: number;
+  onMoveSection?: (line: number, target: { line: number; placement: OutlinePlacement } | { direction: -1 | 1 }) => void;
+  onRenumber?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
@@ -25,9 +30,15 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onClose,
   onSelectHeading,
   currentLine = 1,
+  onMoveSection,
+  onRenumber,
 }) => {
   const { t } = useI18n();
   const [search, setSearch] = useState('');
+  const [dragFrom, setDragFrom] = useState<number | null>(null);
+  const [dropAt, setDropAt] = useState<{ line: number; placement: OutlinePlacement } | null>(null);
+  const moveEnabled = Boolean(onMoveSection && !search.trim());
+  const clearDrag = () => { setDragFrom(null); setDropAt(null); };
 
   const filteredHeadings = useMemo(() => {
     if (!search.trim()) return headings;
@@ -63,15 +74,28 @@ export const Sidebar: React.FC<SidebarProps> = ({
           <ListTree className="w-4 h-4 text-blue-500" />
           <span>{t('sidebar.outlineTitle', { count: headings.length })}</span>
         </div>
-        <button
-          type="button"
-          onClick={onClose}
-          title={t('sidebar.collapse')}
-          aria-label={t('sidebar.collapse')}
-          className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
-        >
-          <X className="w-3.5 h-3.5" />
-        </button>
+        <div className="flex items-center gap-1">
+          {onRenumber && headings.length > 0 && (
+            <button
+              type="button"
+              onClick={onRenumber}
+              title={t('sidebar.renumber')}
+              aria-label={t('sidebar.renumber')}
+              className="rounded p-1 text-slate-500 hover:bg-slate-200 dark:hover:bg-slate-800"
+            >
+              <ListOrdered className="w-3.5 h-3.5" />
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={onClose}
+            title={t('sidebar.collapse')}
+            aria-label={t('sidebar.collapse')}
+            className="p-1 rounded hover:bg-slate-200 dark:hover:bg-slate-800 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -128,40 +152,88 @@ export const Sidebar: React.FC<SidebarProps> = ({
             const paddingLeft = `${(heading.level - 1) * 12 + 6}px`;
 
             return (
-              <button
+              <div
                 key={heading.id}
-                onClick={() => onSelectHeading(heading)}
-                style={{ paddingLeft }}
-                className={clsx(
-                  'w-full flex items-center py-1.5 pr-2 rounded text-left transition-colors group',
-                  isCurrent
-                    ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
-                    : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
-                )}
-                title={t('sidebar.headingItemTooltip', {
-                  line: heading.line,
-                  level: heading.level,
-                  text: heading.text,
+                className={clsx('flex items-center rounded border-y border-transparent', {
+                  'border-t-blue-500': dropAt?.line === heading.line && dropAt.placement === 'before',
+                  'border-b-blue-500': dropAt?.line === heading.line && dropAt.placement === 'after',
+                  'opacity-60': dragFrom === heading.line,
                 })}
+                onDragOver={(event) => {
+                  if (!moveEnabled || dragFrom === null || dragFrom === heading.line) return;
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = 'move';
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                  setDropAt((previous) => previous?.line === heading.line && previous.placement === placement
+                    ? previous : { line: heading.line, placement });
+                }}
+                onDrop={(event) => {
+                  if (!moveEnabled || dragFrom === null) return;
+                  event.preventDefault();
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  const placement = event.clientY < rect.top + rect.height / 2 ? 'before' : 'after';
+                  if (dragFrom !== heading.line) onMoveSection?.(dragFrom, { line: heading.line, placement });
+                  clearDrag();
+                }}
               >
-                {/* Level indicator */}
-                <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-blue-500 mr-1.5 shrink-0 flex items-center">
-                  {heading.level === 1 ? (
-                    <ChevronRight className="w-3 h-3 text-blue-500" />
-                  ) : (
-                    <Hash className="w-2.5 h-2.5" />
+                <button
+                  type="button"
+                  onClick={() => onSelectHeading(heading)}
+                  style={{ paddingLeft }}
+                  className={clsx(
+                    'min-w-0 flex-1 flex items-center py-1.5 pr-2 rounded text-left transition-colors group',
+                    isCurrent
+                      ? 'bg-blue-50 dark:bg-blue-950/40 text-blue-700 dark:text-blue-300 font-medium'
+                      : 'text-slate-600 dark:text-slate-300 hover:bg-slate-200/60 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-100'
                   )}
-                  {heading.level}
-                </span>
+                  title={t('sidebar.headingItemTooltip', {
+                    line: heading.line,
+                    level: heading.level,
+                    text: heading.text,
+                  })}
+                >
+                  {/* Level indicator */}
+                  <span className="text-[10px] font-mono text-slate-400 dark:text-slate-500 group-hover:text-blue-500 mr-1.5 shrink-0 flex items-center">
+                    {heading.level === 1 ? (
+                      <ChevronRight className="w-3 h-3 text-blue-500" />
+                    ) : (
+                      <Hash className="w-2.5 h-2.5" />
+                    )}
+                    {heading.level}
+                  </span>
 
-                {/* Heading Text */}
-                <span className="truncate flex-1 text-xs">{heading.text}</span>
+                  {/* Heading Text */}
+                  <span className="truncate flex-1 text-xs">{heading.text}</span>
 
-                {/* Line number badge */}
-                <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-1 font-mono opacity-60 group-hover:opacity-100">
-                  L{heading.line}
-                </span>
-              </button>
+                  {/* Line number badge */}
+                  <span className="text-[10px] text-slate-400 dark:text-slate-500 ml-1 font-mono opacity-60 group-hover:opacity-100">
+                    L{heading.line}
+                  </span>
+                </button>
+                {moveEnabled && (
+                  <button
+                    type="button"
+                    draggable
+                    title={t('sidebar.moveSection')}
+                    aria-label={t('sidebar.moveSectionAria', { text: heading.text })}
+                    className="shrink-0 p-1 text-slate-400 cursor-grab active:cursor-grabbing hover:text-blue-500 focus-visible:text-blue-500"
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = 'move';
+                      event.dataTransfer.setData('application/x-markdown-outline', String(heading.line));
+                      setDragFrom(heading.line);
+                    }}
+                    onDragEnd={clearDrag}
+                    onKeyDown={(event) => {
+                      if (event.key !== 'ArrowUp' && event.key !== 'ArrowDown') return;
+                      event.preventDefault();
+                      onMoveSection?.(heading.line, { direction: event.key === 'ArrowUp' ? -1 : 1 });
+                    }}
+                  >
+                    <GripVertical className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
             );
           })
         )}
