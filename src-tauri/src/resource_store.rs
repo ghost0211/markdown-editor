@@ -21,7 +21,7 @@ fn created_resources() -> &'static Mutex<HashMap<String, CreatedResource>> {
     CREATED.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-fn write_resource_frame(frame: &[u8], create_new: bool) -> Result<Option<String>, String> {
+fn decode_resource_frame(frame: &[u8]) -> Result<(&Path, &[u8]), String> {
     let header: [u8; 4] = frame
         .get(..4)
         .ok_or("Invalid resource frame")?
@@ -37,10 +37,14 @@ fn write_resource_frame(frame: &[u8], create_new: bool) -> Result<Option<String>
         return Err("不支持网络共享资源 / Network share resources are not supported".into());
     }
     let data = frame.get(4 + length..).ok_or("Invalid resource data")?;
+    Ok((Path::new(path), data))
+}
+
+fn write_resource_frame(frame: &[u8], create_new: bool) -> Result<Option<String>, String> {
+    let (target, data) = decode_resource_frame(frame)?;
     if data.len() > MAX_RESOURCE_BYTES {
         return Err("资源超过 32 MiB / Resource exceeds 32 MiB".into());
     }
-    let target = Path::new(path);
     let parent = target
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -142,6 +146,19 @@ pub fn create_resource_file(request: Request<'_>) -> Result<Option<String>, Stri
         InvokeBody::Raw(frame) => write_resource_frame(frame, true),
         _ => Err("Expected binary resource frame".into()),
     }
+}
+
+#[tauri::command]
+pub fn write_new_export_file(request: Request<'_>) -> Result<(), String> {
+    let InvokeBody::Raw(frame) = request.body() else {
+        return Err("Expected binary export frame".into());
+    };
+    let (target, data) = decode_resource_frame(frame)?;
+    let extension = target.extension().and_then(|extension| extension.to_str());
+    if !target.is_absolute() || !matches!(extension, Some("docx" | "html")) {
+        return Err("无效的导出文件 / Invalid export file".into());
+    }
+    crate::pdf_export::write_new_export(target, data)
 }
 
 #[cfg(test)]

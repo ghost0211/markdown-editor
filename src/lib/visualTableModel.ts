@@ -50,6 +50,21 @@ export interface VisualTableLabels {
   pasteLimit: string;
   /** `已达到 {columns} 列上限`. */
   columnLimit: string;
+  dataTools?: {
+    title: string;
+    column: string;
+    columnNumber: string;
+    filter: string;
+    sortType: string;
+    text: string;
+    number: string;
+    date: string;
+    ascending: string;
+    descending: string;
+    sorted: string;
+    visible: string;
+    locale: string;
+  };
 }
 
 export interface VisualTableCellRange {

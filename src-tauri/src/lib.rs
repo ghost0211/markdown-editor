@@ -63,6 +63,7 @@ pub fn run() {
             commands::save_resource_dialog,
             resource_store::export_resource_file,
             resource_store::create_resource_file,
+            resource_store::write_new_export_file,
             resource_store::settle_created_resource_files,
             commands::write_text_file,
             commands::write_binary_file,

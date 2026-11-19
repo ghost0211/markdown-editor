@@ -44,8 +44,10 @@ import { showInFolder, openExternalUrl, setWindowTheme, isTauri, chooseWorkspace
 import { workspaceEntryAbsolutePath, type WorkspaceEntry, type WorkspaceListing } from '@/lib/workspace';
 import { DEFAULT_EXPORT_STYLE, type ExportStyle } from '@/lib/exportStyle';
 import { resolveDocumentLink } from '@/lib/documentLinks';
-import { normalizePathKey } from '@/lib/documentUtils';
+import { normalizeLineEndings, normalizePathKey } from '@/lib/documentUtils';
 import type { SearchMatch } from '@/lib/documentSearch';
+import type { ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
+import type { ChapterBacklink } from '@/lib/chapterLinks';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
 import { cycleTabIndex } from '@/lib/tabNavigation';
@@ -81,6 +83,8 @@ const LazyTemplateManager = lazy(() => import('@/components/TemplateManager').th
 const LazyQualityPanel = lazy(() => import('@/components/QualityPanel').then((m) => ({ default: m.QualityPanel })));
 const LazyExportStyleDialog = lazy(() => import('@/components/ExportStyleDialog').then((m) => ({ default: m.ExportStyleDialog })));
 const LazyWorkspacePanel = lazy(() => import('@/components/WorkspacePanel').then((m) => ({ default: m.WorkspacePanel })));
+const LazyBatchExport = lazy(() => import('@/components/BatchExportDialog').then((m) => ({ default: m.BatchExportDialog })));
+const LazyChapterLinks = lazy(() => import('@/components/ChapterLinksDialog').then((m) => ({ default: m.ChapterLinksDialog })));
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
@@ -229,6 +233,13 @@ const AppContent: React.FC<AppContentProps> = ({
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isQualityOpen, setIsQualityOpen] = useState(false);
   const [isExportThemeOpen, setIsExportThemeOpen] = useState(false);
+  const [isBatchExportOpen, setIsBatchExportOpen] = useState(false);
+  const [chapterDialog, setChapterDialog] = useState<
+    { id: string; mode: 'insert'; request: ChapterLinkInsertion } | { id: string; mode: 'incoming' } | null
+  >(null);
+  useEffect(() => {
+    if (chapterDialog && chapterDialog.id !== activeTab?.id) setChapterDialog(null);
+  }, [activeTab?.id, chapterDialog]);
   const [numberingPreview, setNumberingPreview] = useState<{
     id: string; original: string; content: string; changes: OutlineNumberingChange[];
   } | null>(null);
@@ -236,6 +247,7 @@ const AppContent: React.FC<AppContentProps> = ({
     setNumberingPreview(null);
     setIsSearchOpen(false); setIsResourceManagerOpen(false); setHistoryTabId(null);
     setIsTemplatesOpen(false); setIsQualityOpen(false); setIsExportThemeOpen(false);
+    setIsBatchExportOpen(false); setChapterDialog(null);
   }, []);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchSelection, setSearchSelection] = useState<{
@@ -253,10 +265,34 @@ const AppContent: React.FC<AppContentProps> = ({
     setHistoryTabId(activeTab?.kind !== 'diff' ? activeTab.id : null);
   }, [activeTab, closeFeatureModals]);
   const handleCloseHistory = useCallback(() => setHistoryTabId(null), []);
-  const handleRestoreHistory = useCallback((content: string): boolean => {
+  const handleOpenBatchExport = useCallback(() => { closeFeatureModals(); setIsBatchExportOpen(true); }, [closeFeatureModals]);
+  const handleCloseBatchExport = useCallback(() => setIsBatchExportOpen(false), []);
+  const handleOpenChapterLink = useCallback((request: ChapterLinkInsertion) => {
+    if (!activeTab || activeTab.kind === 'diff') return;
+    closeFeatureModals();
+    setChapterDialog({ id: activeTab.id, mode: 'insert', request });
+  }, [activeTab, closeFeatureModals]);
+  const handleOpenReferences = useCallback(() => {
+    if (!activeTab || activeTab.kind === 'diff') return;
+    closeFeatureModals();
+    setChapterDialog({ id: activeTab.id, mode: 'incoming' });
+  }, [activeTab, closeFeatureModals]);
+  const handleCloseChapterDialog = useCallback(() => setChapterDialog(null), []);
+  const handleInsertChapterLink = useCallback((link: string) => {
+    if (chapterDialog?.mode !== 'insert' || chapterDialog.id !== activeTab?.id ||
+        !editorRef.current?.replaceChapterLink(chapterDialog.request, link)) return false;
+    setChapterDialog(null);
+    requestAnimationFrame(() => editorRef.current?.focus());
+    return true;
+  }, [activeTab?.id, chapterDialog]);
+  const handleRestoreHistory = useCallback((content: string, expected: string): boolean => {
     const tab = tabsRef.current.find((item) => item.id === historyTabId && item.kind !== 'diff');
     if (!tab) return false;
-    if (activeTab?.id === tab.id && editorRef.current?.replaceDocument(tab.content, content)) {
+    if (normalizeLineEndings(tab.content) !== normalizeLineEndings(expected)) {
+      showToast(t('history.changed'), 'warning');
+      return false;
+    }
+    if (activeTab?.id === tab.id && editorRef.current?.replaceDocument(normalizeLineEndings(tab.content), content)) {
       showToast(t('history.restored'), 'success');
       return true;
     }
@@ -678,6 +714,18 @@ const AppContent: React.FC<AppContentProps> = ({
     setSearchSelection({ id, from: match.from, to: match.to, content: original, fallbackLine: match.line });
     return true;
   }, [defaultViewMode, openTabByPath, setActiveTabId, updateViewMode]);
+  const handleLocateBacklink = useCallback(async (backlink: ChapterBacklink, original: string) => {
+    const { document, from, to, line } = backlink;
+    if (document.filePath && !document.filePath.startsWith('browser://')) {
+      const match = { tabId: document.id, from, to, line, column: 1 };
+      if (!(await handleLocateWorkspaceSearch(document.filePath, match, original))) return false;
+    } else {
+      if (tabsRef.current.find((tab) => tab.id === document.id)?.content !== original) return false;
+      handleLocateSearch(document.id, from, to);
+    }
+    setChapterDialog(null);
+    return true;
+  }, [handleLocateSearch, handleLocateWorkspaceSearch]);
   useEffect(() => {
     if (!searchSelection || activeTab?.id !== searchSelection.id) return;
     let frame = 0;
@@ -712,7 +760,7 @@ const AppContent: React.FC<AppContentProps> = ({
   );
 
   const isModalOpen =
-    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || isBatchExportOpen || Boolean(chapterDialog) || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
 
   useKeyboardShortcuts({
     onNew: handleNewTab,
@@ -792,6 +840,7 @@ const AppContent: React.FC<AppContentProps> = ({
       renderHtml={settings.renderHtml}
       sourcePath={activeTab?.filePath}
       onFormatsChange={setActiveFormats}
+      onChapterLink={handleOpenChapterLink}
       onScroll={handleEditorScroll}
       isDark={isDark}
       fontSize={settings.fontSize}
@@ -833,6 +882,8 @@ const AppContent: React.FC<AppContentProps> = ({
         onOpenResources={handleOpenResources}
         onOpenSearch={handleOpenSearch}
         onOpenHistory={handleOpenHistory}
+        onOpenReferences={handleOpenReferences}
+        onOpenBatchExport={isTauri() ? handleOpenBatchExport : undefined}
         onOpenTemplates={handleOpenTemplates}
         onOpenQuality={handleOpenQuality}
         onOpenExportTheme={handleOpenExportTheme}
@@ -1102,6 +1153,19 @@ const AppContent: React.FC<AppContentProps> = ({
       )}
 
       {isExportThemeOpen && <Suspense fallback={null}><LazyExportStyleDialog isOpen={isExportThemeOpen} onClose={handleCloseExportTheme} value={settings.exportStyle ?? DEFAULT_EXPORT_STYLE} onSave={handleSaveExportTheme} /></Suspense>}
+      {isBatchExportOpen && (
+        <Suspense fallback={null}>
+          <LazyBatchExport root={workspaceRoot} tabs={tabs} style={settings.exportStyle} embedImages={settings.exportEmbedImages}
+            onChooseWorkspace={chooseWorkspace} onClose={handleCloseBatchExport} />
+        </Suspense>
+      )}
+      {chapterDialog && activeTab?.id === chapterDialog.id && (
+        <Suspense fallback={null}>
+          <LazyChapterLinks mode={chapterDialog.mode} source={activeTab} tabs={tabs} root={workspaceRoot}
+            renderHtml={settings.renderHtml} readTarget={readQualityTarget}
+            onClose={handleCloseChapterDialog} onInsert={handleInsertChapterLink} onLocate={handleLocateBacklink} />
+        </Suspense>
+      )}
 
       {isHistoryOpen && historyTab && (
         <Suspense fallback={null}>

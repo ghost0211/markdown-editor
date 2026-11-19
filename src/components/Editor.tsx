@@ -34,10 +34,9 @@ import {
   isSingleUrl,
   isTableRowLine,
   linkifySelection,
-  parseHtmlTable,
-  rowsToMarkdownTable,
 } from '@/lib/markdownTable';
 import { filterImageFiles } from '@/lib/imageAssets';
+import { clipboardHtmlToMarkdown } from '@/lib/clipboardMarkdown';
 import {
   cachedEditorStateIds,
   dropCachedEditorState,
@@ -47,6 +46,7 @@ import {
   setCachedEditorState,
 } from '@/lib/editorStateCache';
 import { useI18n } from '@/i18n';
+import { chapterLinkTrigger, type ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
@@ -54,6 +54,7 @@ export interface EditorHandle {
   selectRange: (from: number, to: number, expectedContent?: string) => boolean;
   /** Apply a programmatic source change as one undoable editor transaction. */
   replaceDocument: (original: string, content: string) => boolean;
+  replaceChapterLink: (request: ChapterLinkInsertion, link: string) => boolean;
   applyAction: (action: MarkdownAction) => void;
   focus: () => void;
   getScrollTop: () => number;
@@ -97,6 +98,7 @@ interface EditorProps {
   renderHtml?: boolean;
   sourcePath?: string | null;
   onFormatsChange?: (formats: readonly MarkdownAction[]) => void;
+  onChapterLink?: (request: ChapterLinkInsertion) => void;
 }
 
 export { cachedEditorStateIds, dropCachedEditorState };
@@ -159,6 +161,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       renderHtml = false,
       sourcePath,
       onFormatsChange,
+      onChapterLink,
     },
     ref
   ) => {
@@ -174,6 +177,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     const onProtectedReplaceRef = useRef(onProtectedReplace);
     onProtectedReplaceRef.current = onProtectedReplace;
     const onFormatsChangeRef = useRef(onFormatsChange);
+    const onChapterLinkRef = useRef(onChapterLink);
+    onChapterLinkRef.current = onChapterLink;
     onFormatsChangeRef.current = onFormatsChange;
     const lastFormatsRef = useRef('');
     const reportFormats = useCallback((state: EditorState, force = false) => {
@@ -198,6 +203,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     // CodeMirror extensions
     const extensions = useMemo(() => {
       const ext = [
+        chapterLinkTrigger((request) => onChapterLinkRef.current?.(request)),
         createMarkdownEditingKeymap({ t, language }),
         createSearchMatchCountExtension(),
         createEmbeddedResourceProtection(() => onProtectedReplaceRef.current?.()),
@@ -238,36 +244,39 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             if (!clipboard) return;
 
             const selection = view.state.selection.main;
-
-            // A table copied from Excel / Word / a web page becomes a Markdown
-            // table. Checked before images because Excel also puts a PNG
-            // snapshot of the cells on the clipboard. Pasting into an existing
-            // table row stays plain text.
+            const pastedText = clipboard.getData('text/plain');
+            const safePosition = safeImageInsertionPosition(view.state, selection.from);
+            const images = filterImageFiles(clipboard.files || []);
             const html = clipboard.getData('text/html');
-            const tableRows =
-              html && !isTableRowLine(view.state.doc.lineAt(selection.from).text)
-                ? parseHtmlTable(html)
-                : null;
-            const table = tableRows ? rowsToMarkdownTable(tableRows) : '';
-            if (table) {
-              event.preventDefault();
-              const fromLine = view.state.doc.lineAt(selection.from);
-              const toLine = view.state.doc.lineAt(selection.to);
-              const prefix = selection.from > fromLine.from ? '\n\n' : '';
-              const suffix = selection.to < toLine.to ? '\n\n' : '';
-              const insert = `${prefix}${table}${suffix}`;
-              view.dispatch({
-                changes: { from: selection.from, to: selection.to, insert },
-                selection: { anchor: selection.from + insert.length },
-                scrollIntoView: true,
-                userEvent: 'input.paste',
-              });
-              return;
+            // Preserve normal text paste in source table rows and code.
+            let syntax = syntaxTree(view.state).resolveInner(selection.from, 1);
+            while (syntax.parent && !/^(?:FencedCode|CodeBlock|InlineCode)$/.test(syntax.name)) syntax = syntax.parent;
+            if (html && safePosition === selection.from &&
+                !isTableRowLine(view.state.doc.lineAt(selection.from).text) &&
+                !/^(?:FencedCode|CodeBlock|InlineCode)$/.test(syntax.name) &&
+                (selection.empty || !isSingleUrl(pastedText))) {
+              let rich = null;
+              try { rich = clipboardHtmlToMarkdown(html); } catch { /* Use the plain clipboard data. */ }
+              if (rich && !(rich.imageOnly && images.length && onImageFilesRef.current)) {
+                event.preventDefault();
+                const before = view.state.sliceDoc(Math.max(0, selection.from - 2), selection.from);
+                const after = view.state.sliceDoc(selection.to, Math.min(selection.to + 2, view.state.doc.length));
+                const prefix = rich.block && before && !before.endsWith('\n\n') ? (before.endsWith('\n') ? '\n' : '\n\n') : '';
+                const suffix = rich.block && after && !after.startsWith('\n\n') ? (after.startsWith('\n') ? '\n' : '\n\n') : '';
+                const insert = prefix + rich.markdown + suffix;
+                view.dispatch({
+                  changes: { from: selection.from, to: selection.to, insert },
+                  selection: { anchor: selection.from + insert.length },
+                  annotations: isolateHistory.of('full'),
+                  scrollIntoView: true,
+                  userEvent: 'input.paste',
+                });
+                return;
+              }
             }
 
             const handler = onImageFilesRef.current;
             if (handler) {
-              const images = filterImageFiles(clipboard.files || []);
               if (images.length > 0) {
                 event.preventDefault();
                 handler(images, safeImageInsertionPosition(view.state, selection.from));
@@ -277,8 +286,6 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
 
             // Plain-text paste bypasses CodeMirror's inputHandler. Keep it out
             // of hidden image URLs just like typing and pasted image files.
-            const pastedText = clipboard.getData('text/plain');
-            const safePosition = safeImageInsertionPosition(view.state, selection.from);
             if (selection.empty && safePosition !== selection.from && pastedText) {
               event.preventDefault();
               const line = view.state.doc.lineAt(safePosition);
@@ -353,6 +360,13 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           columnAdded: t('visualTable.columnAdded'), columnDeleted: t('visualTable.columnDeleted'),
           alignmentChanged: t('visualTable.alignmentChanged'), rowLimit: t('visualTable.rowLimit'), columnLimit: t('visualTable.columnLimit'),
           pasteLimit: t('visualTable.pasteLimit'),
+          dataTools: {
+            title: t('visualTableData.title'), column: t('visualTableData.column'), columnNumber: t('visualTableData.columnNumber'),
+            filter: t('visualTableData.filter'), sortType: t('visualTableData.sortType'),
+            text: t('visualTableData.text'), number: t('visualTableData.number'), date: t('visualTableData.date'),
+            ascending: t('visualTableData.ascending'), descending: t('visualTableData.descending'),
+            sorted: t('visualTableData.sorted'), visible: t('visualTableData.visible'), locale: language,
+          },
         }, renderHtml));
         ext.push(createVisualImageContextExtension({
           title: t('visualImage.title'), alt: t('visualImage.alt'), address: t('visualImage.address'),
@@ -505,6 +519,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           let newEnd = content.length;
           while (originalEnd > from && newEnd > from && original[originalEnd - 1] === content[newEnd - 1]) { originalEnd--; newEnd--; }
           view.dispatch({ changes: { from, to: originalEnd, insert: content.slice(from, newEnd) }, annotations: isolateHistory.of('full'), userEvent: 'input.resource' });
+          return true;
+        },
+
+        replaceChapterLink: (request: ChapterLinkInsertion, link: string) => {
+          const view = cmRef.current?.view;
+          if (!view || !view.state.doc.eq(request.snapshot) || view.state.readOnly) return false;
+          view.dispatch({
+            changes: { from: request.from, to: request.to, insert: link },
+            selection: { anchor: request.from + link.length },
+            annotations: isolateHistory.of('full'),
+            userEvent: 'input.link',
+          });
           return true;
         },
 

@@ -279,10 +279,11 @@ pub async fn export_pdf_from_html(
     path: String,
     html: String,
     show_header_footer: Option<bool>,
+    create_new: Option<bool>,
 ) -> Result<(), String> {
     let show_header_footer = show_header_footer.unwrap_or(false);
     tauri::async_runtime::spawn_blocking(move || {
-        export_pdf_from_html_sync(path, html, show_header_footer)
+        export_pdf_from_html_sync(path, html, show_header_footer, create_new.unwrap_or(false))
     })
     .await
     .map_err(|e| format!("后台导出任务执行失败: {}", e))?

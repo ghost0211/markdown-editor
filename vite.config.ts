@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
+import { createRequire } from "node:module";
+
+const resolvePackage = createRequire(import.meta.url).resolve;
 
 const CORE_CODEMIRROR_PACKAGES = [
   "/node_modules/@codemirror/state/",
@@ -28,6 +31,8 @@ export default defineConfig({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      // The browser entry uses document.createElement and cannot run in a worker.
+      "decode-named-character-reference": resolvePackage("decode-named-character-reference"),
     },
   },
   clearScreen: false,

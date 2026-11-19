@@ -10,10 +10,12 @@ import {
   pasteVisualTableCells,
   revealVisualTableSource,
   setVisualTableColumnAlignment,
+  sortVisualTable,
   updateVisualTableCell,
 } from '@/lib/visualTableCommands';
 import { renderInlineMarkdownInto } from '@/lib/inlineMarkdown';
 import { parseHtmlTable, parseSpreadsheetText } from '@/lib/markdownTable';
+import { visualTableCellText, type VisualTableSortKind } from '@/lib/visualTableData';
 import {
   collectVisualTables,
   findVisualTableAt,
@@ -73,6 +75,45 @@ function activeCoordinates(container: HTMLElement, model: VisualTableInfo): { ro
     row: clamp(Number(container.dataset.activeRow ?? (model.rows > 1 ? 1 : 0)), 0, model.rows - 1),
     column: clamp(Number(container.dataset.activeCol ?? 0), 0, model.columns - 1),
   };
+}
+
+function applyTableFilter(container: HTMLElement, model: VisualTableInfo, labels: VisualTableLabels): void {
+  const query = container.querySelector<HTMLInputElement>('.cm-visual-table-filter')?.value.trim().toLocaleLowerCase() ?? '';
+  const column = Number(container.querySelector<HTMLSelectElement>('.cm-visual-table-data-column')?.value ?? 0);
+  const active = container.ownerDocument.activeElement;
+  let visible = 0;
+  for (const row of container.querySelectorAll<HTMLTableRowElement>('tbody > tr')) {
+    const index = Number(row.getAttribute('aria-rowindex')) - 1;
+    row.hidden = Boolean(query) && !row.contains(active) &&
+      !visualTableCellText(model.cells[index]?.[column] ?? '').toLocaleLowerCase().includes(query);
+    if (!row.hidden) visible++;
+  }
+  const counter = container.querySelector<HTMLElement>('.cm-visual-table-visible');
+  if (counter && labels.dataTools) {
+    const value = formatVisualTableLabel(labels.dataTools.visible, { visible, total: model.rows - 1 });
+    if (counter.textContent !== value) counter.textContent = value;
+  }
+  for (const button of container.querySelectorAll<HTMLButtonElement>('.cm-visual-table-sort')) {
+    button.disabled = container.dataset.readOnly === 'true' || model.rows < 3;
+  }
+}
+
+function syncDataColumns(container: HTMLElement, model: VisualTableInfo, labels: VisualTableLabels): void {
+  const select = container.querySelector<HTMLSelectElement>('.cm-visual-table-data-column');
+  if (!select || !labels.dataTools) return;
+  const previous = select.value;
+  select.replaceChildren(...model.cells[0].map((value, index) => {
+    const option = container.ownerDocument.createElement('option');
+    option.value = String(index);
+    option.textContent = visualTableCellText(value) || formatVisualTableLabel(labels.dataTools!.columnNumber, { column: index + 1 });
+    return option;
+  }));
+  if (previous && Number(previous) < model.columns) select.value = previous;
+}
+
+function visibleTableRows(container: HTMLElement): number[] {
+  return [0, ...Array.from(container.querySelectorAll<HTMLTableRowElement>('tbody > tr:not([hidden])'),
+    (row) => Number(row.getAttribute('aria-rowindex')) - 1)];
 }
 
 function refreshToolbar(container: HTMLElement, model: VisualTableInfo, _row: number, column: number): void {
@@ -152,6 +193,10 @@ export class VisualTableWidget extends WidgetType {
     syncVisualTableCellInputs(container, this.model, this.renderHtml);
     const active = activeCoordinates(container, this.model);
     refreshToolbar(container, this.model, active.row, active.column);
+    if (old.model.cells[0].some((value, index) => value !== this.model.cells[0][index])) {
+      syncDataColumns(container, this.model, this.labels);
+    }
+    if (this.labels.dataTools) applyTableFilter(container, this.model, this.labels);
     return true;
   }
 
@@ -259,7 +304,7 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     const input = container.querySelector<HTMLInputElement>(
       `input[data-row="${row}"][data-col="${column}"]`
     );
-    if (!input) return false;
+    if (!input || input.closest('tr')?.hidden) return false;
     input.focus();
     if (select) input.select();
     else {
@@ -350,14 +395,16 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
   const moveCell = (direction: 1 | -1, row: number, column: number) => {
     const table = resolve();
     if (!table) return;
-    const next = visualTableCellNeighbor(table.rows, table.columns, row, column, direction);
-    focusCell(next.row, next.column, true);
+    const rows = visibleTableRows(container);
+    const next = visualTableCellNeighbor(rows.length, table.columns, Math.max(0, rows.indexOf(row)), column, direction);
+    focusCell(rows[next.row], next.column, true);
   };
 
   const moveRow = (direction: 1 | -1, row: number, column: number) => {
     const table = resolve();
     if (!table) return;
-    focusCell(clamp(row + direction, 0, table.rows - 1), column, false);
+    const rows = visibleTableRows(container);
+    focusCell(rows[clamp(rows.indexOf(row) + direction, 0, rows.length - 1)], column, false);
   };
 
   const handleAction = (action: string) => {
@@ -640,6 +687,13 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       preview.dataset.source = committed;
       renderInlineMarkdownInto(preview, committed, widget.renderHtml);
       if (widget.renderHtml) view.requestMeasure();
+      if (labels.dataTools && container.querySelector<HTMLInputElement>('.cm-visual-table-filter')?.value) {
+        queueMicrotask(() => {
+          if (!container.isConnected) return;
+          const current = resolve();
+          if (current) { applyTableFilter(container, current, labels); view.requestMeasure(); }
+        });
+      }
     });
     box.append(preview, input);
     return box;
@@ -691,8 +745,72 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
 
   const panel = doc.createElement('div');
   panel.className = 'cm-visual-table-panel';
-  panel.append(toolbar, grid, hint, status);
+  panel.append(toolbar);
+  if (labels.dataTools) {
+    const tools = labels.dataTools;
+    const details = doc.createElement('details');
+    details.className = 'cm-visual-table-data';
+    const summary = doc.createElement('summary');
+    summary.textContent = tools.title;
+    details.append(summary);
+    details.addEventListener('toggle', () => view.requestMeasure());
+    const controls = doc.createElement('div');
+    controls.className = 'cm-visual-table-data-controls';
+    const column = doc.createElement('select');
+    column.className = 'cm-visual-table-data-column';
+    column.setAttribute('aria-label', tools.column);
+    const filter = doc.createElement('input');
+    filter.type = 'search';
+    filter.className = 'cm-visual-table-filter';
+    filter.placeholder = tools.filter;
+    filter.setAttribute('aria-label', tools.filter);
+    const updateFilter = () => {
+      const current = resolve();
+      if (!current) return;
+      applyTableFilter(container, current, labels);
+      view.requestMeasure();
+    };
+    column.addEventListener('change', updateFilter);
+    filter.addEventListener('input', updateFilter);
+    const sortKind = doc.createElement('select');
+    sortKind.setAttribute('aria-label', tools.sortType);
+    for (const kind of ['text', 'number', 'date'] as const) {
+      const option = doc.createElement('option');
+      option.value = kind;
+      option.textContent = tools[kind];
+      sortKind.append(option);
+    }
+    controls.append(column, filter, sortKind);
+    for (const [direction, title] of [[1, tools.ascending], [-1, tools.descending]] as const) {
+      const button = doc.createElement('button');
+      button.type = 'button';
+      button.className = 'cm-visual-table-tool cm-visual-table-sort';
+      button.textContent = title;
+      button.addEventListener('click', () => {
+        const current = resolve();
+        const expected = container.dataset.tableSource;
+        const success = current && expected !== undefined && sortVisualTable(
+          view, current.from, Number(column.value), sortKind.value as VisualTableSortKind,
+          direction, tools.locale, expected
+        );
+        announce(success ? tools.sorted : labels.stale);
+        if (success) view.focus();
+      });
+      controls.append(button);
+    }
+    const counter = doc.createElement('span');
+    counter.className = 'cm-visual-table-visible';
+    counter.setAttribute('role', 'status');
+    controls.append(counter);
+    details.append(controls);
+    panel.append(details);
+  }
+  panel.append(grid, hint, status);
   container.append(panel);
   refreshToolbar(container, model, model.rows > 1 ? 1 : 0, 0);
+  if (labels.dataTools) {
+    syncDataColumns(container, model, labels);
+    applyTableFilter(container, model, labels);
+  }
   return container;
 }

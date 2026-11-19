@@ -163,6 +163,16 @@ const visualTableTheme = EditorView.baseTheme({
   '&dark .cm-visual-table-separator': { background: '#475569' },
   '.cm-visual-table-align': { display: 'flex', gap: '3px', alignItems: 'center' },
   '.cm-visual-table-grid': { overflowX: 'auto', maxWidth: '100%', paddingBottom: '2px' },
+  '.cm-visual-table-data': { fontSize: '12px', padding: '0 0 6px' },
+  '.cm-visual-table-data summary': { cursor: 'pointer', color: '#64748b', width: 'fit-content' },
+  '&dark .cm-visual-table-data summary': { color: '#94a3b8' },
+  '.cm-visual-table-data-controls': { display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '4px', marginTop: '5px' },
+  '.cm-visual-table-data-controls select, .cm-visual-table-data-controls input': {
+    font: 'inherit', padding: '2px 5px', maxWidth: '12em', border: '1px solid #cbd5e1',
+    borderRadius: '4px', color: 'inherit', background: 'transparent',
+  },
+  '&dark .cm-visual-table-data-controls select, &dark .cm-visual-table-data-controls input': { borderColor: '#475569', background: '#0f172a' },
+  '.cm-visual-table-sort:disabled': { opacity: '0.45', cursor: 'default' },
   '.cm-visual-table-element': { borderCollapse: 'collapse', width: '100%', fontSize: '0.92em' },
   '.cm-visual-table-element th, .cm-visual-table-element td': {
     border: '1px solid #cbd5e1',

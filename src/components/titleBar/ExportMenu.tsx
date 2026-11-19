@@ -13,9 +13,10 @@ interface ExportMenuProps {
   onExportXmd?: () => void;
   onCopyRichText?: () => void;
   onOpenExportTheme?: () => void;
+  onOpenBatchExport?: () => void;
 }
 
-export function ExportMenu({ disabled, isExporting = false, exportingType = null, onExportWord, onExportPdf, onExportHtml, onExportXmd, onCopyRichText, onOpenExportTheme }: ExportMenuProps) {
+export function ExportMenu({ disabled, isExporting = false, exportingType = null, onExportWord, onExportPdf, onExportHtml, onExportXmd, onCopyRichText, onOpenExportTheme, onOpenBatchExport }: ExportMenuProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -69,6 +70,7 @@ export function ExportMenu({ disabled, isExporting = false, exportingType = null
           {item(t('titleBar.exportHtml'), t('titleBar.exportHtmlDesc'), <FileCode className="w-3.5 h-3.5 text-emerald-500" />, onExportHtml)}
           {onExportXmd && item(t('titleBar.exportXmd'), t('titleBar.exportXmdDesc'), <FileArchive className="w-3.5 h-3.5 text-violet-500" />, onExportXmd)}
           {onCopyRichText && item(t('titleBar.copyRichText'), t('titleBar.copyRichTextDesc'), <ClipboardCopy className="w-3.5 h-3.5 text-amber-500" />, onCopyRichText)}
+          {onOpenBatchExport && item(t('batchExport.title'), t('batchExport.description'), <Download className="w-3.5 h-3.5 text-blue-500" />, onOpenBatchExport)}
           {onOpenExportTheme && <>
             <div className="h-px bg-slate-100 dark:bg-slate-800 my-1.5" />
             {item(t('titleBar.exportTheme'), t('exportTheme.description'), <Palette className="w-3.5 h-3.5 text-fuchsia-500" />, onOpenExportTheme, t('titleBar.exportThemeTooltip'))}

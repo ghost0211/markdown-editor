@@ -14,7 +14,7 @@ import { remarkCjkFriendlyEmphasis } from '@/lib/remarkCjkFriendlyEmphasis';
 import { isSupportedWorkspaceDocument } from '@/lib/workspace';
 import { scanXmdReferences } from '@/lib/xmdPackage';
 
-export interface AnchorHeading { slug: string; text: string }
+export interface AnchorHeading { slug: string; text: string; line: number }
 
 export interface AnchorRepair {
   from: number;
@@ -55,7 +55,7 @@ export function indexDocumentAnchors(content: string, renderHtml = false): Ancho
       if (typeof id === 'string') {
         ids.add(id);
         if (/^h[1-6]$/.test(child.tagName) && child.position) {
-          headings.push({ slug: id, text: headingText(child).trim() || id });
+          headings.push({ slug: id, text: headingText(child).trim() || id, line: child.position.start.line });
         }
       }
       walk(child);

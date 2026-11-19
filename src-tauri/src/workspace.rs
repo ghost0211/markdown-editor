@@ -450,10 +450,13 @@ pub fn list_workspace_with_limits(
 
 /// Opens the native folder picker and returns the canonical selected folder.
 #[tauri::command]
-pub fn choose_workspace_folder() -> Result<Option<String>, String> {
-    let picked = rfd::FileDialog::new()
-        .set_title("选择工作区文件夹 / Choose Workspace Folder")
-        .pick_folder();
+pub fn choose_workspace_folder(purpose: Option<String>) -> Result<Option<String>, String> {
+    let title = if purpose.as_deref() == Some("export") {
+        "选择导出文件夹 / Choose Export Folder"
+    } else {
+        "选择工作区文件夹 / Choose Workspace Folder"
+    };
+    let picked = rfd::FileDialog::new().set_title(title).pick_folder();
 
     match picked {
         Some(folder) => {

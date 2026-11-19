@@ -43,7 +43,8 @@ export async function exportMarkdownToPdf(
   targetPath: string,
   sourceFilePath?: string,
   lang?: string,
-  style?: ExportStyle
+  style?: ExportStyle,
+  createNew = false
 ): Promise<void> {
   const normalizedStyle = style ? validateExportStyle(style) : undefined;
   const htmlStyle = normalizedStyle
@@ -61,5 +62,6 @@ export async function exportMarkdownToPdf(
     lang,
     style: htmlStyle,
   });
-  await exportPdfFromHtml(targetPath, html, normalizedStyle?.pageNumbers === true);
+  if (createNew) await exportPdfFromHtml(targetPath, html, normalizedStyle?.pageNumbers === true, true);
+  else await exportPdfFromHtml(targetPath, html, normalizedStyle?.pageNumbers === true);
 }

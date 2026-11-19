@@ -1,6 +1,7 @@
 import { EditorSelection, type EditorState, type TransactionSpec } from '@codemirror/state';
 import { isolateHistory } from '@codemirror/commands';
 import type { EditorView } from '@codemirror/view';
+import { sortedVisualTableRows, type VisualTableSortKind } from '@/lib/visualTableData';
 import {
   executeCodeMirrorAction,
   type MarkdownAction,
@@ -26,6 +27,24 @@ import {
 export interface VisualTableView {
   readonly state: EditorState;
   dispatch(spec: TransactionSpec): void;
+}
+
+export function sortVisualTable(
+  view: VisualTableView, tableFrom: number, column: number, kind: VisualTableSortKind,
+  direction: 1 | -1, locale: string, expectedTable: string
+): boolean {
+  const table = currentTable(view, tableFrom);
+  if (view.state.readOnly || !table || table.source !== expectedTable || !validCell(table, 0, column)) return false;
+  const rows = sortedVisualTableRows(table.cells, column, kind, direction, locale);
+  if (rows.every((row, index) => row === index + 1)) return true;
+  const first = view.state.doc.line(visualTableRowLine(table, 1)).from;
+  const insert = rows.map((row) => view.state.doc.line(visualTableRowLine(table, row)).text).join('\n');
+  view.dispatch({
+    changes: { from: first, to: table.to, insert },
+    annotations: isolateHistory.of('full'),
+    userEvent: 'input.visualTable.sort',
+  });
+  return true;
 }
 
 function currentTable(view: VisualTableView, tableFrom: number): VisualTableInfo | null {

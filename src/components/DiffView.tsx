@@ -27,6 +27,7 @@ export interface DiffViewProps {
   lineNumbers?: boolean;
   /** History comparisons keep the entire snapshot visible instead of collapsing it. */
   collapseUnchanged?: boolean;
+  onRestoreChunk?: (original: string, content: string) => boolean;
 }
 
 /**
@@ -50,14 +51,16 @@ export const DiffView: React.FC<DiffViewProps> = ({
   wordWrap = true,
   lineNumbers = true,
   collapseUnchanged = true,
+  onRestoreChunk,
 }) => {
   const { t } = useI18n();
   const containerRef = useRef<HTMLDivElement>(null);
   const mergeViewRef = useRef<MergeView | null>(null);
 
   // Always call the latest callbacks without rebuilding the editor view
-  const callbacksRef = useRef({ onChangeLeft, onChangeRight });
-  callbacksRef.current = { onChangeLeft, onChangeRight };
+  const callbacksRef = useRef({ onChangeLeft, onChangeRight, onRestoreChunk });
+  callbacksRef.current = { onChangeLeft, onChangeRight, onRestoreChunk };
+  const canRestoreChunk = Boolean(onRestoreChunk);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -83,6 +86,17 @@ export const DiffView: React.FC<DiffViewProps> = ({
         }),
         EditorView.updateListener.of((vu) => {
           if (vu.docChanged) {
+            if (side === 'right' && callbacksRef.current.onRestoreChunk) {
+              if (!vu.transactions.some((transaction) => transaction.isUserEvent('revert'))) return;
+              const original = vu.startState.doc.toString();
+              if (!callbacksRef.current.onRestoreChunk(original, vu.state.doc.toString())) {
+                queueMicrotask(() => {
+                  if (mergeViewRef.current?.b !== vu.view || vu.view.state !== vu.state) return;
+                  vu.view.dispatch({ changes: { from: 0, to: vu.state.doc.length, insert: original } });
+                });
+              }
+              return;
+            }
             const cb =
               side === 'left'
                 ? callbacksRef.current.onChangeLeft
@@ -121,6 +135,19 @@ export const DiffView: React.FC<DiffViewProps> = ({
       highlightChanges: true,
       gutter: true,
       collapseUnchanged: collapseUnchanged ? { margin: 3, minSize: 4 } : undefined,
+      revertControls: canRestoreChunk ? 'a-to-b' : undefined,
+      renderRevertControl: canRestoreChunk ? () => {
+        const button = containerRef.current!.ownerDocument.createElement('button');
+        button.type = 'button';
+        button.textContent = '→';
+        button.setAttribute('aria-label', t('history.restoreChunk'));
+        button.title = t('history.restoreChunk');
+        button.addEventListener('click', (event) => {
+          // MergeView handles the pointer interaction on mousedown.
+          if (event.detail === 0) button.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, cancelable: true }));
+        });
+        return button;
+      } : undefined,
     });
 
     mergeViewRef.current = view;
@@ -132,7 +159,13 @@ export const DiffView: React.FC<DiffViewProps> = ({
     // Rebuild only when presentation settings change; document updates flow
     // one way (editor -> owning tab) for the lifetime of this view.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isDark, fontSize, lineHeight, tabSize, wordWrap, lineNumbers, leftReadOnly, rightReadOnly, collapseUnchanged]);
+  }, [isDark, fontSize, lineHeight, tabSize, wordWrap, lineNumbers, leftReadOnly, rightReadOnly, collapseUnchanged, canRestoreChunk, t]);
+
+  useEffect(() => {
+    const view = mergeViewRef.current?.b;
+    if (!canRestoreChunk || !view || view.state.doc.toString() === rightDoc) return;
+    view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: rightDoc } });
+  }, [canRestoreChunk, rightDoc]);
 
   const renderSideHeader = (title: string, readOnly: boolean) => (
     <div className="flex-1 flex items-center justify-center space-x-1.5 px-3 py-1.5 text-xs font-medium text-slate-600 dark:text-slate-300 truncate">

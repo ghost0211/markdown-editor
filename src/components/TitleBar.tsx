@@ -39,6 +39,8 @@ interface TitleBarProps {
   onOpenResources?: () => void;
   onOpenSearch?: () => void;
   onOpenHistory?: () => void;
+  onOpenReferences?: () => void;
+  onOpenBatchExport?: () => void;
   onOpenTemplates?: () => void;
   onOpenQuality?: () => void;
   onOpenExportTheme?: () => void;
@@ -52,7 +54,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onNew, onOpen, onSave, onSaveAs, onExportWord, onExportPdf, onExportHtml, onExportXmd,
   onCopyRichText, isExporting = false, exportingType = null, onOpenShortcuts, onOpenSettings,
   onCompare, recentFiles = [], onOpenRecent, onClearRecent, onOpenResources, onOpenSearch,
-  onOpenHistory, onOpenTemplates, onOpenQuality, onOpenExportTheme, onOpenWorkspace,
+  onOpenHistory, onOpenReferences, onOpenBatchExport, onOpenTemplates, onOpenQuality, onOpenExportTheme, onOpenWorkspace,
 }) => {
   const { t } = useI18n();
   const themeLabel = theme === 'light' ? t('titleBar.themeLight') : theme === 'dark' ? t('titleBar.themeDark') : t('titleBar.themeSystem');
@@ -87,7 +89,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <FolderTree className="w-3.5 h-3.5 text-emerald-500" /><span className="hidden 2xl:inline">{t('titleBar.workspace')}</span>
         </button>}
 
-        {(onOpenResources || onOpenTemplates || onOpenQuality || onOpenHistory) && <DocumentToolsMenu activeTab={activeTab} onOpenResources={onOpenResources} onOpenTemplates={onOpenTemplates} onOpenQuality={onOpenQuality} onOpenHistory={onOpenHistory} />}
+        {(onOpenResources || onOpenTemplates || onOpenQuality || onOpenHistory || onOpenReferences) && <DocumentToolsMenu activeTab={activeTab} onOpenResources={onOpenResources} onOpenTemplates={onOpenTemplates} onOpenQuality={onOpenQuality} onOpenHistory={onOpenHistory} onOpenReferences={onOpenReferences} />}
 
         <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
         <button type="button" onClick={onSave} title={t('titleBar.saveDocTooltip')} aria-label={t('titleBar.saveDocTooltip')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-600/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900">
@@ -96,7 +98,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
         <button type="button" onClick={onSaveAs} title={t('titleBar.saveAsTooltip')} aria-label={t('titleBar.saveAsTooltip')} className="hidden lg:flex items-center gap-1.5 px-2 py-1.5 rounded-md hover:bg-slate-200 dark:hover:bg-slate-700/60 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500">
           <FileText className="w-3.5 h-3.5 text-slate-400" /><span>{t('titleBar.saveAs')}</span>
         </button>
-        <ExportMenu disabled={!activeTab || isExporting} isExporting={isExporting} exportingType={exportingType} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportHtml={onExportHtml} onExportXmd={onExportXmd} onCopyRichText={onCopyRichText} onOpenExportTheme={onOpenExportTheme} />
+        <ExportMenu disabled={!activeTab || isExporting} isExporting={isExporting} exportingType={exportingType} onExportWord={onExportWord} onExportPdf={onExportPdf} onExportHtml={onExportHtml} onExportXmd={onExportXmd} onCopyRichText={onCopyRichText} onOpenExportTheme={onOpenExportTheme} onOpenBatchExport={onOpenBatchExport} />
       </div>
 
       <div className="flex-1 min-w-0 max-w-md mx-1 text-center font-medium text-slate-700 dark:text-slate-200 flex items-center justify-center gap-1.5">

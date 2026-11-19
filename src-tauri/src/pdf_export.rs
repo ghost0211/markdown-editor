@@ -102,6 +102,7 @@ pub(crate) fn export_pdf_from_html_sync(
     path: String,
     html: String,
     show_header_footer: bool,
+    create_new: bool,
 ) -> Result<(), String> {
     let dest_path = PathBuf::from(&path);
     if let Some(parent) = dest_path.parent() {
@@ -201,8 +202,15 @@ pub(crate) fn export_pdf_from_html_sync(
         }
     }
 
-    fs::copy(&temp_pdf_file, &dest_path)
-        .map_err(|e| format!("保存 PDF 到目标路径失败 ({}): {}", dest_path.display(), e))?;
+    if create_new {
+        write_new_export(
+            &dest_path,
+            fs::File::open(&temp_pdf_file).map_err(|error| error.to_string())?,
+        )?;
+    } else {
+        fs::copy(&temp_pdf_file, &dest_path)
+            .map_err(|e| format!("保存 PDF 到目标路径失败 ({}): {}", dest_path.display(), e))?;
+    }
 
     validate_pdf_file(&dest_path)
         .map_err(|e| format!("目标 PDF 文件校验失败 ({}): {}", dest_path.display(), e))?;
@@ -210,9 +218,34 @@ pub(crate) fn export_pdf_from_html_sync(
     Ok(())
 }
 
+pub(crate) fn write_new_export(target: &Path, mut input: impl Read) -> Result<(), String> {
+    let parent = target
+        .parent()
+        .filter(|directory| !directory.as_os_str().is_empty())
+        .ok_or("无效的导出目录 / Invalid export directory")?;
+    let mut temporary =
+        tempfile::NamedTempFile::new_in(parent).map_err(|error| error.to_string())?;
+    std::io::copy(&mut input, temporary.as_file_mut())
+        .and_then(|_| temporary.as_file().sync_all())
+        .map_err(|error| error.to_string())?;
+    temporary
+        .persist_noclobber(target)
+        .map_err(|error| error.error.to_string())?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn new_export_never_replaces_an_existing_file() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("report.html");
+        write_new_export(&path, &b"first export"[..]).unwrap();
+        assert!(write_new_export(&path, &b"second export"[..]).is_err());
+        assert_eq!(fs::read(path).unwrap(), b"first export");
+    }
 
     #[test]
     fn test_pdf_print_flags_header_footer_default_is_off() {
@@ -304,6 +337,7 @@ p { line-height: 1.6; }
             target_pdf.to_string_lossy().to_string(),
             sample_html.to_string(),
             false,
+            false,
         );
 
         assert!(
@@ -347,6 +381,7 @@ p { line-height: 1.6; }
         let result = export_pdf_from_html_sync(
             target_pdf.to_string_lossy().to_string(),
             sample_html.to_string(),
+            false,
             false,
         );
 

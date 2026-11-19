@@ -584,11 +584,12 @@ export async function exportFileDialog(
 export async function exportPdfFromHtml(
   path: string,
   html: string,
-  showHeaderFooter = false
+  showHeaderFooter = false,
+  createNew = false
 ): Promise<void> {
   if (isTauri()) {
     try {
-      await invoke('export_pdf_from_html', { path, html, showHeaderFooter });
+      await invoke('export_pdf_from_html', { path, html, showHeaderFooter, ...(createNew ? { createNew } : {}) });
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || 'PDF 导出失败';
       throw new Error(msg, { cause: err });
@@ -760,10 +761,14 @@ export async function clearSessionData(): Promise<void> {
 import type { WorkspaceListing, WorkspaceRenameResult } from '@/lib/workspace';
 
 /** Folder-workspace commands keep every mutation inside the chosen root. */
-export async function chooseWorkspaceFolder(): Promise<string | null> {
+export async function chooseWorkspaceFolder(purpose?: 'export'): Promise<string | null> {
   if (!isTauri()) return null;
-  try { return await invoke<string | null>('choose_workspace_folder'); }
+  try { return await invoke<string | null>('choose_workspace_folder', purpose ? { purpose } : undefined); }
   catch (error) { throw new Error(error instanceof Error ? error.message : String(error), { cause: error }); }
+}
+
+export async function writeNewExportFile(path: string, bytes: Uint8Array): Promise<void> {
+  return invoke('write_new_export_file', buildXmdWriteFrame(path, bytes));
 }
 
 export async function listWorkspace(root: string): Promise<WorkspaceListing> {

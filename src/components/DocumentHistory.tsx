@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Clock3, FileText, LoaderCircle, RefreshCw, RotateCcw, X } from 'lucide-react';
 import { readDocumentHistory, readDocumentSnapshot, type DocumentHistoryEntry } from '@/lib/native';
 import { formatResourceSize } from '@/lib/documentResources';
+import { normalizeLineEndings } from '@/lib/documentUtils';
 import { useI18n } from '@/i18n';
 import { DiffView } from './DiffView';
 
@@ -12,7 +13,7 @@ interface DocumentHistoryProps {
   content: string;
   title: string;
   isDark: boolean;
-  onRestore: (content: string) => boolean;
+  onRestore: (content: string, expected: string) => boolean;
 }
 
 export function DocumentHistory({ isOpen, onClose, sourceFilePath, content, title, isDark, onRestore }: DocumentHistoryProps) {
@@ -78,6 +79,15 @@ export function DocumentHistory({ isOpen, onClose, sourceFilePath, content, titl
   }, [isOpen, selectedId, sourceFilePath]);
 
   const selected = useMemo(() => versions.find((item) => item.id === selectedId), [versions, selectedId]);
+  const currentText = useMemo(() => normalizeLineEndings(content), [content]);
+  const snapshotText = useMemo(() => snapshot === null ? null : normalizeLineEndings(snapshot), [snapshot]);
+  const hasChanges = snapshotText !== null && snapshotText !== currentText;
+  const applyRestore = (next: string, expected: string) => {
+    if (!onRestore(next, expected)) return false;
+    restoreFocusRef.current = false;
+    onClose();
+    return true;
+  };
   const formatTime = useCallback((timestamp: number) => new Date(timestamp).toLocaleString(language === 'zh-CN' ? 'zh-CN' : 'en-US', { hour12: false }), [language]);
   if (!isOpen) return null;
 
@@ -119,15 +129,27 @@ export function DocumentHistory({ isOpen, onClose, sourceFilePath, content, titl
                 {loadingSnapshot || snapshot === null ? (
                   <div className="h-full flex items-center justify-center gap-2 text-sm text-slate-500 dark:text-slate-400"><LoaderCircle className="w-4 h-4 animate-spin" />{error || t('history.loadingSnapshot')}</div>
                 ) : (
-                  <DiffView key={`${selectedId}:${snapshot}`} leftTitle={`${t('history.snapshot')} · ${formatTime(selected?.createdAt || 0)}`} rightTitle={t('history.current')} leftDoc={`${snapshot}\n`} rightDoc={`${content}\n`} leftReadOnly rightReadOnly isDark={isDark} collapseUnchanged={false} wordWrap />
+                  <DiffView
+                    key={selectedId}
+                    leftTitle={`${t('history.snapshot')} · ${formatTime(selected?.createdAt || 0)}`}
+                    rightTitle={t('history.current')}
+                    leftDoc={snapshotText + '\n'}
+                    rightDoc={currentText + '\n'}
+                    leftReadOnly rightReadOnly isDark={isDark} collapseUnchanged={false} wordWrap
+                    onRestoreChunk={(original, next) => original.endsWith('\n') && next.endsWith('\n') &&
+                      applyRestore(next.slice(0, -1), original.slice(0, -1))}
+                  />
                 )}
               </div>
             </section>
           </div>
         )}
         <footer className="flex flex-wrap items-center justify-between gap-2 px-4 py-2.5 border-t border-slate-200 dark:border-slate-700 shrink-0">
-          <p className="text-[10px] text-slate-500 dark:text-slate-400">{t('history.restoreHelp')}</p>
-          <button type="button" disabled={!selected || snapshot === null || snapshot === content || loadingSnapshot} onClick={() => { if (snapshot !== null && onRestore(snapshot)) { restoreFocusRef.current = false; onClose(); } }} className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" />{t('history.restore')}</button>
+          <div className="text-[10px] text-slate-500 dark:text-slate-400">
+            {hasChanges && <p>{t('history.restoreChunkHelp')}</p>}
+            <p>{t('history.restoreHelp')}</p>
+          </div>
+          <button type="button" disabled={!selected || !hasChanges || loadingSnapshot} onClick={() => { if (snapshot !== null) applyRestore(snapshot, currentText); }} className="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium disabled:opacity-40 disabled:cursor-not-allowed flex items-center gap-1.5"><RotateCcw className="w-3.5 h-3.5" />{t('history.restore')}</button>
         </footer>
       </div>
     </div>
