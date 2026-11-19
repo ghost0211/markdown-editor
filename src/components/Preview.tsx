@@ -24,6 +24,7 @@ import rehypeHighlight from 'rehype-highlight';
 import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
 import { previewHtmlPlugins } from '@/lib/previewHtml';
+import { rehypeXmdTypography, remarkXmdTypography } from '@/lib/remarkXmdTypography';
 import { downloadBundledAttachment } from '@/lib/bundledAttachments';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
@@ -62,8 +63,8 @@ export { MermaidBlock } from './MermaidBlock';
  * Passing fresh array literals here makes react-markdown rebuild its internal
  * processor pipeline on every keystroke.
  */
-const REHYPE_PLUGINS_WITH_MATH: PluggableList = [rehypeKatex, rehypeSlug, rehypeHighlight];
-const REHYPE_PLUGINS_NO_MATH: PluggableList = [rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_WITH_MATH: PluggableList = [rehypeXmdTypography, rehypeKatex, rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_NO_MATH: PluggableList = [rehypeXmdTypography, rehypeSlug, rehypeHighlight];
 const REHYPE_PLUGINS_WITH_HTML_AND_MATH = [...previewHtmlPlugins, ...REHYPE_PLUGINS_WITH_MATH];
 const REHYPE_PLUGINS_WITH_HTML = [...previewHtmlPlugins, ...REHYPE_PLUGINS_NO_MATH];
 
@@ -93,7 +94,7 @@ function getRemarkPlugins(
     if (withMath) {
       plugins.push(remarkMath);
     }
-    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }]);
+    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }], remarkXmdTypography);
     REMARK_PLUGINS_CACHE.set(key, plugins);
   }
   return plugins;

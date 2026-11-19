@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import remarkRehype from 'remark-rehype';
 import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
+import { rehypeXmdTypography, remarkXmdTypography } from '@/lib/remarkXmdTypography';
 import rehypeSanitize from 'rehype-sanitize';
 import rehypeStringify from 'rehype-stringify';
 import type { Element, Root } from 'hast';
@@ -107,8 +108,10 @@ export async function buildRichTextHtml(markdown: string, lang?: string): Promis
     .use(remarkDropFrontMatter)
     .use(remarkCallouts, { lang })
     .use(remarkExportHtmlBreaks)
+    .use(remarkXmdTypography)
     .use(remarkRehype)
     .use(rehypeSanitize, SANITIZE_SCHEMA)
+    .use(rehypeXmdTypography)
     .use(rehypeInlineStyles)
     .use(rehypeStringify)
     .process(markdown);

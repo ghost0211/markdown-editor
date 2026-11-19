@@ -33,6 +33,23 @@ export function relativeWorkspaceResource(resourcePath: string, documentPath: st
   return `${'../'.repeat(directory.length - common)}${destination.slice(common).map(encodeURIComponent).join('/')}`;
 }
 
+/** Keep relative assets usable when the live Markdown buffer follows an XMD Save As. */
+export function rebaseDocumentResources(markdown: string, sourcePath: string | null, targetPath: string): string {
+  if (!sourcePath || sourcePath.startsWith('browser://') || targetPath.startsWith('browser://') ||
+      normalizePathKey(getDocumentDirectory(sourcePath)) === normalizePathKey(getDocumentDirectory(targetPath))) {
+    return markdown;
+  }
+  const resources = scanDocumentResources(markdown, sourcePath);
+  const paths = new Map<string, string>();
+  for (const resource of resources) {
+    if (!resource.localPath || /^(?:[a-z][a-z\d+.-]*:|[/\\])/i.test(resource.source)) continue;
+    const suffix = resource.source.search(/[?#]/);
+    paths.set(resource.id, relativeWorkspaceResource(resource.localPath, targetPath) +
+      (suffix === -1 ? '' : resource.source.slice(suffix)));
+  }
+  return paths.size ? replaceResourcePaths(markdown, resources, paths) : markdown;
+}
+
 /** Compute all buffer changes before changing any tab, so a failed scan is all-or-nothing. */
 export function renameWorkspaceDocuments(tabs: readonly DocumentTab[], oldPath: string, newPath: string): {
   tabs: DocumentTab[];

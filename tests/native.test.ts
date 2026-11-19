@@ -347,6 +347,13 @@ describe('Native Export Wrappers (native.ts)', () => {
       vi.restoreAllMocks();
     });
 
+    it('preserves the XMD extension or uses it when the browser filename has no extension', async () => {
+      mockPrompt.mockReturnValueOnce('notes').mockReturnValueOnce('other.XMD').mockReturnValueOnce('notes.md');
+      await expect(saveFileDialog('notes.xmd')).resolves.toBe('browser://notes.xmd');
+      await expect(saveFileDialog('notes.md')).resolves.toBe('browser://other.XMD');
+      await expect(saveFileDialog('notes.xmd')).resolves.toBe('browser://notes.md');
+    });
+
     it('should localize prompts in English when language is en-US', async () => {
       storageMock[SETTINGS_STORAGE_KEY] = JSON.stringify({ language: 'en-US' });
 

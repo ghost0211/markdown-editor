@@ -3,10 +3,13 @@ import { DocumentTab, ToastType } from '@/types';
 import {
   computeSavedTabState,
   decideAutoSave,
+  getExportFilename,
   getFileNameFromPath,
   isAutoSaveEligible,
   normalizePathKey,
 } from '@/lib/documentUtils';
+import { documentRequiresXmd } from '@/lib/xmdSaveFormat';
+import { rebaseDocumentResources } from '@/lib/workspaceDocuments';
 
 /**
  * Minimal keyed async queue.
@@ -134,18 +137,24 @@ export function createDocumentSaveController(
   const writeDocumentTab = async (
     tabId: string,
     forceSaveAs = false,
-    silent = false
+    silent = false,
+    redirected = false
   ): Promise<boolean> => {
     const host = getHost();
     const initial = host.tabsRef.current.find((tab) => tab.id === tabId);
     if (!initial || initial.kind === 'diff') return false;
+    const initialIsXmd = initial.filePath?.toLowerCase().endsWith('.xmd') ?? false;
+    const needsXmd = !initialIsXmd && documentRequiresXmd(initial.content);
+    if (silent && (forceSaveAs || needsXmd || !isAutoSaveEligible(initial))) return false;
     const generation = beginAttempt(tabId);
 
     // Dialog first (it can take seconds); everything after it is serialized.
+    const selectNewPath = forceSaveAs || needsXmd;
     let selectedPath: string | null = null;
-    if (!initial.filePath || forceSaveAs) {
+    if (!initial.filePath || selectNewPath) {
       try {
-        selectedPath = await host.saveFileDialog(initial.title);
+        const defaultName = needsXmd || initialIsXmd ? getExportFilename(initial.title, 'xmd') : initial.title;
+        selectedPath = await host.saveFileDialog(defaultName);
       } catch (error) {
         if (isLatestAttempt(tabId, generation)) showSavePathFailure(host, error);
         return false;
@@ -155,11 +164,11 @@ export function createDocumentSaveController(
 
     const afterDialog = host.tabsRef.current.find((tab) => tab.id === tabId);
     if (!afterDialog) return false; // closed while the dialog was open
-    const targetPath = forceSaveAs ? selectedPath! : afterDialog.filePath ?? selectedPath;
+    const targetPath = selectNewPath ? selectedPath : afterDialog.filePath ?? selectedPath;
     if (!targetPath) return false;
 
     const queueKey = normalizePathKey(targetPath) || `tab:${tabId}`;
-    return queue.run(queueKey, async () => {
+    const result = await queue.run<boolean | 'xmd-required'>(queueKey, async () => {
       // Re-resolve the host so language/toast changes made while waiting apply.
       const now = getHost();
       const tab = now.tabsRef.current.find((item) => item.id === tabId);
@@ -168,12 +177,12 @@ export function createDocumentSaveController(
       // Its generation owns both disk and tab state: do not write late bytes.
       if ((appliedGeneration.get(tabId) ?? 0) > generation) return false;
 
-      const path = forceSaveAs ? selectedPath! : tab.filePath ?? selectedPath;
+      const path = selectNewPath ? selectedPath : tab.filePath ?? selectedPath;
       if (!path) return false;
       // A newer Save-As moved this tab to another path while this attempt was
       // waiting. The newer attempt owns the tab; writing the old path here
       // could only resurrect an obsolete destination.
-      if (!forceSaveAs && normalizePathKey(path) !== normalizePathKey(targetPath)) {
+      if (!selectNewPath && normalizePathKey(path) !== normalizePathKey(targetPath)) {
         return false;
       }
 
@@ -192,9 +201,16 @@ export function createDocumentSaveController(
       const fresh = now.tabsRef.current.find((item) => item.id === tabId);
       if (!fresh) return false;
       const snapshot = fresh.content;
+      const targetIsXmd = path.toLowerCase().endsWith('.xmd');
+      // The dialog and the queue may have been waiting while XMD content was added.
+      if (!targetIsXmd && (snapshot === initial.content && !initialIsXmd ? needsXmd : documentRequiresXmd(snapshot))) {
+        return 'xmd-required';
+      }
       const sourceFilePath = forceSaveAs ? initial.filePath : fresh.filePath;
 
       try {
+        const rebase = targetIsXmd && normalizePathKey(sourceFilePath) !== normalizePathKey(path);
+        const savedSnapshot = rebase ? rebaseDocumentResources(snapshot, sourceFilePath, path) : snapshot;
         await now.writeFile(path, snapshot, sourceFilePath);
         const fileMtime = (await now.getFileMtime(path)) ?? undefined;
         const afterWrite = now.tabsRef.current.find((item) => item.id === tabId);
@@ -212,14 +228,15 @@ export function createDocumentSaveController(
         if (!afterHistory) return true;
         // A newer attempt already committed its state; never roll it back.
         if ((appliedGeneration.get(tabId) ?? 0) >= generation) return true;
-        appliedGeneration.set(tabId, generation);
-
         const fileName = getFileNameFromPath(path);
-        const next = now.tabsRef.current.map((item) =>
-          item.id === tabId
-            ? computeSavedTabState(item, path, snapshot, fileMtime)
-            : item
-        );
+        let content = afterHistory.content;
+        if (rebase) {
+          const sameSnapshot = content === snapshot && afterHistory.filePath === sourceFilePath;
+          content = sameSnapshot ? savedSnapshot : rebaseDocumentResources(content, afterHistory.filePath, path);
+        }
+        const savedTab = computeSavedTabState({ ...afterHistory, content }, path, savedSnapshot, fileMtime);
+        appliedGeneration.set(tabId, generation);
+        const next = now.tabsRef.current.map((item) => item.id === tabId ? savedTab : item);
         now.tabsRef.current = next;
         now.setTabs(next);
         now.saveSession(next);
@@ -248,6 +265,12 @@ export function createDocumentSaveController(
         return false;
       }
     });
+    if (result !== 'xmd-required') return result;
+    if (silent || !isLatestAttempt(tabId, generation)) return false;
+    if (!needsXmd && !redirected) return writeDocumentTab(tabId, forceSaveAs, false, true);
+    const currentHost = getHost();
+    currentHost.showToast(currentHost.translate('toasts.xmdSaveRequired'), 'warning');
+    return false;
   };
 
   return {

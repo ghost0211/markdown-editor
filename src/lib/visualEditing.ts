@@ -2,6 +2,8 @@ import { type Extension, Facet, type EditorState, type Range } from '@codemirror
 import { syntaxTree } from '@codemirror/language';
 import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate, WidgetType } from '@codemirror/view';
 import { isHtmlLineBreak } from '@/lib/editorMarkdown';
+import { editorTypographySpans } from '@/lib/editorXmdTypography';
+import { xmdTypographyCss } from '@/lib/xmdTypography';
 
 export interface VisualEditingOptions {
   sourcePath?: string | null;
@@ -103,6 +105,7 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
   if (!options) return Decoration.none;
   const decorations: Range<Decoration>[] = [];
   const seenNodes = new Set<string>();
+  const seenTypography = new Set<number>();
   const lineClasses = new Map<number, Set<string>>();
   const addLine = (at: number, name: string) => {
     const start = state.doc.lineAt(at).from;
@@ -115,8 +118,19 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
       decorations.push(Decoration.replace({}).range(from, to));
     }
   };
+  const tree = syntaxTree(state);
   for (const visible of view.visibleRanges) {
-    syntaxTree(state).iterate({ from: visible.from, to: visible.to,
+    const spans = editorTypographySpans(state, tree, state.doc.lineAt(visible.from).from, state.doc.lineAt(visible.to).to);
+    for (const { open, close, style } of spans) {
+      if (open.to >= close.from || seenTypography.has(open.from)) continue;
+      seenTypography.add(open.from);
+      decorations.push(Decoration.mark({
+        class: 'cm-xmd-typography', attributes: { style: xmdTypographyCss(style) },
+      }).range(open.to, close.from));
+      hide(open.from, open.to);
+      hide(close.from, close.to);
+    }
+    tree.iterate({ from: visible.from, to: visible.to,
       enter(node) {
         if (OPAQUE_BLOCKS.has(node.name) || node.name === 'Image') return false;
         const key = `${node.name}:${node.from}:${node.to}`;

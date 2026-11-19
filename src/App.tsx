@@ -48,6 +48,8 @@ import { normalizeLineEndings, normalizePathKey } from '@/lib/documentUtils';
 import type { SearchMatch } from '@/lib/documentSearch';
 import type { ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
 import type { ChapterBacklink } from '@/lib/chapterLinks';
+import type { XmdTypographyEdit } from '@/lib/editorXmdTypography';
+import type { XmdTypography } from '@/lib/xmdTypography';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
 import { cycleTabIndex } from '@/lib/tabNavigation';
@@ -85,6 +87,7 @@ const LazyExportStyleDialog = lazy(() => import('@/components/ExportStyleDialog'
 const LazyWorkspacePanel = lazy(() => import('@/components/WorkspacePanel').then((m) => ({ default: m.WorkspacePanel })));
 const LazyBatchExport = lazy(() => import('@/components/BatchExportDialog').then((m) => ({ default: m.BatchExportDialog })));
 const LazyChapterLinks = lazy(() => import('@/components/ChapterLinksDialog').then((m) => ({ default: m.ChapterLinksDialog })));
+const LazyXmdTypography = lazy(() => import('@/components/XmdTypographyDialog').then((m) => ({ default: m.XmdTypographyDialog })));
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
@@ -234,6 +237,7 @@ const AppContent: React.FC<AppContentProps> = ({
   const [isQualityOpen, setIsQualityOpen] = useState(false);
   const [isExportThemeOpen, setIsExportThemeOpen] = useState(false);
   const [isBatchExportOpen, setIsBatchExportOpen] = useState(false);
+  const [typographyEdit, setTypographyEdit] = useState<{ id: string; edit: XmdTypographyEdit } | null>(null);
   const [chapterDialog, setChapterDialog] = useState<
     { id: string; mode: 'insert'; request: ChapterLinkInsertion } | { id: string; mode: 'incoming' } | null
   >(null);
@@ -248,6 +252,7 @@ const AppContent: React.FC<AppContentProps> = ({
     setIsSearchOpen(false); setIsResourceManagerOpen(false); setHistoryTabId(null);
     setIsTemplatesOpen(false); setIsQualityOpen(false); setIsExportThemeOpen(false);
     setIsBatchExportOpen(false); setChapterDialog(null);
+    setTypographyEdit(null);
   }, []);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchSelection, setSearchSelection] = useState<{
@@ -760,7 +765,7 @@ const AppContent: React.FC<AppContentProps> = ({
   );
 
   const isModalOpen =
-    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || isBatchExportOpen || Boolean(chapterDialog) || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || isBatchExportOpen || Boolean(chapterDialog) || Boolean(typographyEdit) || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
 
   useKeyboardShortcuts({
     onNew: handleNewTab,
@@ -787,6 +792,27 @@ const AppContent: React.FC<AppContentProps> = ({
   const handleToolbarAction = useCallback((action: MarkdownAction) => {
     editorRef.current?.applyAction(action);
   }, []);
+
+  const handleOpenTypography = useCallback(() => {
+    const edit = editorRef.current?.getTypographyEdit();
+    if (!edit || !activeTabId) {
+      showToast(t('xmdTypography.selectText'), 'info');
+      return;
+    }
+    closeFeatureModals();
+    setTypographyEdit({ id: activeTabId, edit });
+  }, [activeTabId, closeFeatureModals, showToast, t]);
+
+  const handleCloseTypography = useCallback(() => {
+    setTypographyEdit(null);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  }, []);
+
+  const handleApplyTypography = useCallback((style: XmdTypography) => {
+    if (typographyEdit?.id !== activeTabId || !editorRef.current?.applyTypographyEdit(typographyEdit.edit, style)) return false;
+    handleCloseTypography();
+    return true;
+  }, [activeTabId, handleCloseTypography, typographyEdit]);
 
   const handleCursorChange = useCallback(
     (line: number, col: number) => {
@@ -934,7 +960,7 @@ const AppContent: React.FC<AppContentProps> = ({
       {viewMode !== 'read' && activeTab?.kind !== 'diff' && (
         <Toolbar onAction={handleToolbarAction} disabled={!activeTab}
           presentation={settings.editorPresentation} onPresentationChange={handlePresentationChange}
-          activeFormats={activeFormats} />
+          activeFormats={activeFormats} onTypography={handleOpenTypography} />
       )}
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -1164,6 +1190,12 @@ const AppContent: React.FC<AppContentProps> = ({
           <LazyChapterLinks mode={chapterDialog.mode} source={activeTab} tabs={tabs} root={workspaceRoot}
             renderHtml={settings.renderHtml} readTarget={readQualityTarget}
             onClose={handleCloseChapterDialog} onInsert={handleInsertChapterLink} onLocate={handleLocateBacklink} />
+        </Suspense>
+      )}
+      {typographyEdit && (
+        <Suspense fallback={null}>
+          <LazyXmdTypography initial={typographyEdit.edit.style} canRemove={typographyEdit.edit.existing}
+            onApply={handleApplyTypography} onClose={handleCloseTypography} />
         </Suspense>
       )}
 

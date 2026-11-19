@@ -11,6 +11,7 @@ import { normalizePathKey } from '@/lib/documentUtils';
 import { readDocumentOutlineSource } from '@/lib/native';
 import { previewHtmlPlugins } from '@/lib/previewHtml';
 import { remarkCjkFriendlyEmphasis } from '@/lib/remarkCjkFriendlyEmphasis';
+import { remarkXmdTypography } from '@/lib/remarkXmdTypography';
 import { isSupportedWorkspaceDocument } from '@/lib/workspace';
 import { scanXmdReferences } from '@/lib/xmdPackage';
 
@@ -33,6 +34,7 @@ const MAX_TARGET_DOCUMENTS = 64;
 const MAX_TARGET_TEXT = 12 * 1024 * 1024;
 const baseProcessor = documentStructureParser()
   .use(remarkCjkFriendlyEmphasis)
+  .use(remarkXmdTypography)
   .use(remarkRehype, { allowDangerousHtml: true });
 const markdownProcessor = baseProcessor().use(rehypeKatex).use(rehypeSlug).freeze();
 const htmlProcessor = baseProcessor().use(previewHtmlPlugins).use(rehypeKatex).use(rehypeSlug).freeze();

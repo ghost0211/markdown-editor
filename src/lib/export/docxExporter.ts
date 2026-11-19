@@ -3,6 +3,7 @@ import remarkParse from 'remark-parse';
 import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import { transformExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
+import { transformXmdTypography } from '@/lib/remarkXmdTypography';
 import { transformCallouts } from '@/lib/remarkCallouts';
 import {
   Document,
@@ -358,6 +359,16 @@ export function convertPhrasingChildren(
 
   for (const node of children) {
     switch (node.type) {
+      case 'xmdTypography': {
+        const { font, size, color } = node.style;
+        result.push(...convertPhrasingChildren(node.children, {
+          ...currentStyle,
+          ...(font && { font }),
+          ...(size && { size: size * 2 }),
+          ...(color && { color: color.slice(1) }),
+        }, theme));
+        break;
+      }
       case 'text': {
         const textNode = node as Text;
         result.push(
@@ -839,6 +850,7 @@ export async function exportMarkdownToDocx(
     .parse(markdown) as Root;
   transformCallouts(tree, lang);
   transformExportHtmlBreaks(tree);
+  transformXmdTypography(tree);
 
   const content: FileChild[] = [];
   for (const node of tree.children) {

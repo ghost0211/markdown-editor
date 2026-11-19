@@ -18,6 +18,7 @@ describe('phase two source/XMD integration', () => {
     const original = '# Title\n\n| Name | State |\n| --- | --- |\n| item | todo |\n\n![photo](data:image/png;base64,iVBORw0KGgo= "keep")\n\n[file](data:text/plain;base64,aGVsbG8=)\n\n/h2';
     let state = EditorState.create({ doc: original, selection: { anchor: original.length }, extensions: [history(), markdown({ base: markdownLanguage, extensions: editorMarkdownFallbacks })] });
     const view = { get state() { return state; }, dispatch(spec: TransactionSpec) { state = state.update(spec).state; }, focus() {} };
+    ensureSyntaxTree(state, state.doc.length, 1000);
     const table = collectVisualTables(state)[0];
     expect(table).toBeDefined();
     expect(updateVisualTableCell(view, table.from, 1, 1, 'done')).toBe(true);
@@ -40,6 +41,7 @@ describe('phase two source/XMD integration', () => {
     expect(imported.markdown).toContain('data:image/png;base64,iVBORw0KGgo=');
     expect(imported.markdown).toContain('data:text/plain;base64,aGVsbG8=');
     const reopened = EditorState.create({ doc: imported.markdown, extensions: [markdown({ base: markdownLanguage, extensions: editorMarkdownFallbacks })] });
+    ensureSyntaxTree(reopened, reopened.doc.length, 1000);
     expect(collectVisualTables(reopened)[0]).toMatchObject({ columns: 3, rows: 2, alignments: ['none', 'none', 'center'] });
   });
 

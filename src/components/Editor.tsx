@@ -47,6 +47,8 @@ import {
 } from '@/lib/editorStateCache';
 import { useI18n } from '@/i18n';
 import { chapterLinkTrigger, type ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
+import { applyXmdTypographyEdit, getXmdTypographyEdit, type XmdTypographyEdit } from '@/lib/editorXmdTypography';
+import type { XmdTypography } from '@/lib/xmdTypography';
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
@@ -55,6 +57,8 @@ export interface EditorHandle {
   /** Apply a programmatic source change as one undoable editor transaction. */
   replaceDocument: (original: string, content: string) => boolean;
   replaceChapterLink: (request: ChapterLinkInsertion, link: string) => boolean;
+  getTypographyEdit: () => XmdTypographyEdit | null;
+  applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => boolean;
   applyAction: (action: MarkdownAction) => void;
   focus: () => void;
   getScrollTop: () => number;
@@ -532,6 +536,16 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
             userEvent: 'input.link',
           });
           return true;
+        },
+
+        getTypographyEdit: () => {
+          const view = cmRef.current?.view;
+          return view ? getXmdTypographyEdit(view.state) : null;
+        },
+
+        applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => {
+          const view = cmRef.current?.view;
+          return Boolean(view && applyXmdTypographyEdit(view, edit, style));
         },
 
         applyAction: (action: MarkdownAction) => {

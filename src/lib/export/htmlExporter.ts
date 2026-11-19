@@ -7,6 +7,7 @@ import { remarkDropFrontMatter } from '@/lib/frontMatter';
 import { rehypeEmbedImages, type ImageResolver } from '@/lib/export/embedImages';
 import remarkRehype from 'remark-rehype';
 import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
+import { rehypeXmdTypography, remarkXmdTypography, XMD_TYPOGRAPHY_PROPERTIES } from '@/lib/remarkXmdTypography';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
@@ -49,6 +50,7 @@ export const SANITIZE_SCHEMA: SanitizeSchema = {
     ...defaultSchema.attributes,
     span: [
       ...(defaultSchema.attributes?.span || []),
+      ...XMD_TYPOGRAPHY_PROPERTIES,
       ['className', /^hljs(-[a-z0-9_-]+)?$/i],
     ],
     code: [
@@ -267,9 +269,11 @@ export async function buildStandaloneHtml(
     .use(remarkDropFrontMatter)
     .use(remarkCallouts, { lang: opts.lang })
     .use(remarkExportHtmlBreaks)
+    .use(remarkXmdTypography)
     .use(remarkRehype)
     .use(rehypeHighlight)
-    .use(rehypeSanitize, SANITIZE_SCHEMA);
+    .use(rehypeSanitize, SANITIZE_SCHEMA)
+    .use(rehypeXmdTypography);
 
   // Slug only when a TOC is requested. It runs after sanitization, so ids are
   // derived from trusted, rendered heading text and are never user-supplied.

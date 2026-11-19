@@ -113,6 +113,91 @@ describe('createKeyedAsyncQueue', () => {
 });
 
 describe('createDocumentSaveController', () => {
+  const styled = '重要 <xmd-style font="宋体" size="18" color="#b91c1c">条款</xmd-style>。';
+  const bundled = '[附件](data:application/pdf;base64,AA==)';
+
+  it.each([
+    { filePath: null, content: styled, saveAs: false },
+    { filePath: 'C:/docs/notes.md', content: styled, saveAs: false },
+    { filePath: 'C:/docs/notes.md', content: bundled, saveAs: true },
+  ])('defaults to XMD when saving $filePath with an XMD feature', async ({ filePath, content, saveAs }) => {
+    const host = createHost([createTab({ filePath, content })]);
+    const controller = createDocumentSaveController(() => host);
+
+    await expect(controller.writeDocumentTab('tab-1', saveAs)).resolves.toBe(true);
+    expect(host.saveFileDialog).toHaveBeenCalledWith('notes.xmd');
+    expect(host.writeFile).toHaveBeenCalledExactlyOnceWith('C:/docs/saved.xmd', content, filePath);
+    expect(host.tabsRef.current[0]).toMatchObject({ filePath: 'C:/docs/saved.xmd', savedContent: content, isDirty: false });
+  });
+
+  it('leaves the Markdown tab dirty on cancel or when the chosen extension cannot store XMD features', async () => {
+    const dialog = vi.fn().mockResolvedValueOnce(null).mockResolvedValueOnce('C:/docs/notes.md');
+    const host = createHost([createTab({ content: styled })], { saveFileDialog: dialog });
+    const controller = createDocumentSaveController(() => host);
+    await expect(controller.writeDocumentTab('tab-1')).resolves.toBe(false);
+    expect(host.showToast).not.toHaveBeenCalled();
+    await expect(controller.writeDocumentTab('tab-1')).resolves.toBe(false);
+    expect(host.showToast).toHaveBeenCalledWith('toasts.xmdSaveRequired', 'warning');
+    expect(host.writeFile).not.toHaveBeenCalled();
+    expect(host.tabsRef.current[0]).toMatchObject({ filePath: 'C:/docs/notes.md', isDirty: true });
+  });
+
+  it('waits for a manual conversion before autosaving XMD content', async () => {
+    const host = createHost([createTab({ content: styled })]);
+    const controller = createDocumentSaveController(() => host);
+    await expect(controller.writeDocumentTab('tab-1', false, true)).resolves.toBe(false);
+    expect(host.saveFileDialog).not.toHaveBeenCalled();
+    expect(host.writeFile).not.toHaveBeenCalled();
+    expect(host.tabsRef.current[0].isDirty).toBe(true);
+
+    await controller.writeDocumentTab('tab-1');
+    const content = styled + '\n\n后续编辑';
+    host.tabsRef.current = [{ ...host.tabsRef.current[0], content, isDirty: true }];
+    await expect(controller.writeDocumentTab('tab-1', false, true)).resolves.toBe(true);
+    expect(host.saveFileDialog).toHaveBeenCalledOnce();
+    expect(host.writeFile).toHaveBeenLastCalledWith('C:/docs/saved.xmd', content, 'C:/docs/saved.xmd');
+  });
+
+  it('preserves relative resource resolution when converting to XMD in another directory', async () => {
+    const content = styled + '\n\n![diagram](assets/diagram.png)';
+    const path = 'C:/output/notes.xmd';
+    const host = createHost([createTab({ content })], { saveFileDialog: vi.fn(async () => path) });
+    const controller = createDocumentSaveController(() => host);
+    await expect(controller.writeDocumentTab('tab-1')).resolves.toBe(true);
+    expect(host.writeFile).toHaveBeenCalledExactlyOnceWith(path, content, 'C:/docs/notes.md');
+    const rebased = styled + '\n\n![diagram](<../docs/assets/diagram.png>)';
+    expect(host.tabsRef.current[0]).toMatchObject({ content: rebased, savedContent: rebased, filePath: path, isDirty: false });
+    await expect(controller.writeDocumentTab('tab-1')).resolves.toBe(true);
+    expect(host.writeFile).toHaveBeenLastCalledWith(path, rebased, path);
+  });
+
+  it('reopens the dialog in XMD format if XMD content arrives while a Markdown save is queued', async () => {
+    const queue = createKeyedAsyncQueue();
+    const gate = deferred<void>();
+    const blocked = queue.run('c:/docs/notes.md', () => gate.promise);
+    const host = createHost([createTab()]);
+    const controller = createDocumentSaveController(() => host, { queue });
+    const save = controller.writeDocumentTab('tab-1');
+    host.tabsRef.current = [createTab({ content: styled })];
+    gate.resolve();
+
+    await blocked;
+    await expect(save).resolves.toBe(true);
+    expect(host.saveFileDialog).toHaveBeenCalledWith('notes.xmd');
+    expect(host.writeFile).toHaveBeenCalledExactlyOnceWith('C:/docs/saved.xmd', styled, 'C:/docs/notes.md');
+  });
+
+  it('keeps ordinary Markdown images, links and literal XMD examples in Markdown', async () => {
+    const fence = String.fromCharCode(96).repeat(3);
+    const content = fence + '\n' + styled + '\n' + bundled + '\n' + fence +
+      '\n\n![image](data:image/png;base64,AAAA)\n\n[a local document](./other.md)';
+    const host = createHost([createTab({ content })]);
+    const controller = createDocumentSaveController(() => host);
+    await expect(controller.writeDocumentTab('tab-1')).resolves.toBe(true);
+    expect(host.saveFileDialog).not.toHaveBeenCalled();
+    expect(host.writeFile).toHaveBeenCalledExactlyOnceWith('C:/docs/notes.md', content, 'C:/docs/notes.md');
+  });
+
   it('does not write after a newer Save-As completed while an older dialog was pending', async () => {
     const firstDialog = deferred<string | null>();
     const dialog = vi.fn().mockReturnValueOnce(firstDialog.promise).mockResolvedValueOnce('C:/new/saved.xmd');

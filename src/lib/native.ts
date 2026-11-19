@@ -525,8 +525,13 @@ export async function saveFileDialog(defaultName?: string): Promise<string | nul
     if (typeof window === 'undefined') return null;
     const lang = getCurrentLanguage();
     const fallbackDefault = defaultName || t(lang, 'common.untitledDoc');
-    const name = window.prompt(t(lang, 'browserFallback.promptSaveFilename'), fallbackDefault);
+    const name = window.prompt(t(lang, 'browserFallback.promptSaveFilename'), fallbackDefault)?.trim();
     if (!name) return null;
+    if (/\.xmd$/i.test(name)) return 'browser://' + name;
+    if (/\.xmd$/i.test(fallbackDefault)) {
+      // Keep explicitly typed extensions so the save controller can validate them.
+      return 'browser://' + (/\.[^./\\]+$/.test(name) ? name : name + '.xmd');
+    }
     return `browser://${name.endsWith('.md') ? name : `${name}.md`}`;
   }
 }

@@ -15,6 +15,7 @@ import {
   Quote,
   Strikethrough,
   Table as TableIcon,
+  Type,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import { MarkdownAction } from '@/lib/markdownCommands';
@@ -31,6 +32,7 @@ export interface ToolbarProps {
   onPresentationChange?: (value: ToolbarPresentation) => void;
   /** Formats reported by `getActiveMarkdownFormats` for the main selection. */
   activeFormats?: readonly MarkdownAction[];
+  onTypography?: () => void;
 }
 
 interface ToolbarButtonConfig {
@@ -84,6 +86,7 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   presentation = 'source',
   onPresentationChange,
   activeFormats,
+  onTypography,
 }) => {
   const { t } = useI18n();
   const btnBase =
@@ -185,7 +188,15 @@ export const Toolbar: React.FC<ToolbarProps> = ({
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
       {/* Inline styles */}
-      <div className="flex items-center space-x-0.5">{INLINE_BUTTONS.map(renderButton)}</div>
+      <div className="flex items-center space-x-0.5">
+        {INLINE_BUTTONS.map(renderButton)}
+        {onTypography && (
+          <button type="button" className={btnClass} disabled={disabled} onMouseDown={keepEditorSelection} onClick={onTypography}
+            title={t('xmdTypography.title')} aria-label={t('xmdTypography.title')}>
+            <Type className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
 
       <div className="h-4 w-[1px] bg-slate-300 dark:bg-slate-700 mx-1" />
 
