@@ -49,6 +49,7 @@ import { useI18n } from '@/i18n';
 import { chapterLinkTrigger, type ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
 import { applyXmdTypographyEdit, getXmdTypographyEdit, type XmdTypographyEdit } from '@/lib/editorXmdTypography';
 import type { XmdTypography } from '@/lib/xmdTypography';
+import { planXmdPageBreak } from '@/lib/xmdLayout';
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
@@ -59,6 +60,7 @@ export interface EditorHandle {
   replaceChapterLink: (request: ChapterLinkInsertion, link: string) => boolean;
   getTypographyEdit: () => XmdTypographyEdit | null;
   applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => boolean;
+  insertXmdPageBreak: () => boolean;
   applyAction: (action: MarkdownAction) => void;
   focus: () => void;
   getScrollTop: () => number;
@@ -342,6 +344,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         ext.push(createVisualEditingExtension({
           sourcePath,
           renderHtml,
+          pageBreak: t('xmdLayout.pageBreak'),
+          documentTheme: t('xmdLayout.theme'),
           taskToggle: t('editor.visualTaskToggle'),
           imageEdit: t('visualImage.open'),
           imageLoading: t('editor.visualImageLoading'),
@@ -546,6 +550,22 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => {
           const view = cmRef.current?.view;
           return Boolean(view && applyXmdTypographyEdit(view, edit, style));
+        },
+
+        insertXmdPageBreak: () => {
+          const view = cmRef.current?.view;
+          if (!view || view.state.readOnly) return false;
+          const plan = planXmdPageBreak(view.state.doc.toString(), view.state.selection.main.from);
+          if (!plan) return false;
+          view.dispatch({
+            changes: { from: plan.from, insert: plan.insert },
+            selection: { anchor: plan.from + plan.insert.length },
+            annotations: isolateHistory.of('full'),
+            scrollIntoView: true,
+            userEvent: 'input.xmdPageBreak',
+          });
+          view.focus();
+          return true;
         },
 
         applyAction: (action: MarkdownAction) => {

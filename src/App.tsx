@@ -50,6 +50,7 @@ import type { ChapterLinkInsertion } from '@/lib/chapterLinkTrigger';
 import type { ChapterBacklink } from '@/lib/chapterLinks';
 import type { XmdTypographyEdit } from '@/lib/editorXmdTypography';
 import type { XmdTypography } from '@/lib/xmdTypography';
+import { readXmdDocumentTheme, setXmdDocumentTheme } from '@/lib/xmdLayout';
 import type { XmdTypographyQuickRequest } from '@/components/XmdTypographyQuickPopover';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
@@ -238,6 +239,13 @@ const AppContent: React.FC<AppContentProps> = ({
   const [isTemplatesOpen, setIsTemplatesOpen] = useState(false);
   const [isQualityOpen, setIsQualityOpen] = useState(false);
   const [isExportThemeOpen, setIsExportThemeOpen] = useState(false);
+  const [themeDocumentId, setThemeDocumentId] = useState<string | null>(null);
+  useEffect(() => {
+    if (themeDocumentId && themeDocumentId !== activeTabId) {
+      setIsExportThemeOpen(false);
+      setThemeDocumentId(null);
+    }
+  }, [activeTabId, themeDocumentId]);
   const [isBatchExportOpen, setIsBatchExportOpen] = useState(false);
   const [typographyEdit, setTypographyEdit] = useState<{
     id: string; edit: XmdTypographyEdit; quick?: XmdTypographyQuickRequest;
@@ -258,6 +266,7 @@ const AppContent: React.FC<AppContentProps> = ({
     setNumberingPreview(null);
     setIsSearchOpen(false); setIsResourceManagerOpen(false); setHistoryTabId(null);
     setIsTemplatesOpen(false); setIsQualityOpen(false); setIsExportThemeOpen(false);
+    setThemeDocumentId(null);
     setIsBatchExportOpen(false); setChapterDialog(null);
     setTypographyEdit(null);
   }, []);
@@ -336,7 +345,16 @@ const AppContent: React.FC<AppContentProps> = ({
   const handleOpenExportTheme = useCallback(() => { closeFeatureModals(); setIsExportThemeOpen(true); }, [closeFeatureModals]);
   const handleCloseTemplates = useCallback(() => setIsTemplatesOpen(false), []);
   const handleCloseQuality = useCallback(() => setIsQualityOpen(false), []);
-  const handleCloseExportTheme = useCallback(() => setIsExportThemeOpen(false), []);
+  const handleCloseExportTheme = useCallback(() => {
+    setIsExportThemeOpen(false);
+    setThemeDocumentId(null);
+  }, []);
+  const handleOpenXmdTheme = useCallback(() => {
+    if (!activeTab || activeTab.kind === 'diff') return;
+    closeFeatureModals();
+    setThemeDocumentId(activeTab.id);
+    setIsExportThemeOpen(true);
+  }, [activeTab, closeFeatureModals]);
   const handleCreateTemplate = useCallback((title: string, content: string) => createNewTab(title, content), [createNewTab]);
   const handleInsertTemplate = useCallback((content: string) => {
     if (!activeTab || activeTab.kind === 'diff') { createNewTab(undefined, content); return; }
@@ -352,7 +370,18 @@ const AppContent: React.FC<AppContentProps> = ({
       else editorRef.current?.jumpToLine(line);
     });
   }, [viewMode]);
-  const handleSaveExportTheme = useCallback((style: ExportStyle) => updateSetting('exportStyle', style), [updateSetting]);
+  const handleXmdPageBreak = useCallback(() => { editorRef.current?.insertXmdPageBreak(); }, []);
+  const updateXmdTheme = useCallback((style?: ExportStyle) => {
+    if (!themeDocumentId || activeTab?.id !== themeDocumentId) return;
+    const original = normalizeLineEndings(activeTab.content);
+    const next = setXmdDocumentTheme(original, style);
+    if (!editorRef.current?.replaceDocument(original, next)) showToast(t('xmdLayout.documentChanged'), 'warning');
+  }, [activeTab, showToast, t, themeDocumentId]);
+  const handleSaveExportTheme = useCallback((style: ExportStyle) => {
+    if (themeDocumentId) updateXmdTheme(style);
+    else updateSetting('exportStyle', style);
+  }, [themeDocumentId, updateSetting, updateXmdTheme]);
+  const savedXmdTheme = themeDocumentId && activeTab?.id === themeDocumentId ? readXmdDocumentTheme(activeTab.content) : undefined;
   useEffect(() => {
     if (!activeTab || activeTab.kind === 'diff') setIsResourceManagerOpen(false);
   }, [activeTab]);
@@ -978,7 +1007,8 @@ const AppContent: React.FC<AppContentProps> = ({
         <Toolbar onAction={handleToolbarAction} disabled={!activeTab}
           presentation={settings.editorPresentation} onPresentationChange={handlePresentationChange}
           activeFormats={activeFormats} onTypography={handleOpenTypography}
-          openTypographyField={typographyEdit?.quick?.field} />
+          openTypographyField={typographyEdit?.quick?.field} onXmdTheme={handleOpenXmdTheme}
+          onXmdPageBreak={handleXmdPageBreak} />
       )}
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -1196,7 +1226,14 @@ const AppContent: React.FC<AppContentProps> = ({
         </Suspense>
       )}
 
-      {isExportThemeOpen && <Suspense fallback={null}><LazyExportStyleDialog isOpen={isExportThemeOpen} onClose={handleCloseExportTheme} value={settings.exportStyle ?? DEFAULT_EXPORT_STYLE} onSave={handleSaveExportTheme} /></Suspense>}
+      {isExportThemeOpen && (!themeDocumentId || themeDocumentId === activeTab?.id) && (
+        <Suspense fallback={null}>
+          <LazyExportStyleDialog isOpen onClose={handleCloseExportTheme}
+            title={themeDocumentId ? t('xmdLayout.theme') : undefined}
+            value={savedXmdTheme ?? settings.exportStyle ?? DEFAULT_EXPORT_STYLE} onSave={handleSaveExportTheme}
+            removal={savedXmdTheme ? { label: t('xmdLayout.removeTheme'), onRemove: () => updateXmdTheme() } : undefined} />
+        </Suspense>
+      )}
       {isBatchExportOpen && (
         <Suspense fallback={null}>
           <LazyBatchExport root={workspaceRoot} tabs={tabs} style={settings.exportStyle} embedImages={settings.exportEmbedImages}

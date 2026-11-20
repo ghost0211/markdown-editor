@@ -8,6 +8,7 @@ import { rehypeEmbedImages, type ImageResolver } from '@/lib/export/embedImages'
 import remarkRehype from 'remark-rehype';
 import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import { rehypeXmdTypography, remarkXmdTypography, XMD_TYPOGRAPHY_PROPERTIES } from '@/lib/remarkXmdTypography';
+import { readXmdDocumentTheme, remarkXmdLayout, XMD_PAGE_BREAK_CLASS } from '@/lib/xmdLayout';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
@@ -69,6 +70,7 @@ export const SANITIZE_SCHEMA: SanitizeSchema = {
       ['dataCallout', /^(note|tip|important|warning|caution)$/],
     ],
     p: [...(defaultSchema.attributes?.p || []), ['className', 'md-callout-title']],
+    div: [...(defaultSchema.attributes?.div ?? []), ['className', XMD_PAGE_BREAK_CLASS]],
     th: [...(defaultSchema.attributes?.th || []), ['align', /^(left|center|right)$/i]],
     td: [...(defaultSchema.attributes?.td || []), ['align', /^(left|center|right)$/i]],
     a: [
@@ -258,7 +260,7 @@ export async function buildStandaloneHtml(
   const opts: HtmlRenderOptions =
     typeof options === 'string' ? { sourceFilePath: options } : options || {};
 
-  const style = validateExportStyle(opts.style ?? DEFAULT_EXPORT_STYLE);
+  const style = validateExportStyle(opts.style ?? readXmdDocumentTheme(markdown) ?? DEFAULT_EXPORT_STYLE);
   const palette = getExportColorPalette(style.colorScheme);
   const fontStack = getExportFontStack(style.fontFamily);
 
@@ -269,6 +271,7 @@ export async function buildStandaloneHtml(
     .use(remarkDropFrontMatter)
     .use(remarkCallouts, { lang: opts.lang })
     .use(remarkExportHtmlBreaks)
+    .use(remarkXmdLayout)
     .use(remarkXmdTypography)
     .use(remarkRehype)
     .use(rehypeHighlight)
@@ -787,6 +790,11 @@ hr {
 }
 
 @media print {
+  .xmd-page-break {
+    break-after: page;
+    page-break-after: always;
+  }
+
   body {
     padding: 0;
     background-color: var(--export-bg);

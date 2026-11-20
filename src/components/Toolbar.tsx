@@ -6,6 +6,7 @@ import {
   CodeXml,
   Eye,
   FileCode,
+  FileSymlink,
   Italic,
   Link2,
   List,
@@ -38,6 +39,8 @@ export interface ToolbarProps {
   activeFormats?: readonly MarkdownAction[];
   onTypography?: (quick?: XmdTypographyQuickRequest) => void;
   openTypographyField?: XmdTypographyQuickRequest['field'];
+  onXmdTheme?: () => void;
+  onXmdPageBreak?: () => void;
 }
 
 interface ToolbarButtonConfig {
@@ -99,6 +102,8 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   activeFormats,
   onTypography,
   openTypographyField,
+  onXmdTheme,
+  onXmdPageBreak,
 }) => {
   const { t } = useI18n();
   const btnBase =
@@ -237,6 +242,18 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 </button>
               );
             })}
+            {onXmdTheme && (
+              <button type="button" className={btnClass + ' !w-auto px-2'} disabled={disabled}
+                onMouseDown={keepEditorSelection} onClick={onXmdTheme} aria-haspopup="dialog">
+                {t('xmdLayout.theme')}
+              </button>
+            )}
+            {onXmdPageBreak && (
+              <button type="button" className={btnClass + ' !w-auto gap-1 px-2'} disabled={disabled}
+                title={t('xmdLayout.insertPageBreak')} onMouseDown={keepEditorSelection} onClick={onXmdPageBreak}>
+                <FileSymlink className="h-3.5 w-3.5" aria-hidden />{t('xmdLayout.pageBreak')}
+              </button>
+            )}
           </div>
         </>
       )}

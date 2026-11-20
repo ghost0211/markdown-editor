@@ -25,6 +25,7 @@ import { openExternalUrl } from '@/lib/native';
 import { documentUrlTransform } from '@/lib/documentLinks';
 import { previewHtmlPlugins } from '@/lib/previewHtml';
 import { rehypeXmdTypography, remarkXmdTypography } from '@/lib/remarkXmdTypography';
+import { remarkXmdLayout, XMD_PAGE_BREAK_CLASS } from '@/lib/xmdLayout';
 import { downloadBundledAttachment } from '@/lib/bundledAttachments';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
@@ -94,7 +95,7 @@ function getRemarkPlugins(
     if (withMath) {
       plugins.push(remarkMath);
     }
-    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }], remarkXmdTypography);
+    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }], remarkXmdTypography, remarkXmdLayout);
     REMARK_PLUGINS_CACHE.set(key, plugins);
   }
   return plugins;
@@ -606,7 +607,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
     },
     ref
   ) => {
-    const { language } = useI18n();
+    const { language, t } = useI18n();
     const containerRef = useRef<HTMLDivElement>(null);
 
     /**
@@ -890,6 +891,15 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
         h4: createHeadingRenderer('h4'),
         h5: createHeadingRenderer('h5'),
         h6: createHeadingRenderer('h6'),
+        div: ({ node: _node, className, children, ...props }) => (
+          className === XMD_PAGE_BREAK_CLASS
+            ? <div role="separator" aria-label={t('xmdLayout.pageBreak')} className="my-4 flex items-center gap-3 text-xs text-slate-500 dark:text-slate-400">
+                <span className="flex-1 border-t border-dashed border-slate-300 dark:border-slate-600" />
+                {t('xmdLayout.pageBreak')}
+                <span className="flex-1 border-t border-dashed border-slate-300 dark:border-slate-600" />
+              </div>
+            : <div className={className} {...props}>{children}</div>
+        ),
         /**
          * GFM task-list checkboxes. remark-gfm emits them `disabled`, so the
          * box is made interactive and clicking it flips the matching `- [ ]`
@@ -966,7 +976,7 @@ const PreviewComponent = forwardRef<PreviewHandle, PreviewProps>(
           );
         },
       }),
-      [scrollToTarget, onOpenLink, onToggleTask, sourcePath]
+      [scrollToTarget, onOpenLink, onToggleTask, sourcePath, t]
     );
 
     return (

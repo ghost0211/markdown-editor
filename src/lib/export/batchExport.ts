@@ -2,6 +2,7 @@ import { getExportFilename, getFileNameFromPath } from '@/lib/documentUtils';
 import { readTextFile, writeNewExportFile } from '@/lib/native';
 import { workspaceEntryAbsolutePath } from '@/lib/workspace';
 import type { ExportStyle, Language } from '@/types';
+import { readXmdDocumentTheme } from '@/lib/xmdLayout';
 
 export type BatchExportFormat = 'docx' | 'pdf' | 'html';
 
@@ -35,7 +36,7 @@ export async function runBatchExport(
   sources: readonly BatchExportSource[],
   destination: string,
   format: BatchExportFormat,
-  options: { language: Language; style?: ExportStyle; embedImages: boolean },
+  options: { language: Language; style?: ExportStyle; embedImages: boolean; overrideDocumentTheme?: boolean },
   signal: AbortSignal,
   onResult: (result: BatchExportResult) => void
 ): Promise<void> {
@@ -48,7 +49,8 @@ export async function runBatchExport(
       if (!path) throw new Error('Invalid export path');
       const content = source.content ?? await readTextFile(source.path);
       if (signal.aborted) break;
-      const { language, style, embedImages } = options;
+      const { language, embedImages } = options;
+      const style = (options.overrideDocumentTheme ? undefined : readXmdDocumentTheme(content)) ?? options.style;
       if (format === 'docx') {
         const { exportMarkdownToDocx } = await import('@/lib/export/docxExporter');
         await writeNewExportFile(path, await exportMarkdownToDocx(content, source.title, language, style));

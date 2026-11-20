@@ -4,6 +4,7 @@ import remarkGfm from 'remark-gfm';
 import remarkFrontmatter from 'remark-frontmatter';
 import { transformExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import { transformXmdTypography } from '@/lib/remarkXmdTypography';
+import { isXmdPageBreak, readXmdDocumentTheme } from '@/lib/xmdLayout';
 import { transformCallouts } from '@/lib/remarkCallouts';
 import {
   Document,
@@ -838,7 +839,7 @@ export async function exportMarkdownToDocx(
   lang?: string,
   style?: ExportStyle
 ): Promise<Uint8Array> {
-  const normalizedStyle = style ? validateExportStyle(style) : undefined;
+  const normalizedStyle = style ? validateExportStyle(style) : readXmdDocumentTheme(markdown);
   const theme = normalizedStyle ? createDocxTheme(normalizedStyle) : LEGACY_DOCX_THEME;
 
   // Front matter parses to a `yaml` node, which convertBlockNode ignores, so
@@ -854,6 +855,10 @@ export async function exportMarkdownToDocx(
 
   const content: FileChild[] = [];
   for (const node of tree.children) {
+    if (node.type === 'html' && isXmdPageBreak(node.value)) {
+      content.push(new Paragraph({ children: [new PageBreak()] }));
+      continue;
+    }
     const elements = convertBlockNode(node, 0, theme);
     content.push(...elements);
   }

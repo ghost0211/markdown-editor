@@ -4,10 +4,13 @@ import { Decoration, type DecorationSet, EditorView, ViewPlugin, type ViewUpdate
 import { isHtmlLineBreak } from '@/lib/editorMarkdown';
 import { editorTypographySpans } from '@/lib/editorXmdTypography';
 import { xmdTypographyCss } from '@/lib/xmdTypography';
+import { isXmdDocumentThemeMarker, isXmdPageBreak } from '@/lib/xmdLayout';
 
 export interface VisualEditingOptions {
   sourcePath?: string | null;
   renderHtml?: boolean;
+  pageBreak?: string;
+  documentTheme?: string;
   taskToggle: string;
   imageEdit: string;
   imageLoading: string;
@@ -89,6 +92,17 @@ class LineBreakWidget extends WidgetType {
   }
 }
 
+class LayoutMarkerWidget extends WidgetType {
+  constructor(readonly label: string, readonly markerClass: string) { super(); }
+  eq(other: LayoutMarkerWidget): boolean { return this.label === other.label && this.markerClass === other.markerClass; }
+  toDOM(view: EditorView): HTMLElement {
+    const span = view.dom.ownerDocument.createElement('span');
+    span.className = 'cm-xmd-layout-marker ' + this.markerClass;
+    span.textContent = this.label;
+    return span;
+  }
+}
+
 const lineBreak = Decoration.replace({ widget: new LineBreakWidget() });
 
 const INLINE_CLASSES: Record<string, string> = {
@@ -136,7 +150,16 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
         const key = `${node.name}:${node.from}:${node.to}`;
         if (seenNodes.has(key)) return;
         seenNodes.add(key);
-        if (node.name === 'HTMLTag' || node.name === 'HTMLBlock') {
+        if (node.name === 'CommentBlock' && node.node.parent?.name === 'Document' &&
+            node.to - node.from <= 4096 && state.doc.lineAt(node.from).number === state.doc.lineAt(node.to).number &&
+            !isVisualSourceLine(state, node.from, node.to)) {
+          const comment = state.sliceDoc(node.from, node.to);
+          if (options.pageBreak && isXmdPageBreak(comment)) {
+            decorations.push(Decoration.replace({ widget: new LayoutMarkerWidget(options.pageBreak, 'cm-xmd-page-break') }).range(node.from, node.to));
+          } else if (options.documentTheme && isXmdDocumentThemeMarker(comment)) {
+            decorations.push(Decoration.replace({ widget: new LayoutMarkerWidget(options.documentTheme, 'cm-xmd-document-theme') }).range(node.from, node.to));
+          }
+        } else if (node.name === 'HTMLTag' || node.name === 'HTMLBlock') {
           // CommonMark treats a line containing only <br> as an HTML block,
           // which may include subsequent lines until the next blank line.
           const end = Math.min(node.to, state.doc.lineAt(node.from).to);
@@ -216,6 +239,9 @@ export function createVisualEditingExtension(options: VisualEditingOptions): Ext
 }
 
 const visualTheme = EditorView.baseTheme({
+  '.cm-xmd-layout-marker': { display: 'inline-block', color: '#64748b', padding: '0 0.65rem', fontSize: '0.8em' },
+  '&dark .cm-xmd-layout-marker': { color: '#cbd5e1' },
+  '.cm-xmd-page-break': { borderBottom: '1px dashed #94a3b8' },
   '&[data-editor-presentation=visual] .cm-scroller': { fontFamily: "'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif" },
   '.cm-visual-h1': { fontSize: '1.85em', fontWeight: '700', paddingTop: '0.35em', paddingBottom: '0.2em' },
   '.cm-visual-h2': { fontSize: '1.5em', fontWeight: '700', paddingTop: '0.3em', paddingBottom: '0.15em' },

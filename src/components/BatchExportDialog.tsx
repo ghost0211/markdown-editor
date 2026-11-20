@@ -88,6 +88,7 @@ export function BatchExportDialog({ root, tabs, style, embedImages, onClose, onC
       await runBatchExport(sources, destination, format, {
         language,
         embedImages,
+        overrideDocumentTheme: Boolean(preset),
         style: presets.find((item) => item.id === preset)?.style ?? style,
       }, controller.signal, (result) => {
         setProgress((previous) => previous && { ...previous, results: [...previous.results, result] });

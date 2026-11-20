@@ -2,6 +2,7 @@ import rehypeRaw from 'rehype-raw';
 import rehypeSanitize, { defaultSchema, type Options } from 'rehype-sanitize';
 import type { PluggableList } from 'unified';
 import { XMD_TYPOGRAPHY_PROPERTIES } from '@/lib/remarkXmdTypography';
+import { XMD_PAGE_BREAK_CLASS } from '@/lib/xmdLayout';
 
 const schema: Options = {
   ...defaultSchema,
@@ -19,6 +20,7 @@ const schema: Options = {
       ['dataCallout', /^(?:note|tip|important|warning|caution)$/],
     ],
     p: [['className', 'md-callout-title']],
+    div: [...(defaultSchema.attributes?.div ?? []), ['className', XMD_PAGE_BREAK_CLASS]],
     span: [...(defaultSchema.attributes?.span ?? []), ...XMD_TYPOGRAPHY_PROPERTIES],
     source: [],
   },

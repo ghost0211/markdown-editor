@@ -7,6 +7,7 @@ import {
   isExportTargetSameAsSource,
 } from '@/lib/documentUtils';
 import { useI18n } from '@/i18n';
+import { readXmdDocumentTheme } from '@/lib/xmdLayout';
 
 export interface UseExportDocumentResult {
   isExporting: boolean;
@@ -31,11 +32,12 @@ export interface UseExportDocumentOptions {
 export function useExportDocument(
   activeTab: DocumentTab | undefined,
   showToast: (message: string, type?: ToastType, duration?: number) => string,
-  { embedImages = false, style }: UseExportDocumentOptions = {}
+  { embedImages = false, style: globalStyle }: UseExportDocumentOptions = {}
 ): UseExportDocumentResult {
   const { t, language } = useI18n();
   const [isExporting, setIsExporting] = useState(false);
   const [exportingType, setExportingType] = useState<'docx' | 'pdf' | 'html' | 'xmd' | null>(null);
+  const style = (activeTab && readXmdDocumentTheme(activeTab.content)) ?? globalStyle;
 
   const exportWord = useCallback(async () => {
     if (!activeTab || isExporting) return;

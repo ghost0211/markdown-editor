@@ -36,6 +36,8 @@ export interface ExportStyleDialogProps {
   onClose: () => void;
   value: ExportStyle;
   onSave: (style: ExportStyle) => void;
+  title?: string;
+  removal?: { label: string; onRemove: () => void };
 }
 
 /**
@@ -168,6 +170,8 @@ export function ExportStyleDialog({
   onClose,
   value,
   onSave,
+  title,
+  removal,
 }: ExportStyleDialogProps) {
   const tr = useExportTheme();
   const modalRef = useRef<HTMLDivElement>(null);
@@ -338,7 +342,7 @@ export function ExportStyleDialog({
         <div className="flex items-center justify-between border-b border-slate-200 px-4 py-3 dark:border-slate-700">
           <div className="flex items-center space-x-2 text-sm font-medium">
             <Palette className="h-4 w-4 text-blue-500" />
-            <span id="export-style-dialog-title">{tr('exportTheme.title')}</span>
+            <span id="export-style-dialog-title">{title ?? tr('exportTheme.title')}</span>
           </div>
           <button
             type="button"
@@ -671,6 +675,11 @@ export function ExportStyleDialog({
         </div>
 
         <div className="flex items-center justify-end space-x-2 border-t border-slate-200 bg-panel px-4 py-3 dark:border-slate-700">
+          {removal && <button type="button"
+            className="mr-auto rounded px-3 py-1.5 text-xs text-slate-700 hover:bg-slate-200 dark:text-slate-300 dark:hover:bg-slate-700"
+            onClick={() => { removal.onRemove(); onClose(); }}>
+            {removal.label}
+          </button>}
           <button
             type="button"
             onClick={onClose}

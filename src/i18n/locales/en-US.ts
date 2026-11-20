@@ -725,6 +725,13 @@ export const enUS: TranslationsSchema = {
     stop: 'Stop after the current file',
     stopping: 'Stopping…',
   },
+  xmdLayout: {
+    theme: 'Document theme',
+    removeTheme: 'Clear document theme',
+    pageBreak: 'Page break',
+    insertPageBreak: 'Insert an XMD page break before the current block',
+    documentChanged: 'The document changed. Reopen the document theme.',
+  },
   xmdTypography: {
     title: 'XMD text style',
     group: 'XMD style extensions',

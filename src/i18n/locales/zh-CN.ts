@@ -724,6 +724,13 @@ export const zhCN = {
     stop: '导完当前文件后停止',
     stopping: '正在停止…',
   },
+  xmdLayout: {
+    theme: '文档主题',
+    removeTheme: '清除文档主题',
+    pageBreak: '分页符',
+    insertPageBreak: '在当前段落或块之前插入 XMD 分页符',
+    documentChanged: '文档内容已变化，请重新打开文档主题。',
+  },
   xmdTypography: {
     title: 'XMD 文字样式',
     group: 'XMD 扩展样式',

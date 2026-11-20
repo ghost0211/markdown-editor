@@ -2,11 +2,13 @@ import { documentStructureParser } from './documentStructure';
 import { remarkCjkFriendlyEmphasis } from './remarkCjkFriendlyEmphasis';
 import { transformXmdTypography } from './remarkXmdTypography';
 import { scanXmdReferences } from './xmdPackage';
+import { hasXmdPageBreak, readXmdDocumentTheme } from './xmdLayout';
 
 const typographyParser = documentStructureParser().use(remarkCjkFriendlyEmphasis).freeze();
 
 /** Detect features handled by XMD, after Markdown parsing excludes code and examples. */
 export function documentRequiresXmd(content: string): boolean {
+  if (readXmdDocumentTheme(content) || hasXmdPageBreak(content)) return true;
   if (content.includes('<xmd-style ') && transformXmdTypography(typographyParser.parse(content))) {
     return true;
   }
