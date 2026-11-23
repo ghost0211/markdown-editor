@@ -9,6 +9,10 @@ import remarkRehype from 'remark-rehype';
 import { remarkExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import { rehypeXmdTypography, remarkXmdTypography, XMD_TYPOGRAPHY_PROPERTIES } from '@/lib/remarkXmdTypography';
 import { readXmdDocumentTheme, remarkXmdLayout, XMD_PAGE_BREAK_CLASS } from '@/lib/xmdLayout';
+import { rehypeXmdAlignment, remarkXmdAlignment } from '@/lib/xmdAlignment';
+import { rehypeXmdParagraph, remarkXmdParagraph } from '@/lib/xmdParagraph';
+import { rehypeXmdTable, remarkXmdTable } from '@/lib/xmdTable';
+import { remarkXmdReview } from '@/lib/xmdReview';
 import rehypeHighlight from 'rehype-highlight';
 import rehypeSanitize, { defaultSchema, Options as SanitizeSchema } from 'rehype-sanitize';
 import rehypeSlug from 'rehype-slug';
@@ -272,11 +276,18 @@ export async function buildStandaloneHtml(
     .use(remarkCallouts, { lang: opts.lang })
     .use(remarkExportHtmlBreaks)
     .use(remarkXmdLayout)
+    .use(remarkXmdAlignment)
+    .use(remarkXmdParagraph)
+    .use(remarkXmdTable)
+    .use(remarkXmdReview)
     .use(remarkXmdTypography)
     .use(remarkRehype)
     .use(rehypeHighlight)
     .use(rehypeSanitize, SANITIZE_SCHEMA)
-    .use(rehypeXmdTypography);
+    .use(rehypeXmdTypography)
+    .use(rehypeXmdAlignment)
+    .use(rehypeXmdParagraph)
+    .use(rehypeXmdTable);
 
   // Slug only when a TOC is requested. It runs after sanitization, so ids are
   // derived from trusted, rendered heading text and are never user-supplied.
@@ -790,6 +801,13 @@ hr {
 }
 
 @media print {
+  table[data-xmd-repeat-header] {
+    break-inside: auto;
+    page-break-inside: auto;
+  }
+  table[data-xmd-repeat-header="true"] thead { display: table-header-group; }
+  table[data-xmd-repeat-header="false"] thead { display: table-row-group; }
+  table[data-xmd-repeat-header] tr { break-inside: avoid; }
   .xmd-page-break {
     break-after: page;
     page-break-after: always;

@@ -26,6 +26,10 @@ import { documentUrlTransform } from '@/lib/documentLinks';
 import { previewHtmlPlugins } from '@/lib/previewHtml';
 import { rehypeXmdTypography, remarkXmdTypography } from '@/lib/remarkXmdTypography';
 import { remarkXmdLayout, XMD_PAGE_BREAK_CLASS } from '@/lib/xmdLayout';
+import { rehypeXmdAlignment, remarkXmdAlignment } from '@/lib/xmdAlignment';
+import { rehypeXmdParagraph, remarkXmdParagraph } from '@/lib/xmdParagraph';
+import { rehypeXmdTable, remarkXmdTable } from '@/lib/xmdTable';
+import { remarkXmdReview } from '@/lib/xmdReview';
 import { downloadBundledAttachment } from '@/lib/bundledAttachments';
 import { findSourceLineForElement } from '@/lib/taskList';
 import { Check, Copy, ChevronDown, ChevronRight } from 'lucide-react';
@@ -64,8 +68,9 @@ export { MermaidBlock } from './MermaidBlock';
  * Passing fresh array literals here makes react-markdown rebuild its internal
  * processor pipeline on every keystroke.
  */
-const REHYPE_PLUGINS_WITH_MATH: PluggableList = [rehypeXmdTypography, rehypeKatex, rehypeSlug, rehypeHighlight];
-const REHYPE_PLUGINS_NO_MATH: PluggableList = [rehypeXmdTypography, rehypeSlug, rehypeHighlight];
+const XMD_REHYPE_PLUGINS: PluggableList = [rehypeXmdTypography, rehypeXmdAlignment, rehypeXmdParagraph, rehypeXmdTable];
+const REHYPE_PLUGINS_NO_MATH: PluggableList = [...XMD_REHYPE_PLUGINS, rehypeSlug, rehypeHighlight];
+const REHYPE_PLUGINS_WITH_MATH: PluggableList = [...XMD_REHYPE_PLUGINS, rehypeKatex, rehypeSlug, rehypeHighlight];
 const REHYPE_PLUGINS_WITH_HTML_AND_MATH = [...previewHtmlPlugins, ...REHYPE_PLUGINS_WITH_MATH];
 const REHYPE_PLUGINS_WITH_HTML = [...previewHtmlPlugins, ...REHYPE_PLUGINS_NO_MATH];
 
@@ -95,7 +100,8 @@ function getRemarkPlugins(
     if (withMath) {
       plugins.push(remarkMath);
     }
-    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }], remarkXmdTypography, remarkXmdLayout);
+    plugins.push(remarkCjkFriendlyEmphasis, [remarkCallouts, { lang }], remarkXmdTypography, remarkXmdLayout,
+      remarkXmdAlignment, remarkXmdParagraph, remarkXmdTable, remarkXmdReview);
     REMARK_PLUGINS_CACHE.set(key, plugins);
   }
   return plugins;

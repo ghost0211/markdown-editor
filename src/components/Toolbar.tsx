@@ -1,5 +1,11 @@
 import React from 'react';
 import {
+  AlignCenter,
+  AlignJustify,
+  AlignLeft,
+  AlignRight,
+  MessageSquarePlus,
+  Pilcrow,
   Bold,
   ArrowUpDown,
   Code,
@@ -26,6 +32,7 @@ import { MarkdownAction } from '@/lib/markdownCommands';
 import { useI18n } from '@/i18n';
 import type { TranslationKey } from '@/i18n';
 import type { XmdTypographyQuickRequest } from './XmdTypographyQuickPopover';
+import type { XmdAlignment } from '@/lib/xmdAlignment';
 
 export type ToolbarPresentation = 'source' | 'visual';
 
@@ -41,6 +48,10 @@ export interface ToolbarProps {
   openTypographyField?: XmdTypographyQuickRequest['field'];
   onXmdTheme?: () => void;
   onXmdPageBreak?: () => void;
+  onXmdAlignment?: (alignment: XmdAlignment) => void;
+  activeXmdAlignment?: XmdAlignment;
+  onXmdParagraph?: () => void;
+  onXmdReview?: () => void;
 }
 
 interface ToolbarButtonConfig {
@@ -88,6 +99,13 @@ const HEADING_OPTIONS: ReadonlyArray<{ value: MarkdownAction; labelKey: Translat
 
 const HEADING_ACTIONS: readonly MarkdownAction[] = ['h1', 'h2', 'h3', 'h4', 'h5', 'h6'];
 
+const XMD_ALIGNMENT_BUTTONS: readonly { alignment: XmdAlignment; label: TranslationKey; icon: LucideIcon }[] = [
+  { alignment: 'left', label: 'xmdLayout.alignLeft', icon: AlignLeft },
+  { alignment: 'center', label: 'xmdLayout.alignCenter', icon: AlignCenter },
+  { alignment: 'right', label: 'xmdLayout.alignRight', icon: AlignRight },
+  { alignment: 'justify', label: 'xmdLayout.alignJustify', icon: AlignJustify },
+];
+
 const XMD_QUICK_BUTTONS: readonly { field: XmdTypographyQuickRequest['field']; label: TranslationKey; icon: LucideIcon }[] = [
   { field: 'font', label: 'xmdTypography.font', icon: Type },
   { field: 'size', label: 'xmdTypography.sizeShort', icon: ArrowUpDown },
@@ -104,6 +122,10 @@ export const Toolbar: React.FC<ToolbarProps> = ({
   openTypographyField,
   onXmdTheme,
   onXmdPageBreak,
+  onXmdAlignment,
+  activeXmdAlignment,
+  onXmdParagraph,
+  onXmdReview,
 }) => {
   const { t } = useI18n();
   const btnBase =
@@ -242,12 +264,32 @@ export const Toolbar: React.FC<ToolbarProps> = ({
                 </button>
               );
             })}
+            {onXmdAlignment && (
+              <div role="group" aria-label={t('xmdLayout.alignment')}
+                className="mx-1 flex items-center gap-0.5 border-x border-slate-200 px-1 dark:border-slate-700">
+                {XMD_ALIGNMENT_BUTTONS.map(({ alignment, label, icon: Icon }) => {
+                  const name = t(label);
+                  const active = activeXmdAlignment === alignment;
+                  return <button key={alignment} type="button" disabled={disabled} title={name} aria-label={name}
+                    aria-pressed={active} className={active ? activeBtnClass : btnClass}
+                    onMouseDown={keepEditorSelection} onClick={() => onXmdAlignment(alignment)}>
+                    <Icon className="h-3.5 w-3.5" aria-hidden />
+                  </button>;
+                })}
+              </div>
+            )}
             {onXmdTheme && (
               <button type="button" className={btnClass + ' !w-auto px-2'} disabled={disabled}
                 onMouseDown={keepEditorSelection} onClick={onXmdTheme} aria-haspopup="dialog">
                 {t('xmdLayout.theme')}
               </button>
             )}
+            {onXmdParagraph && <button type="button" disabled={disabled} className={btnClass}
+              title={t('xmdParagraph.title')} aria-label={t('xmdParagraph.title')} aria-haspopup="dialog"
+              onMouseDown={keepEditorSelection} onClick={onXmdParagraph}><Pilcrow className="h-3.5 w-3.5" /></button>}
+            {onXmdReview && <button type="button" disabled={disabled} className={btnClass}
+              title={t('xmdReview.title')} aria-label={t('xmdReview.title')}
+              onMouseDown={keepEditorSelection} onClick={onXmdReview}><MessageSquarePlus className="h-3.5 w-3.5" /></button>}
             {onXmdPageBreak && (
               <button type="button" className={btnClass + ' !w-auto gap-1 px-2'} disabled={disabled}
                 title={t('xmdLayout.insertPageBreak')} onMouseDown={keepEditorSelection} onClick={onXmdPageBreak}>

@@ -1,5 +1,6 @@
 import type { EditorState } from '@codemirror/state';
 import { syntaxTree } from '@codemirror/language';
+import { parseXmdTableMarker, type XmdTableStyle } from '@/lib/xmdTable';
 
 /**
  * Pure geometry/validation for the visual GFM table grid.
@@ -50,6 +51,19 @@ export interface VisualTableLabels {
   pasteLimit: string;
   /** `已达到 {columns} 列上限`. */
   columnLimit: string;
+  layoutTools?: {
+    title: string;
+    vertical: string;
+    top: string;
+    middle: string;
+    bottom: string;
+    repeat: string;
+    default: string;
+    yes: string;
+    no: string;
+    resetWidths: string;
+    resize: string;
+  };
   dataTools?: {
     title: string;
     column: string;
@@ -91,6 +105,7 @@ export interface VisualTableInfo {
   cellRanges: readonly (readonly VisualTableCellRange[])[];
   /** Exact table source, used for stale guards. */
   source: string;
+  layout?: { style: XmdTableStyle; from: number; to: number };
 }
 
 interface ParsedRow {
@@ -352,6 +367,8 @@ export function readVisualTable(state: EditorState, node: SyntaxNode): VisualTab
     cellRanges.push(parsed.ranges);
   }
 
+  const previous = firstLine.number > 1 ? doc.line(firstLine.number - 1) : undefined;
+  const layout = previous && parseXmdTableMarker(previous.text);
   return {
     from: firstLine.from,
     to: lastLine.to,
@@ -363,6 +380,7 @@ export function readVisualTable(state: EditorState, node: SyntaxNode): VisualTab
     cells,
     cellRanges,
     source,
+    ...(layout && previous && { layout: { style: layout, from: previous.from, to: firstLine.from } }),
   };
 }
 

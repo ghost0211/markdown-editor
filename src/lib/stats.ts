@@ -1,5 +1,6 @@
 import { TextStats } from '@/types';
 import { collectCodeRanges, collectEmbeddedDataUrlRanges } from '@/lib/documentSearch';
+import { stripXmdReviews } from '@/lib/xmdReview';
 
 /** Preserve visible prose and alt text while excluding embedded binary payloads. */
 export function stripEmbeddedResourcePayloads(text: string): string {
@@ -38,7 +39,7 @@ export function calculateStats(text: string): TextStats {
     };
   }
 
-  const readableText = stripEmbeddedResourcePayloads(text);
+  const readableText = stripEmbeddedResourcePayloads(stripXmdReviews(text));
   const chars = readableText.length;
   const charsNoSpaces = readableText.replace(/\s/g, '').length;
   const lines = text.split(/\r?\n/).length;

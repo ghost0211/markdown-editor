@@ -1,5 +1,5 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
-import { History, Images, LayoutTemplate, Link2, ShieldCheck, Wrench } from 'lucide-react';
+import { FileSearch, FileUp, History, Images, LayoutTemplate, Link2, MessageSquare, ShieldCheck, Wrench } from 'lucide-react';
 import clsx from 'clsx';
 import { useI18n } from '@/i18n';
 import type { DocumentTab } from '@/types';
@@ -26,9 +26,13 @@ interface DocumentToolsMenuProps {
   onOpenQuality?: () => void;
   onOpenHistory?: () => void;
   onOpenReferences?: () => void;
+  onQuickOpen?: () => void;
+  onImportWord?: () => void;
+  onOpenReview?: () => void;
 }
 
-export function DocumentToolsMenu({ activeTab, onOpenResources, onOpenTemplates, onOpenQuality, onOpenHistory, onOpenReferences }: DocumentToolsMenuProps) {
+export function DocumentToolsMenu({ activeTab, onOpenResources, onOpenTemplates, onOpenQuality, onOpenHistory, onOpenReferences,
+  onQuickOpen, onImportWord, onOpenReview }: DocumentToolsMenuProps) {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
@@ -110,6 +114,9 @@ export function DocumentToolsMenu({ activeTab, onOpenResources, onOpenTemplates,
           {item(t('titleBar.quality'), t('titleBar.toolQualityDescription'), <ShieldCheck className="w-4 h-4 text-teal-500" />, onOpenQuality, !available.quality, t('titleBar.noOpenDocTooltip'), t('titleBar.qualityTooltip'))}
           {item(t('titleBar.history'), t('titleBar.toolHistoryDescription'), <History className="w-4 h-4 text-blue-500" />, onOpenHistory, !available.history, t('titleBar.historyTooltip'), t('titleBar.historyTooltip'))}
           {item(t('chapterLinks.references'), t('chapterLinks.description'), <Link2 className="w-4 h-4 text-blue-500" />, onOpenReferences, !available.quality)}
+          {item(t('quickOpen.title'), 'Ctrl + P', <FileSearch className="w-4 h-4 text-blue-500" />, onQuickOpen)}
+          {item(t('wordImport.title'), t('wordImport.menuDescription'), <FileUp className="w-4 h-4 text-blue-500" />, onImportWord)}
+          {item(t('xmdReview.title'), t('xmdReview.menuDescription'), <MessageSquare className="w-4 h-4 text-blue-500" />, onOpenReview, !available.quality)}
         </div>
       )}
     </div>

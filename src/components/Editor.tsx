@@ -26,7 +26,7 @@ import { editorMarkdownFallbacks } from '@/lib/editorMarkdown';
 import { createVisualImageContextExtension } from '@/lib/visualImageContext';
 import { createVisualSelectionToolbar } from '@/lib/visualSelectionToolbar';
 import { createSlashCommandExtension } from '@/lib/slashCommands';
-import { applyFocusedVisualTableAction, createVisualTableExtension } from '@/lib/visualTable';
+import { applyFocusedVisualTableAction, createVisualTableExtension, hasFocusedVisualTableCell } from '@/lib/visualTable';
 import { createVisualCodeBlockExtension } from '@/lib/visualCodeBlocks';
 import { getActiveMarkdownFormats } from '@/lib/markdownFormatting';
 import type { EditorPresentation } from '@/types';
@@ -50,6 +50,18 @@ import { chapterLinkTrigger, type ChapterLinkInsertion } from '@/lib/chapterLink
 import { applyXmdTypographyEdit, getXmdTypographyEdit, type XmdTypographyEdit } from '@/lib/editorXmdTypography';
 import type { XmdTypography } from '@/lib/xmdTypography';
 import { planXmdPageBreak } from '@/lib/xmdLayout';
+import { applyEditorXmdAlignment, applyEditorXmdParagraph, getEditorXmdAlignment, getEditorXmdParagraphStyle } from '@/lib/editorXmdAlignment';
+import type { XmdAlignment } from '@/lib/xmdAlignment';
+import type { XmdParagraphStyle } from '@/lib/xmdParagraph';
+import type { ReviewSelection } from '@/components/XmdReviewPanel';
+import { REVIEW_QUOTE_LIMIT } from '@/lib/xmdReview';
+import { isVisualOpaqueRange } from '@/lib/visualSelectionCore';
+
+export interface ParagraphEdit {
+  document: Text;
+  style: XmdParagraphStyle;
+  alignment?: XmdAlignment;
+}
 
 export interface EditorHandle {
   jumpToLine: (line: number) => void;
@@ -61,6 +73,10 @@ export interface EditorHandle {
   getTypographyEdit: () => XmdTypographyEdit | null;
   applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => boolean;
   insertXmdPageBreak: () => boolean;
+  alignXmdText: (alignment: XmdAlignment) => void;
+  getParagraphEdit: () => ParagraphEdit | null;
+  applyParagraphEdit: (edit: ParagraphEdit, style: XmdParagraphStyle, alignment?: XmdAlignment) => boolean;
+  getReviewSelection: () => ReviewSelection | null;
   applyAction: (action: MarkdownAction) => void;
   focus: () => void;
   getScrollTop: () => number;
@@ -104,6 +120,7 @@ interface EditorProps {
   renderHtml?: boolean;
   sourcePath?: string | null;
   onFormatsChange?: (formats: readonly MarkdownAction[]) => void;
+  onAlignmentChange?: (alignment: XmdAlignment | undefined) => void;
   onChapterLink?: (request: ChapterLinkInsertion) => void;
 }
 
@@ -167,6 +184,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       renderHtml = false,
       sourcePath,
       onFormatsChange,
+      onAlignmentChange,
       onChapterLink,
     },
     ref
@@ -186,8 +204,18 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
     const onChapterLinkRef = useRef(onChapterLink);
     onChapterLinkRef.current = onChapterLink;
     onFormatsChangeRef.current = onFormatsChange;
+    const onAlignmentChangeRef = useRef(onAlignmentChange);
+    onAlignmentChangeRef.current = onAlignmentChange;
+    const lastAlignmentRef = useRef<XmdAlignment>();
     const lastFormatsRef = useRef('');
     const reportFormats = useCallback((state: EditorState, force = false) => {
+      if (onAlignmentChangeRef.current) {
+        const alignment = getEditorXmdAlignment(state);
+        if (force || alignment !== lastAlignmentRef.current) {
+          lastAlignmentRef.current = alignment;
+          onAlignmentChangeRef.current(alignment);
+        }
+      }
       if (!onFormatsChangeRef.current) return;
       const formats = getActiveMarkdownFormats(state);
       const signature = formats.join(',');
@@ -368,6 +396,11 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           columnAdded: t('visualTable.columnAdded'), columnDeleted: t('visualTable.columnDeleted'),
           alignmentChanged: t('visualTable.alignmentChanged'), rowLimit: t('visualTable.rowLimit'), columnLimit: t('visualTable.columnLimit'),
           pasteLimit: t('visualTable.pasteLimit'),
+          layoutTools: {
+            title: t('xmdTable.title'), vertical: t('xmdTable.vertical'), top: t('xmdTable.top'), middle: t('xmdTable.middle'),
+            bottom: t('xmdTable.bottom'), repeat: t('xmdTable.repeat'), default: t('xmdTable.default'), yes: t('xmdTable.yes'),
+            no: t('xmdTable.no'), resetWidths: t('xmdTable.resetWidths'), resize: t('xmdTable.resize'),
+          },
           dataTools: {
             title: t('visualTableData.title'), column: t('visualTableData.column'), columnNumber: t('visualTableData.columnNumber'),
             filter: t('visualTableData.filter'), sortType: t('visualTableData.sortType'),
@@ -550,6 +583,34 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
         applyTypographyEdit: (edit: XmdTypographyEdit, style: XmdTypography) => {
           const view = cmRef.current?.view;
           return Boolean(view && applyXmdTypographyEdit(view, edit, style));
+        },
+
+        alignXmdText: (alignment) => {
+          const view = cmRef.current?.view;
+          if (view && !hasFocusedVisualTableCell(view) && applyEditorXmdAlignment(view, alignment)) view.focus();
+        },
+
+        getParagraphEdit: () => {
+          const view = cmRef.current?.view;
+          if (!view || view.state.readOnly || hasFocusedVisualTableCell(view)) return null;
+          const style = getEditorXmdParagraphStyle(view.state);
+          return style && { document: view.state.doc, style, alignment: getEditorXmdAlignment(view.state) };
+        },
+
+        applyParagraphEdit: (edit, style, alignment) => {
+          const view = cmRef.current?.view;
+          if (!view || view.state.readOnly || view.state.doc !== edit.document) return false;
+          applyEditorXmdParagraph(view, style, alignment);
+          return true;
+        },
+
+        getReviewSelection: () => {
+          const view = cmRef.current?.view;
+          if (!view || view.state.readOnly || hasFocusedVisualTableCell(view) || view.state.selection.ranges.length !== 1) return null;
+          const { from, to } = view.state.selection.main;
+          if (to - from > REVIEW_QUOTE_LIMIT || to === from || !view.state.sliceDoc(from, to).trim() ||
+            isVisualOpaqueRange(view.state, from, to) || view.state.sliceDoc(from, to).includes('<!-- xmd:')) return null;
+          return { from, to, content: view.state.doc.toString() };
         },
 
         insertXmdPageBreak: () => {

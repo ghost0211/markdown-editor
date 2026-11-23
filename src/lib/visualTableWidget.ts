@@ -10,6 +10,7 @@ import {
   pasteVisualTableCells,
   revealVisualTableSource,
   setVisualTableColumnAlignment,
+  setVisualTableLayout,
   sortVisualTable,
   updateVisualTableCell,
 } from '@/lib/visualTableCommands';
@@ -29,6 +30,7 @@ import {
   type VisualTableInfo,
   type VisualTableLabels,
 } from '@/lib/visualTableModel';
+import { tableWidthPercentages, tableWidthWeights, type XmdTableStyle } from '@/lib/xmdTable';
 
 let tableInstance = 0;
 
@@ -116,6 +118,30 @@ function visibleTableRows(container: HTMLElement): number[] {
     (row) => Number(row.getAttribute('aria-rowindex')) - 1)];
 }
 
+function applyGridWidths(table: HTMLTableElement, widths?: number[]): void {
+  table.style.tableLayout = widths ? 'fixed' : '';
+  const values = widths && tableWidthPercentages(widths);
+  for (const [index, column] of [...table.querySelectorAll('col')].entries()) {
+    column.style.width = values?.[index] === undefined ? '' : values[index].toFixed(3) + '%';
+  }
+}
+
+function syncGridLayout(container: HTMLElement, model: VisualTableInfo, readOnly: boolean): void {
+  const style = model.layout?.style;
+  const table = container.querySelector<HTMLTableElement>('table.cm-visual-table-element');
+  if (!table) return;
+  applyGridWidths(table, tableWidthWeights(style?.widths, model.columns));
+  if (style?.vertical) table.dataset.vertical = style.vertical;
+  else delete table.dataset.vertical;
+  const vertical = container.querySelector<HTMLSelectElement>('[data-xmd-vertical]');
+  const repeat = container.querySelector<HTMLSelectElement>('[data-xmd-repeat]');
+  const reset = container.querySelector<HTMLButtonElement>('[data-xmd-reset-widths]');
+  if (vertical) { vertical.value = style?.vertical ?? ''; vertical.disabled = readOnly; }
+  if (repeat) { repeat.value = style?.repeatHeader === undefined ? '' : String(style.repeatHeader); repeat.disabled = readOnly; }
+  if (reset) reset.disabled = readOnly || !style?.widths;
+  for (const handle of container.querySelectorAll<HTMLButtonElement>('.cm-visual-table-resize')) handle.disabled = readOnly;
+}
+
 function refreshToolbar(container: HTMLElement, model: VisualTableInfo, _row: number, column: number): void {
   const readOnly = container.dataset.readOnly === 'true';
   const labels = (container as HTMLElement & { readonly visualTableLabels?: VisualTableLabels }).visualTableLabels;
@@ -164,6 +190,7 @@ export class VisualTableWidget extends WidgetType {
     return other instanceof VisualTableWidget &&
       other.model.from === this.model.from &&
       other.model.source === this.model.source &&
+      JSON.stringify(other.model.layout?.style) === JSON.stringify(this.model.layout?.style) &&
       other.labels === this.labels &&
       other.readOnly === this.readOnly &&
       other.renderHtml === this.renderHtml;
@@ -191,6 +218,7 @@ export class VisualTableWidget extends WidgetType {
     container.dataset.readOnly = String(this.readOnly);
     (container as HTMLElement & { visualTableLabels?: VisualTableLabels }).visualTableLabels = this.labels;
     syncVisualTableCellInputs(container, this.model, this.renderHtml);
+    syncGridLayout(container, this.model, this.readOnly);
     const active = activeCoordinates(container, this.model);
     refreshToolbar(container, this.model, active.row, active.column);
     if (old.model.cells[0].some((value, index) => value !== this.model.cells[0][index])) {
@@ -231,6 +259,15 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       return findVisualTableAt(collectVisualTables(view.state), position);
     } catch {
       return null;
+    }
+  };
+  const resolveAtHeader = (line: number): VisualTableInfo | null =>
+    findVisualTableAt(collectVisualTables(view.state), view.state.doc.line(line).from);
+
+  const changeLayout = (patch: XmdTableStyle) => {
+    const current = resolve();
+    if (!current || !setVisualTableLayout(view, current.from, { ...current.layout?.style, ...patch }, current.source)) {
+      announce(labels.stale);
     }
   };
 
@@ -466,13 +503,13 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       return;
     }
     announce(message);
-    const updated = resolve();
+    const updated = resolve() ?? resolveAtHeader(table.startLine);
     if (updated) {
       container.dataset.tableSource = updated.source;
       container.dataset.activeRow = String(clamp(targetRow, 0, updated.rows - 1));
       container.dataset.activeCol = String(clamp(targetColumn, 0, updated.columns - 1));
     }
-    focusCellAfterUpdate(table.from, targetRow, targetColumn);
+    focusCellAfterUpdate(updated?.from ?? table.from, targetRow, targetColumn);
   };
 
   toolbar.addEventListener('click', (event) => {
@@ -585,9 +622,9 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
       if (!table || expected === undefined) { announce(labels.stale); return; }
       const result = pasteVisualTableCells(view, table.from, row, column, cells, expected);
       if (result === 'applied') {
-        const updated = resolve();
+        const updated = resolve() ?? resolveAtHeader(table.startLine);
         if (updated && input.isConnected) syncFocusedCell(input, updated, row, column);
-        else focusCellAfterUpdate(table.from, row, column);
+        else focusCellAfterUpdate(updated?.from ?? table.from, row, column);
       } else {
         announce(result === 'limit' ? labels.pasteLimit : labels.stale);
       }
@@ -709,6 +746,49 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     cell.setAttribute('scope', 'col');
     cell.setAttribute('aria-colindex', String(column + 1));
     cell.appendChild(createCellBox(0, column, labels.headerLabel));
+    if (labels.layoutTools && column < model.columns - 1) {
+      const handle = doc.createElement('button');
+      handle.type = 'button';
+      handle.className = 'cm-visual-table-resize';
+      handle.title = handle.ariaLabel = formatVisualTableLabel(labels.layoutTools.resize, { column: column + 1 });
+      const resize = (widths: number[], delta: number) => {
+        const next = [...widths];
+        const min = Math.max(1, Math.min(32, Math.floor((next[column] + next[column + 1]) / 3)));
+        const change = clamp(Math.round(delta), min - next[column], next[column + 1] - min);
+        next[column] += change;
+        next[column + 1] -= change;
+        return next;
+      };
+      const measure = () => Array.from(headRow.cells, (item) => Math.max(1, Math.round(item.getBoundingClientRect().width)));
+      let drag: { x: number; widths: number[]; pointer: number } | undefined;
+      handle.addEventListener('pointerdown', (event) => {
+        if (event.button !== 0 || !event.isPrimary || view.state.readOnly) return;
+        event.preventDefault();
+        drag = { x: event.clientX, widths: measure(), pointer: event.pointerId };
+        handle.setPointerCapture(event.pointerId);
+      });
+      handle.addEventListener('pointermove', (event) => {
+        if (drag?.pointer === event.pointerId) applyGridWidths(table, resize(drag.widths, event.clientX - drag.x));
+      });
+      handle.addEventListener('pointerup', (event) => {
+        if (drag?.pointer !== event.pointerId) return;
+        const { x, widths } = drag;
+        drag = undefined;
+        if (Math.abs(event.clientX - x) > 1) changeLayout({ widths: resize(widths, event.clientX - x) });
+      });
+      handle.addEventListener('lostpointercapture', () => {
+        if (!drag) return;
+        drag = undefined;
+        const current = resolve();
+        if (current) syncGridLayout(container, current, view.state.readOnly);
+      });
+      handle.addEventListener('keydown', (event) => {
+        if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+        event.preventDefault();
+        changeLayout({ widths: resize(measure(), (event.key === 'ArrowRight' ? 1 : -1) * (event.shiftKey ? 24 : 8)) });
+      });
+      cell.append(handle);
+    }
     headRow.appendChild(cell);
   }
   head.appendChild(headRow);
@@ -735,7 +815,9 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
     }
     body.appendChild(tr);
   }
-  table.append(head, body);
+  const columns = doc.createElement('colgroup');
+  for (let column = 0; column < model.columns; column++) columns.append(doc.createElement('col'));
+  table.append(columns, head, body);
   grid.appendChild(table);
 
   const hint = doc.createElement('span');
@@ -746,6 +828,47 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
   const panel = doc.createElement('div');
   panel.className = 'cm-visual-table-panel';
   panel.append(toolbar);
+  if (labels.layoutTools) {
+    const tools = labels.layoutTools;
+    const details = doc.createElement('details');
+    details.className = 'cm-visual-table-data';
+    const summary = doc.createElement('summary');
+    summary.textContent = tools.title;
+    details.append(summary);
+    details.addEventListener('toggle', () => view.requestMeasure());
+    const controls = doc.createElement('div');
+    controls.className = 'cm-visual-table-data-controls';
+    const makeSelect = (label: string, options: readonly [string, string][]) => {
+      const select = doc.createElement('select');
+      select.ariaLabel = label;
+      for (const [value, name] of options) {
+        const option = doc.createElement('option');
+        option.value = value;
+        option.textContent = name;
+        select.append(option);
+      }
+      const field = doc.createElement('label');
+      field.textContent = label + ' ';
+      field.append(select);
+      controls.append(field);
+      return select;
+    };
+    const vertical = makeSelect(tools.vertical, [['', tools.default], ['top', tools.top], ['middle', tools.middle], ['bottom', tools.bottom]]);
+    vertical.dataset.xmdVertical = '';
+    vertical.addEventListener('change', () => changeLayout({ vertical: (vertical.value || undefined) as XmdTableStyle['vertical'] }));
+    const repeat = makeSelect(tools.repeat, [['', tools.default], ['true', tools.yes], ['false', tools.no]]);
+    repeat.dataset.xmdRepeat = '';
+    repeat.addEventListener('change', () => changeLayout({ repeatHeader: repeat.value ? repeat.value === 'true' : undefined }));
+    const reset = doc.createElement('button');
+    reset.type = 'button';
+    reset.className = 'cm-visual-table-tool';
+    reset.dataset.xmdResetWidths = '';
+    reset.textContent = tools.resetWidths;
+    reset.addEventListener('click', () => changeLayout({ widths: undefined }));
+    controls.append(reset);
+    details.append(controls);
+    panel.append(details);
+  }
   if (labels.dataTools) {
     const tools = labels.dataTools;
     const details = doc.createElement('details');
@@ -807,6 +930,7 @@ function buildVisualTableDom(widget: VisualTableWidget, view: EditorView): HTMLE
   }
   panel.append(grid, hint, status);
   container.append(panel);
+  syncGridLayout(container, model, widget.readOnly);
   refreshToolbar(container, model, model.rows > 1 ? 1 : 0, 0);
   if (labels.dataTools) {
     syncDataColumns(container, model, labels);

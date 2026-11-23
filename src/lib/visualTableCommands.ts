@@ -22,6 +22,7 @@ import {
   type VisualTableAlignment,
   type VisualTableInfo,
 } from '@/lib/visualTableModel';
+import { tableWidthWeights, xmdTableMarker, type XmdTableStyle } from '@/lib/xmdTable';
 
 /** Minimal view surface commands need; tests drive real transactions through it. */
 export interface VisualTableView {
@@ -57,13 +58,32 @@ function validCell(table: VisualTableInfo, row: number, column: number): boolean
 }
 
 function replaceTable(view: VisualTableView, table: VisualTableInfo, cells: readonly (readonly string[])[],
-  alignments: readonly VisualTableAlignment[], userEvent: string): void {
+  alignments: readonly VisualTableAlignment[], userEvent: string, widths?: number[]): void {
+  const layout = widths && table.layout ? tableLayoutChange(view.state, table, { ...table.layout.style, widths }) : undefined;
   view.dispatch({
-    changes: { from: table.from, to: table.to, insert: serializeVisualTable(table, cells, alignments) },
+    changes: [...(layout ? [layout] : []), { from: table.from, to: table.to, insert: serializeVisualTable(table, cells, alignments) }],
     // Structure edits must not merge with a previous cell typing session.
     annotations: isolateHistory.of('full'),
     userEvent,
   });
+}
+
+function tableLayoutChange(state: EditorState, table: VisualTableInfo, style: XmdTableStyle) {
+  const from = table.layout?.from ?? table.from;
+  const to = table.from;
+  const marker = xmdTableMarker(style);
+  const insert = marker ? marker + '\n' : '';
+  if (insert === state.sliceDoc(from, to)) return;
+  return { from, to, insert };
+}
+
+export function setVisualTableLayout(view: VisualTableView, tableFrom: number, style: XmdTableStyle, expectedTable: string): boolean {
+  const table = currentTable(view, tableFrom);
+  if (view.state.readOnly || !table || table.source !== expectedTable) return false;
+  const change = tableLayoutChange(view.state, table, style);
+  if (!change) return true;
+  view.dispatch({ changes: change, annotations: isolateHistory.of('full'), userEvent: 'input.visualTable.layout' });
+  return true;
 }
 
 /**
@@ -135,6 +155,9 @@ export function pasteVisualTableCells(
         : [];
     });
   if (changes.length) {
+    const widths = columns !== table.columns && tableWidthWeights(table.layout?.style.widths, columns);
+    const style = widths && table.layout && tableLayoutChange(view.state, table, { ...table.layout.style, widths });
+    if (style) changes.unshift(style);
     view.dispatch({ changes, annotations: isolateHistory.of('full'), userEvent: 'input.visualTable.paste' });
   }
   return 'applied';
@@ -192,7 +215,9 @@ export function insertVisualTableColumn(
   });
   const alignments = [...table.alignments];
   alignments.splice(column + 1, 0, 'none');
-  replaceTable(view, table, cells, alignments, 'input.visualTable.structure');
+  const widths = tableWidthWeights(table.layout?.style.widths, table.columns);
+  widths?.splice(column + 1, 0, widths[column]);
+  replaceTable(view, table, cells, alignments, 'input.visualTable.structure', widths);
   return true;
 }
 
@@ -208,7 +233,8 @@ export function deleteVisualTableColumn(
   if (expectedTable !== undefined && table.source !== expectedTable) return false;
   const cells = table.cells.map((line) => line.filter((_, index) => index !== column));
   const alignments = table.alignments.filter((_, index) => index !== column);
-  replaceTable(view, table, cells, alignments, 'input.visualTable.structure');
+  const widths = tableWidthWeights(table.layout?.style.widths, table.columns)?.filter((_, index) => index !== column);
+  replaceTable(view, table, cells, alignments, 'input.visualTable.structure', widths);
   return true;
 }
 
@@ -286,6 +312,12 @@ export function rememberVisualTableCellFocus(
 
 export function forgetVisualTableCellFocus(view: EditorView): void {
   focusedCells.delete(view);
+}
+
+export function hasFocusedVisualTableCell(view: EditorView): boolean {
+  const active = view.dom.ownerDocument.activeElement;
+  const input = focusedCells.get(view)?.input;
+  return Boolean(input?.isConnected && view.dom.contains(input) && (active === input || !view.hasFocus));
 }
 
 /**

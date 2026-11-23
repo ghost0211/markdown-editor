@@ -213,8 +213,9 @@ export function useExportDocument(
     if (!activeTab) return;
     try {
       const { buildRichTextHtml, copyHtmlToClipboard } = await import('@/lib/export/richText');
+      const { stripXmdReviews } = await import('@/lib/xmdReview');
       const html = await buildRichTextHtml(activeTab.content, language);
-      await copyHtmlToClipboard(html, activeTab.content);
+      await copyHtmlToClipboard(html, stripXmdReviews(activeTab.content));
       showToast(t('toasts.richTextCopied'), 'success', 3000);
     } catch (err: unknown) {
       const msg = typeof err === 'string' ? err : (err as Error)?.message || 'Copy failed';

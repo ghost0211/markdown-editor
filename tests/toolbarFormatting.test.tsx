@@ -97,6 +97,16 @@ describe('Toolbar formatting controls', () => {
     expect(html).toMatch(/aria-label="可视化模式"[^>]*disabled/);
   });
 
+  it('places all four paragraph alignment controls in the XMD section and marks the current mode', () => {
+    const html = renderToolbar('zh-CN', { onTypography: vi.fn(), onXmdAlignment: vi.fn(), activeXmdAlignment: 'right' });
+    const group = html.indexOf('role="group" aria-label="XMD 段落对齐"');
+    expect(group).toBeGreaterThan(html.indexOf('role="group" aria-label="XMD 扩展样式"'));
+    expect(html.slice(group)).toMatch(/aria-label="右对齐" aria-pressed="true"/);
+    for (const name of ['左对齐', '居中对齐', '两端对齐']) {
+      expect(html.slice(group)).toContain(`aria-label="${name}" aria-pressed="false"`);
+    }
+  });
+
   it('disables every control when the editor is unavailable', () => {
     const html = renderToolbar('zh-CN', { disabled: true });
     expect(countOccurrences(html, 'disabled=""')).toBe(

@@ -20,6 +20,7 @@ interface KeyboardShortcutsOptions {
    * Ctrl+F is intentionally left to CodeMirror's built-in find panel.
    */
   onOpenSearch?: () => void;
+  onQuickOpen?: () => void;
   /**
    * When false, document-level shortcuts (Ctrl+N / Ctrl+W / ...) are ignored.
    * Used while a modal dialog owns the keyboard, so typing inside a dialog can
@@ -42,6 +43,7 @@ export function useKeyboardShortcuts({
   onPreviousTab,
   onReopenClosed,
   onOpenSearch,
+  onQuickOpen,
   enabled = true,
 }: KeyboardShortcutsOptions) {
   useEffect(() => {
@@ -73,6 +75,11 @@ export function useKeyboardShortcuts({
       // Enhanced find & replace. Ctrl+F is deliberately not handled here so
       // CodeMirror keeps its own in-editor search panel.
       if (isCtrlOrMeta && !e.altKey) {
+        if (!e.shiftKey && e.key.toLowerCase() === 'p' && onQuickOpen) {
+          e.preventDefault();
+          onQuickOpen();
+          return;
+        }
         if (e.shiftKey && (e.key === 'f' || e.key === 'F')) {
           e.preventDefault();
           onOpenSearch?.();
@@ -182,6 +189,7 @@ export function useKeyboardShortcuts({
     onPreviousTab,
     onReopenClosed,
     onOpenSearch,
+    onQuickOpen,
     enabled,
   ]);
 }

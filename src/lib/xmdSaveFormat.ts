@@ -3,12 +3,17 @@ import { remarkCjkFriendlyEmphasis } from './remarkCjkFriendlyEmphasis';
 import { transformXmdTypography } from './remarkXmdTypography';
 import { scanXmdReferences } from './xmdPackage';
 import { hasXmdPageBreak, readXmdDocumentTheme } from './xmdLayout';
+import { hasXmdAlignment } from './xmdAlignment';
+import { hasXmdParagraph } from './xmdParagraph';
+import { hasXmdTable } from './xmdTable';
+import { readXmdReviews } from './xmdReview';
 
 const typographyParser = documentStructureParser().use(remarkCjkFriendlyEmphasis).freeze();
 
 /** Detect features handled by XMD, after Markdown parsing excludes code and examples. */
 export function documentRequiresXmd(content: string): boolean {
-  if (readXmdDocumentTheme(content) || hasXmdPageBreak(content)) return true;
+  if (readXmdDocumentTheme(content) || hasXmdPageBreak(content) || hasXmdAlignment(content) ||
+    hasXmdParagraph(content) || hasXmdTable(content) || readXmdReviews(content).length) return true;
   if (content.includes('<xmd-style ') && transformXmdTypography(typographyParser.parse(content))) {
     return true;
   }

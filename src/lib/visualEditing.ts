@@ -5,6 +5,10 @@ import { isHtmlLineBreak } from '@/lib/editorMarkdown';
 import { editorTypographySpans } from '@/lib/editorXmdTypography';
 import { xmdTypographyCss } from '@/lib/xmdTypography';
 import { isXmdDocumentThemeMarker, isXmdPageBreak } from '@/lib/xmdLayout';
+import { editorXmdAlignmentMarkers, editorXmdParagraphMarkers, isXmdAlignableBlock } from '@/lib/editorXmdAlignment';
+import { xmdParagraphCss } from '@/lib/xmdParagraph';
+import { isXmdReviewMarker, XMD_REVIEW_LIMIT } from '@/lib/xmdReview';
+import { parseXmdTableMarker } from '@/lib/xmdTable';
 
 export interface VisualEditingOptions {
   sourcePath?: string | null;
@@ -113,7 +117,10 @@ const INLINE_MARKERS = new Set(['EmphasisMark', 'StrikethroughMark', 'CodeMark']
 const OPAQUE_BLOCKS = new Set(['FencedCode', 'CodeBlock', 'Table', 'LinkReference', 'FrontMatter', 'MathBlock', 'InlineMath']);
 
 /** Viewport-only decorations: no HTML round trip and no second Markdown parse. */
-export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visibleRanges'>): DecorationSet {
+export function buildVisualDecorations(
+  view: Pick<EditorView, 'state' | 'visibleRanges'>,
+  alignmentMarkers: Range<Decoration>[] = [],
+): DecorationSet {
   const { state } = view;
   const options = state.facet(visualEditingOptions);
   if (!options) return Decoration.none;
@@ -121,6 +128,7 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
   const seenNodes = new Set<string>();
   const seenTypography = new Set<number>();
   const lineClasses = new Map<number, Set<string>>();
+  const lineStyles = new Map<number, string>();
   const addLine = (at: number, name: string) => {
     const start = state.doc.lineAt(at).from;
     const classes = lineClasses.get(start) || new Set<string>();
@@ -150,14 +158,47 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
         const key = `${node.name}:${node.from}:${node.to}`;
         if (seenNodes.has(key)) return;
         seenNodes.add(key);
+        if (isXmdAlignableBlock(node.node)) {
+          const markers = editorXmdAlignmentMarkers(state, node.node);
+          const alignment = markers.at(-1)?.alignment;
+          const paragraphs = editorXmdParagraphMarkers(state, node.node);
+          const style = paragraphs.at(-1)?.style;
+          if (alignment || style) {
+            const first = state.doc.lineAt(node.from).number;
+            const last = state.doc.lineAt(node.to).number;
+            for (let line = first; line <= last; line++) {
+              const start = state.doc.line(line).from;
+              if (alignment) addLine(start, 'cm-xmd-align-' + alignment);
+              if (alignment === 'justify' && line < last) addLine(start, 'cm-xmd-align-continue');
+              if (style) {
+                const css = xmdParagraphCss({ ...style, before: line === first ? style.before : undefined,
+                  after: line === last ? style.after : undefined, indent: line === first ? style.indent : undefined }, true);
+                if (css) lineStyles.set(start, css);
+              }
+            }
+            for (const { from, to } of [...markers, ...paragraphs]) {
+              const editingMarker = state.selection.ranges.some((range) =>
+                (range.from > from && range.from < to) || (range.to > from && range.to < to));
+              if (editingMarker) continue;
+              const decoration = Decoration.replace({}).range(from, to);
+              decorations.push(decoration);
+              alignmentMarkers.push(decoration);
+            }
+          }
+        }
         if (node.name === 'CommentBlock' && node.node.parent?.name === 'Document' &&
-            node.to - node.from <= 4096 && state.doc.lineAt(node.from).number === state.doc.lineAt(node.to).number &&
+            node.to - node.from <= XMD_REVIEW_LIMIT && state.doc.lineAt(node.from).number === state.doc.lineAt(node.to).number &&
             !isVisualSourceLine(state, node.from, node.to)) {
           const comment = state.sliceDoc(node.from, node.to);
           if (options.pageBreak && isXmdPageBreak(comment)) {
             decorations.push(Decoration.replace({ widget: new LayoutMarkerWidget(options.pageBreak, 'cm-xmd-page-break') }).range(node.from, node.to));
           } else if (options.documentTheme && isXmdDocumentThemeMarker(comment)) {
             decorations.push(Decoration.replace({ widget: new LayoutMarkerWidget(options.documentTheme, 'cm-xmd-document-theme') }).range(node.from, node.to));
+          } else if (isXmdReviewMarker(comment) || parseXmdTableMarker(comment)) {
+            const decoration = Decoration.replace({}).range(node.from, node.to);
+            decorations.push(decoration);
+            alignmentMarkers.push(decoration);
+            addLine(node.from, 'cm-xmd-metadata');
           }
         } else if (node.name === 'HTMLTag' || node.name === 'HTMLBlock') {
           // CommonMark treats a line containing only <br> as an HTML block,
@@ -215,30 +256,52 @@ export function buildVisualDecorations(view: Pick<EditorView, 'state' | 'visible
       },
     });
   }
-  for (const [from, classes] of lineClasses) decorations.push(Decoration.line({ class: [...classes].join(' ') }).range(from));
+  const renderedLines = new Set([...lineClasses.keys(), ...lineStyles.keys()]);
+  for (const from of renderedLines) {
+    const classes = lineClasses.get(from);
+    const style = lineStyles.get(from);
+    decorations.push(Decoration.line({
+      class: classes && [...classes].join(' '),
+      attributes: style ? { style } : undefined,
+    }).range(from));
+  }
   return Decoration.set(decorations, true);
 }
 
 export function createVisualEditingExtension(options: VisualEditingOptions): Extension {
+  const plugin = ViewPlugin.fromClass(class {
+    decorations = Decoration.none;
+    alignmentMarkers = Decoration.none;
+    constructor(view: EditorView) { this.refresh(view); }
+    refresh(view: EditorView) {
+      const markers: Range<Decoration>[] = [];
+      this.decorations = buildVisualDecorations(view, markers);
+      this.alignmentMarkers = Decoration.set(markers, true);
+    }
+    update(update: ViewUpdate) {
+      if (update.docChanged || update.selectionSet || update.viewportChanged ||
+          syntaxTree(update.startState) !== syntaxTree(update.state) ||
+          update.startState.facet(visualEditingOptions) !== update.state.facet(visualEditingOptions)) {
+        this.refresh(update.view);
+      }
+    }
+  }, { decorations: (plugin) => plugin.decorations });
   return [
     visualEditingOptions.of(options),
     EditorView.editorAttributes.of({ 'data-editor-presentation': 'visual' }),
-    ViewPlugin.fromClass(class {
-      decorations: DecorationSet;
-      constructor(view: EditorView) { this.decorations = buildVisualDecorations(view); }
-      update(update: ViewUpdate) {
-        if (update.docChanged || update.selectionSet || update.viewportChanged ||
-            syntaxTree(update.startState) !== syntaxTree(update.state) ||
-            update.startState.facet(visualEditingOptions) !== update.state.facet(visualEditingOptions)) {
-          this.decorations = buildVisualDecorations(update.view);
-        }
-      }
-    }, { decorations: (plugin) => plugin.decorations }),
+    plugin,
+    EditorView.atomicRanges.of((view) => view.plugin(plugin)?.alignmentMarkers ?? Decoration.none),
     visualTheme,
   ];
 }
 
 const visualTheme = EditorView.baseTheme({
+  '.cm-xmd-metadata': { fontSize: '0', lineHeight: '0', minHeight: '0' },
+  '.cm-xmd-align-left': { textAlign: 'left' },
+  '.cm-xmd-align-center': { textAlign: 'center' },
+  '.cm-xmd-align-right': { textAlign: 'right' },
+  '.cm-xmd-align-justify': { textAlign: 'justify' },
+  '.cm-xmd-align-continue': { textAlignLast: 'justify' },
   '.cm-xmd-layout-marker': { display: 'inline-block', color: '#64748b', padding: '0 0.65rem', fontSize: '0.8em' },
   '&dark .cm-xmd-layout-marker': { color: '#cbd5e1' },
   '.cm-xmd-page-break': { borderBottom: '1px dashed #94a3b8' },

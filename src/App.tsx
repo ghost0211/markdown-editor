@@ -12,7 +12,9 @@ import { TitleBar } from '@/components/TitleBar';
 import { TabBar } from '@/components/TabBar';
 import { Toolbar } from '@/components/Toolbar';
 import { Sidebar } from '@/components/Sidebar';
-import type { EditorHandle } from '@/components/Editor';
+import type { EditorHandle, ParagraphEdit } from '@/components/Editor';
+import type { QuickOpenEntry } from '@/components/QuickOpenDialog';
+import type { ReviewSelection } from '@/components/XmdReviewPanel';
 import type { PreviewHandle } from '@/components/Preview';
 import { StatusBar } from '@/components/StatusBar';
 import { SplitPane } from '@/components/SplitPane';
@@ -51,6 +53,9 @@ import type { ChapterBacklink } from '@/lib/chapterLinks';
 import type { XmdTypographyEdit } from '@/lib/editorXmdTypography';
 import type { XmdTypography } from '@/lib/xmdTypography';
 import { readXmdDocumentTheme, setXmdDocumentTheme } from '@/lib/xmdLayout';
+import type { XmdAlignment } from '@/lib/xmdAlignment';
+import type { XmdParagraphStyle } from '@/lib/xmdParagraph';
+import { locateXmdReview, makeXmdReview, readXmdReviews, writeXmdReview, type XmdReviewNote } from '@/lib/xmdReview';
 import type { XmdTypographyQuickRequest } from '@/components/XmdTypographyQuickPopover';
 import { toggleTaskCheckboxAtLine } from '@/lib/taskList';
 import { clampRatio } from '@/lib/splitPane';
@@ -91,6 +96,10 @@ const LazyBatchExport = lazy(() => import('@/components/BatchExportDialog').then
 const LazyChapterLinks = lazy(() => import('@/components/ChapterLinksDialog').then((m) => ({ default: m.ChapterLinksDialog })));
 const LazyXmdTypography = lazy(() => import('@/components/XmdTypographyDialog').then((m) => ({ default: m.XmdTypographyDialog })));
 const LazyXmdTypographyQuick = lazy(() => import('@/components/XmdTypographyQuickPopover').then((m) => ({ default: m.XmdTypographyQuickPopover })));
+const LazyQuickOpen = lazy(() => import('@/components/QuickOpenDialog').then((m) => ({ default: m.QuickOpenDialog })));
+const LazyXmdParagraph = lazy(() => import('@/components/XmdParagraphDialog').then((m) => ({ default: m.XmdParagraphDialog })));
+const LazyXmdReview = lazy(() => import('@/components/XmdReviewPanel').then((m) => ({ default: m.XmdReviewPanel })));
+const LazyWordImport = lazy(() => import('@/components/WordImportDialog').then((m) => ({ default: m.WordImportDialog })));
 
 const STORAGE_VIEW_MODE_KEY = 'markdown_editor_view_mode';
 const STORAGE_SIDEBAR_KEY = 'markdown_editor_sidebar_open';
@@ -247,6 +256,13 @@ const AppContent: React.FC<AppContentProps> = ({
     }
   }, [activeTabId, themeDocumentId]);
   const [isBatchExportOpen, setIsBatchExportOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+  const [wordImport, setWordImport] = useState(false);
+  const [paragraphEdit, setParagraphEdit] = useState<{ id: string; edit: ParagraphEdit } | null>(null);
+  useEffect(() => {
+    if (paragraphEdit && paragraphEdit.id !== activeTabId) setParagraphEdit(null);
+  }, [activeTabId, paragraphEdit]);
+  const [reviewPanel, setReviewPanel] = useState<{ id: string; draft: ReviewSelection | null } | null>(null);
   const [typographyEdit, setTypographyEdit] = useState<{
     id: string; edit: XmdTypographyEdit; quick?: XmdTypographyQuickRequest;
   } | null>(null);
@@ -269,6 +285,7 @@ const AppContent: React.FC<AppContentProps> = ({
     setThemeDocumentId(null);
     setIsBatchExportOpen(false); setChapterDialog(null);
     setTypographyEdit(null);
+    setQuickOpen(false); setWordImport(false); setParagraphEdit(null);
   }, []);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [searchSelection, setSearchSelection] = useState<{
@@ -371,6 +388,34 @@ const AppContent: React.FC<AppContentProps> = ({
     });
   }, [viewMode]);
   const handleXmdPageBreak = useCallback(() => { editorRef.current?.insertXmdPageBreak(); }, []);
+  const [activeXmdAlignment, setActiveXmdAlignment] = useState<XmdAlignment>();
+  const handleXmdAlignment = useCallback((alignment: XmdAlignment) => {
+    editorRef.current?.alignXmdText(alignment);
+  }, []);
+  const closeParagraph = useCallback(() => {
+    setParagraphEdit(null);
+    requestAnimationFrame(() => editorRef.current?.focus());
+  }, []);
+  const openParagraph = useCallback(() => {
+    if (!activeTab || activeTab.kind === 'diff') return;
+    const edit = editorRef.current?.getParagraphEdit();
+    if (!edit) { showToast(t('xmdParagraph.noBlock'), 'info'); return; }
+    closeFeatureModals();
+    setParagraphEdit({ id: activeTab.id, edit });
+  }, [activeTab, closeFeatureModals, showToast, t]);
+  const applyParagraph = useCallback((style: XmdParagraphStyle, alignment?: XmdAlignment) => {
+    if (paragraphEdit?.id !== activeTabId || !paragraphEdit ||
+        !editorRef.current?.applyParagraphEdit(paragraphEdit.edit, style, alignment)) {
+      showToast(t('xmdLayout.documentChanged'), 'warning');
+    }
+    closeParagraph();
+  }, [activeTabId, closeParagraph, paragraphEdit, showToast, t]);
+  const openReview = useCallback(() => {
+    if (!activeTab || activeTab.kind === 'diff') return;
+    const draft = editorRef.current?.getReviewSelection() ?? null;
+    setReviewPanel({ id: activeTab.id, draft });
+  }, [activeTab]);
+  const closeReview = useCallback(() => setReviewPanel(null), []);
   const updateXmdTheme = useCallback((style?: ExportStyle) => {
     if (!themeDocumentId || activeTab?.id !== themeDocumentId) return;
     const original = normalizeLineEndings(activeTab.content);
@@ -419,6 +464,27 @@ const AppContent: React.FC<AppContentProps> = ({
       if (workspaceRequestRef.current === request) setWorkspaceBusy(false);
     }
   }, [workspaceRoot, showToast]);
+  const openQuickOpen = useCallback(() => {
+    closeFeatureModals();
+    setQuickOpen(true);
+    if (workspaceRoot) void refreshWorkspace();
+  }, [closeFeatureModals, refreshWorkspace, workspaceRoot]);
+  const closeQuickOpen = useCallback(() => setQuickOpen(false), []);
+  const chooseQuickOpen = useCallback((entry: QuickOpenEntry) => {
+    setQuickOpen(false);
+    if (entry.tabId) setActiveTabId(entry.tabId);
+    else if (entry.path) void openFileByPath(entry.path);
+  }, [openFileByPath, setActiveTabId]);
+  const openWordImport = useCallback(() => {
+    closeFeatureModals();
+    setWordImport(true);
+  }, [closeFeatureModals]);
+  const closeWordImport = useCallback(() => setWordImport(false), []);
+  const completeWordImport = useCallback((title: string, markdown: string, skippedImages: number) => {
+    createNewTab(title, markdown);
+    setWordImport(false);
+    if (skippedImages) showToast(t('wordImport.skippedImages', { count: skippedImages }), 'warning');
+  }, [createNewTab, showToast, t]);
   const toggleWorkspace = useCallback(() => {
     setSidebarMode('workspace');
     setIsSidebarOpen((open) => {
@@ -434,6 +500,11 @@ const AppContent: React.FC<AppContentProps> = ({
     if (!isTauri()) { showToast(t('workspace.desktopOnly'), 'warning'); return; }
     const selected = await chooseWorkspaceFolder();
     if (!selected) return;
+    if (selected !== workspaceRoot) {
+      workspaceRequestRef.current++;
+      setWorkspaceListing(null);
+      setWorkspaceBusy(false);
+    }
     setWorkspaceRoot(selected);
     try { localStorage.setItem('markdown_editor_workspace_root_v1', selected); } catch { /* Optional preference. */ }
     if (selected === workspaceRoot) await refreshWorkspace();
@@ -744,6 +815,36 @@ const AppContent: React.FC<AppContentProps> = ({
     if ((tab.viewMode ?? defaultViewMode) === 'read') updateViewMode(id, 'edit');
     setSearchSelection({ id, from, to, content: tab.content });
   }, [defaultViewMode, setActiveTabId, updateViewMode]);
+  const reviewContent = reviewPanel?.id === activeTab?.id ? activeTab?.content : undefined;
+  const reviewNotes = useMemo(() => reviewContent ? readXmdReviews(reviewContent) : [], [reviewContent]);
+  const editReview = useCallback((id: string, note?: XmdReviewNote) => {
+    if (!activeTab || activeTab.id !== reviewPanel?.id) return false;
+    const content = normalizeLineEndings(activeTab.content);
+    const next = writeXmdReview(content, id, note);
+    if (next === content || !editorRef.current?.replaceDocument(content, next)) {
+      showToast(t('xmdLayout.documentChanged'), 'warning');
+      return false;
+    }
+    return true;
+  }, [activeTab, reviewPanel?.id, showToast, t]);
+  const addReview = useCallback((text: string) => {
+    const draft = reviewPanel?.draft;
+    if (!draft || !activeTab || normalizeLineEndings(activeTab.content) !== draft.content) {
+      showToast(t('xmdLayout.documentChanged'), 'warning');
+      return false;
+    }
+    const note = makeXmdReview(draft.content, draft.from, draft.to, text);
+    if (!note || !editReview(note.id, note)) return false;
+    setReviewPanel({ id: activeTab.id, draft: null });
+    return true;
+  }, [activeTab, editReview, reviewPanel, showToast, t]);
+  const locateReview = useCallback((note: XmdReviewNote) => {
+    if (!activeTab || activeTab.id !== reviewPanel?.id) return;
+    const range = locateXmdReview(activeTab.content, note);
+    if (!range) { showToast(t('xmdReview.anchorMissing'), 'warning'); return; }
+    if (window.innerWidth < 1024) closeReview();
+    handleLocateSearch(activeTab.id, range.from, range.to);
+  }, [activeTab, closeReview, handleLocateSearch, reviewPanel?.id, showToast, t]);
   const handleLocateWorkspaceSearch = useCallback(async (filePath: string, match: SearchMatch, original: string) => {
     const key = normalizePathKey(filePath);
     const existing = tabsRef.current.find((tab) => tab.kind !== 'diff' && normalizePathKey(tab.filePath) === key);
@@ -801,7 +902,7 @@ const AppContent: React.FC<AppContentProps> = ({
   );
 
   const isModalOpen =
-    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || isBatchExportOpen || Boolean(chapterDialog) || Boolean(typographyEdit) || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview);
+    isSettingsModalOpen || isShortcutsModalOpen || isCompareModalOpen || isResourceManagerOpen || isSearchOpen || isHistoryOpen || isTemplatesOpen || isQualityOpen || isExportThemeOpen || isBatchExportOpen || Boolean(chapterDialog) || Boolean(typographyEdit) || workspaceDialogOpen || confirmDialog.isOpen || Boolean(numberingPreview) || quickOpen || wordImport || Boolean(paragraphEdit);
 
   useKeyboardShortcuts({
     onNew: handleNewTab,
@@ -817,6 +918,7 @@ const AppContent: React.FC<AppContentProps> = ({
     onPreviousTab: handlePreviousTab,
     onReopenClosed: handleReopenClosed,
     onOpenSearch: handleOpenSearch,
+    onQuickOpen: openQuickOpen,
     enabled: !isModalOpen,
   });
 
@@ -912,6 +1014,7 @@ const AppContent: React.FC<AppContentProps> = ({
       renderHtml={settings.renderHtml}
       sourcePath={activeTab?.filePath}
       onFormatsChange={setActiveFormats}
+      onAlignmentChange={setActiveXmdAlignment}
       onChapterLink={handleOpenChapterLink}
       onScroll={handleEditorScroll}
       isDark={isDark}
@@ -957,6 +1060,9 @@ const AppContent: React.FC<AppContentProps> = ({
         onOpenReferences={handleOpenReferences}
         onOpenBatchExport={isTauri() ? handleOpenBatchExport : undefined}
         onOpenTemplates={handleOpenTemplates}
+        onQuickOpen={openQuickOpen}
+        onImportWord={openWordImport}
+        onOpenReview={openReview}
         onOpenQuality={handleOpenQuality}
         onOpenExportTheme={handleOpenExportTheme}
         onOpenWorkspace={toggleWorkspace}
@@ -1008,7 +1114,9 @@ const AppContent: React.FC<AppContentProps> = ({
           presentation={settings.editorPresentation} onPresentationChange={handlePresentationChange}
           activeFormats={activeFormats} onTypography={handleOpenTypography}
           openTypographyField={typographyEdit?.quick?.field} onXmdTheme={handleOpenXmdTheme}
-          onXmdPageBreak={handleXmdPageBreak} />
+          onXmdPageBreak={handleXmdPageBreak} onXmdAlignment={handleXmdAlignment}
+          onXmdParagraph={openParagraph} onXmdReview={openReview}
+          activeXmdAlignment={activeXmdAlignment} />
       )}
 
       <div className="flex-1 flex overflow-hidden relative">
@@ -1103,6 +1211,13 @@ const AppContent: React.FC<AppContentProps> = ({
             )}
           </Suspense>
         </main>
+        {activeTab && reviewPanel?.id === activeTab.id && (
+          <Suspense fallback={null}>
+            <LazyXmdReview key={activeTab.id} notes={reviewNotes} draft={viewMode === 'read' ? null : reviewPanel.draft}
+              editable={viewMode !== 'read'} onAdd={addReview} onUpdate={editReview} onLocate={locateReview}
+              onCancelDraft={() => setReviewPanel({ id: activeTab.id, draft: null })} onClose={closeReview} />
+          </Suspense>
+        )}
       </div>
 
       <StatusBar
@@ -1112,6 +1227,18 @@ const AppContent: React.FC<AppContentProps> = ({
         isDirty={activeTab?.isDirty || false}
         viewMode={viewMode}
       />
+
+      {quickOpen && <Suspense fallback={null}>
+        <LazyQuickOpen tabs={tabs} recent={recentFiles} listing={workspaceListing} busy={workspaceBusy}
+          onOpen={chooseQuickOpen} onClose={closeQuickOpen} />
+      </Suspense>}
+      {wordImport && <Suspense fallback={null}>
+        <LazyWordImport onImport={completeWordImport} onClose={closeWordImport} />
+      </Suspense>}
+      {paragraphEdit?.id === activeTabId && paragraphEdit && <Suspense fallback={null}>
+        <LazyXmdParagraph style={paragraphEdit.edit.style} alignment={paragraphEdit.edit.alignment}
+          onApply={applyParagraph} onClose={closeParagraph} />
+      </Suspense>}
 
       <ConfirmModal
         isOpen={confirmDialog.isOpen}

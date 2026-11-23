@@ -1,6 +1,40 @@
 import { QUALITY_ZH, WORKSPACE_ZH, EXPORT_THEME_ZH } from './featureTexts';
 
 export const zhCN = {
+  quickOpen: {
+    title: '快速打开文件', query: '输入文件名或路径', loading: '正在读取工作区…',
+    empty: '没有匹配的文件', truncated: '工作区文件较多，此处显示已载入的文件。',
+  },
+  xmdParagraph: {
+    title: 'XMD 段落样式', preset: '段落预设', choosePreset: '选择预设', body: '正文',
+    heading: '标题', caption: '说明', font: '字体', color: '文字颜色', size: '字号（pt）',
+    lineHeight: '行距（倍）', before: '段前（pt）', after: '段后（pt）', indent: '首行缩进（pt）',
+    keepAlignment: '保留当前对齐', sample: '段落样式预览。将同一套格式应用到多个段落。',
+    presetName: '自定义预设名称', savePreset: '保存预设', deletePreset: '删除预设',
+    saveFailed: '无法保存预设到本机。', presetLimit: '最多保存 20 个自定义预设。',
+    invalid: '请检查字体名称、十六进制颜色和数值范围。', clear: '清除段落样式',
+    apply: '应用到所选段落', noBlock: '将光标放在正文或标题内，或选中多个段落。',
+  },
+  xmdReview: {
+    title: 'XMD 批注', menuDescription: '查看原文批注和待处理项', note: '输入批注',
+    pending: '待处理 {count}', empty: '选中正文，再点击工具栏的批注按钮添加批注。',
+    done: '当前没有待处理批注。', add: '添加批注', cancel: '取消', showResolved: '显示已解决',
+    locate: '定位到原文', resolve: '标记为已解决', reopen: '重新打开批注', delete: '删除批注',
+    anchorMissing: '原文已修改或有多处匹配，无法准确定位该批注。',
+  },
+  xmdTable: {
+    title: 'XMD 表格排版', vertical: '单元格垂直对齐', top: '靠上', middle: '居中', bottom: '靠下',
+    repeat: '跨页重复表头', default: '默认', yes: '启用', no: '关闭', resetWidths: '重置列宽',
+    resize: '调整第 {column} 列宽，拖动或按左右方向键',
+  },
+  wordImport: {
+    title: '导入 Word', menuDescription: '将 .docx 转换成可编辑文档',
+    description: '保留标题、列表、表格、链接及常见图片。合并单元格会转换为普通表格。',
+    choose: '选择 .docx 文件', layout: '尽量保留排版并保存为 XMD', apply: '导入到新标签',
+    importing: '正在导入…', invalid: '请选择不超过 64 MiB 的 .docx 文件。',
+    failed: '无法读取此 Word 文件。请检查文件是否完整、未加密且为 .docx 格式。',
+    skippedImages: '{count} 张图片无法导入，已保留图片说明。',
+  },
   visualImage: {
     title: '图片工具', open: '打开图片工具', alt: '替代文本', address: '图片地址',
     embedded: '保留原内嵌图片；输入新地址可替换', apply: '应用', close: '关闭',
@@ -725,6 +759,11 @@ export const zhCN = {
     stopping: '正在停止…',
   },
   xmdLayout: {
+    alignment: 'XMD 段落对齐',
+    alignLeft: '左对齐',
+    alignCenter: '居中对齐',
+    alignRight: '右对齐',
+    alignJustify: '两端对齐',
     theme: '文档主题',
     removeTheme: '清除文档主题',
     pageBreak: '分页符',

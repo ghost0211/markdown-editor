@@ -11,6 +11,10 @@ import type { Element, Root } from 'hast';
 import { SANITIZE_SCHEMA } from '@/lib/export/htmlExporter';
 import { remarkCallouts, type CalloutType } from '@/lib/remarkCallouts';
 import { remarkDropFrontMatter } from '@/lib/frontMatter';
+import { rehypeXmdAlignment, remarkXmdAlignment } from '@/lib/xmdAlignment';
+import { rehypeXmdParagraph, remarkXmdParagraph } from '@/lib/xmdParagraph';
+import { rehypeXmdTable, remarkXmdTable } from '@/lib/xmdTable';
+import { remarkXmdReview } from '@/lib/xmdReview';
 
 const FONT = '-apple-system, "Segoe UI", "PingFang SC", "Microsoft YaHei", Arial, sans-serif';
 const MONO = 'Consolas, "Courier New", monospace';
@@ -109,9 +113,16 @@ export async function buildRichTextHtml(markdown: string, lang?: string): Promis
     .use(remarkCallouts, { lang })
     .use(remarkExportHtmlBreaks)
     .use(remarkXmdTypography)
+    .use(remarkXmdAlignment)
+    .use(remarkXmdParagraph)
+    .use(remarkXmdTable)
+    .use(remarkXmdReview)
     .use(remarkRehype)
     .use(rehypeSanitize, SANITIZE_SCHEMA)
     .use(rehypeXmdTypography)
+    .use(rehypeXmdAlignment)
+    .use(rehypeXmdParagraph)
+    .use(rehypeXmdTable)
     .use(rehypeInlineStyles)
     .use(rehypeStringify)
     .process(markdown);

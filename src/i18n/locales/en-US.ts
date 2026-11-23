@@ -2,6 +2,40 @@ import { TranslationsSchema } from './zh-CN';
 import { QUALITY_EN, WORKSPACE_EN, EXPORT_THEME_EN } from './featureTexts';
 
 export const enUS: TranslationsSchema = {
+  quickOpen: {
+    title: 'Quick Open', query: 'Enter a file name or path', loading: 'Loading workspace…',
+    empty: 'No matching files', truncated: 'Only the loaded workspace files are shown.',
+  },
+  xmdParagraph: {
+    title: 'XMD Paragraph Style', preset: 'Paragraph preset', choosePreset: 'Choose a preset', body: 'Body',
+    heading: 'Heading', caption: 'Caption', font: 'Font', color: 'Text color', size: 'Font size (pt)',
+    lineHeight: 'Line spacing (multiple)', before: 'Space before (pt)', after: 'Space after (pt)', indent: 'First-line indent (pt)',
+    keepAlignment: 'Keep alignment', sample: 'Preview the paragraph style. Apply it to one or more paragraphs.',
+    presetName: 'Custom preset name', savePreset: 'Save preset', deletePreset: 'Delete preset',
+    saveFailed: 'Could not save the preset on this device.', presetLimit: 'You can save up to 20 custom presets.',
+    invalid: 'Check the font name, hex color and number ranges.', clear: 'Clear paragraph style',
+    apply: 'Apply to selected paragraphs', noBlock: 'Place the cursor in a paragraph or heading, or select multiple paragraphs.',
+  },
+  xmdReview: {
+    title: 'XMD Comments', menuDescription: 'View comments and open items', note: 'Enter a comment',
+    pending: '{count} open', empty: 'Select document text and click the comment button in the toolbar.',
+    done: 'There are no open comments.', add: 'Add comment', cancel: 'Cancel', showResolved: 'Show resolved',
+    locate: 'Go to selected text', resolve: 'Resolve comment', reopen: 'Reopen comment', delete: 'Delete comment',
+    anchorMissing: 'The selected text was edited or matches more than one location.',
+  },
+  xmdTable: {
+    title: 'XMD Table Layout', vertical: 'Cell vertical alignment', top: 'Top', middle: 'Middle', bottom: 'Bottom',
+    repeat: 'Repeat header across pages', default: 'Default', yes: 'On', no: 'Off', resetWidths: 'Reset column widths',
+    resize: 'Resize column {column}. Drag or press the left or right arrow key.',
+  },
+  wordImport: {
+    title: 'Import Word', menuDescription: 'Convert a .docx to an editable document',
+    description: 'Imports headings, lists, tables, links and common image formats. Merged cells become regular table cells.',
+    choose: 'Choose a .docx file', layout: 'Preserve layout and save as XMD', apply: 'Import into a new tab',
+    importing: 'Importing…', invalid: 'Choose a .docx file up to 64 MiB.',
+    failed: 'Could not read the Word file. Check that it is a complete, unencrypted .docx file.',
+    skippedImages: '{count} images could not be imported. Their descriptions were kept.',
+  },
   visualImage: {
     title: 'Image tools', open: 'Open image tools', alt: 'Alternative text', address: 'Image address',
     embedded: 'Keep embedded image; enter a new address to replace', apply: 'Apply', close: 'Close',
@@ -726,6 +760,11 @@ export const enUS: TranslationsSchema = {
     stopping: 'Stopping…',
   },
   xmdLayout: {
+    alignment: 'XMD paragraph alignment',
+    alignLeft: 'Align left',
+    alignCenter: 'Align center',
+    alignRight: 'Align right',
+    alignJustify: 'Justify',
     theme: 'Document theme',
     removeTheme: 'Clear document theme',
     pageBreak: 'Page break',

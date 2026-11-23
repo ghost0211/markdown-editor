@@ -5,6 +5,9 @@ import remarkFrontmatter from 'remark-frontmatter';
 import { transformExportHtmlBreaks } from '@/lib/export/remarkHtmlBreaks';
 import { transformXmdTypography } from '@/lib/remarkXmdTypography';
 import { isXmdPageBreak, readXmdDocumentTheme } from '@/lib/xmdLayout';
+import { getXmdBlockAlignment, transformXmdAlignment } from '@/lib/xmdAlignment';
+import { transformXmdParagraph, type XmdParagraphStyle } from '@/lib/xmdParagraph';
+import { tableWidthPercentages, tableWidthWeights, transformXmdTable } from '@/lib/xmdTable';
 import { transformCallouts } from '@/lib/remarkCallouts';
 import {
   Document,
@@ -15,6 +18,8 @@ import {
   TableRow,
   TableCell,
   WidthType,
+  TableLayoutType,
+  VerticalAlignTable,
   ShadingType,
   BorderStyle,
   AlignmentType,
@@ -598,7 +603,10 @@ function convertTable(
 
   const colsCount = Math.max(...rows.map((r) => r.children.length), 1);
   const baseColWidth = Math.floor(TOTAL_WIDTH_DXA / colsCount);
-  const columnWidths = Array.from({ length: colsCount }, (_, i) =>
+  const layout = tableNode.data?.xmdTable;
+  const weights = tableWidthWeights(layout?.widths, colsCount);
+  const columnWidths = weights ? tableWidthPercentages(weights).map((width) => Math.max(1, Math.round(TOTAL_WIDTH_DXA * width / 100)))
+    : Array.from({ length: colsCount }, (_, i) =>
     i === colsCount - 1 ? TOTAL_WIDTH_DXA - baseColWidth * (colsCount - 1) : baseColWidth
   );
 
@@ -618,6 +626,7 @@ function convertTable(
       }, theme);
 
       return new TableCell({
+        verticalAlign: layout?.vertical === 'middle' ? VerticalAlignTable.CENTER : layout?.vertical,
         width: {
           size: colWidth,
           type: WidthType.DXA,
@@ -650,7 +659,7 @@ function convertTable(
     });
 
     return new TableRow({
-      tableHeader: isHeader,
+      tableHeader: isHeader && layout?.repeatHeader !== false,
       children: cells,
     });
   });
@@ -661,6 +670,7 @@ function convertTable(
       type: WidthType.DXA,
     },
     columnWidths,
+    layout: weights ? TableLayoutType.FIXED : undefined,
     borders: {
       top: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
       bottom: { style: BorderStyle.SINGLE, size: 4, color: theme.borderColor },
@@ -710,9 +720,28 @@ function convertCodeBlock(
   });
 }
 
-/**
- * Converts a single mdast block node into docx elements
- */
+function wordBlockAlignment(node: Heading | MdastParagraph) {
+  const alignment = getXmdBlockAlignment(node);
+  return alignment === 'justify' ? AlignmentType.BOTH : alignment;
+}
+
+function wordParagraphSpacing(style: XmdParagraphStyle | undefined, fallback: { before?: number; after?: number; line?: number }) {
+  return {
+    before: style?.before === undefined ? fallback.before : Math.round(style.before * 20),
+    after: style?.after === undefined ? fallback.after : Math.round(style.after * 20),
+    line: style?.lineHeight === undefined ? fallback.line : Math.round(style.lineHeight * 240),
+  };
+}
+
+function wordParagraphRunStyle(style: XmdParagraphStyle | undefined): InlineRunStyle {
+  return {
+    ...(style?.font && { font: style.font }),
+    ...(style?.color && { color: style.color.slice(1).toUpperCase() }),
+    ...(style?.size && { size: Math.round(style.size * 2) }),
+  };
+}
+
+/** Converts a single mdast block node into docx elements. */
 function convertBlockNode(
   node: RootContent,
   indentContext = 0,
@@ -722,28 +751,35 @@ function convertBlockNode(
     case 'heading': {
       const headingNode = node as Heading;
       const cfg = getHeadingConfig(headingNode.depth, theme);
+      const style = headingNode.data?.xmdParagraph;
       const runs = convertPhrasingChildren(headingNode.children, {
         bold: true,
         color: cfg.color,
         size: cfg.size,
+        ...wordParagraphRunStyle(style),
       }, theme);
       return [
         new Paragraph({
           heading: cfg.level,
-          spacing: {
+          alignment: wordBlockAlignment(headingNode),
+          indent: style?.indent === undefined ? undefined : { firstLine: Math.round(style.indent * 20) },
+          spacing: wordParagraphSpacing(style, {
             before: cfg.spacingBefore,
             after: cfg.spacingAfter,
-          },
+          }),
           children: runs.length > 0 ? runs : [new TextRun('')],
         }),
       ];
     }
     case 'paragraph': {
       const pNode = node as MdastParagraph;
-      const runs = convertPhrasingChildren(pNode.children, {}, theme);
+      const style = pNode.data?.xmdParagraph;
+      const runs = convertPhrasingChildren(pNode.children, wordParagraphRunStyle(style), theme);
       return [
         new Paragraph({
-          spacing: { line: 276, after: 120 },
+          alignment: wordBlockAlignment(pNode),
+          indent: style?.indent === undefined ? undefined : { firstLine: Math.round(style.indent * 20) },
+          spacing: wordParagraphSpacing(style, { line: 276, after: 120 }),
           children: runs.length > 0 ? runs : [new TextRun('')],
         }),
       ];
@@ -851,6 +887,9 @@ export async function exportMarkdownToDocx(
     .parse(markdown) as Root;
   transformCallouts(tree, lang);
   transformExportHtmlBreaks(tree);
+  transformXmdAlignment(tree);
+  transformXmdParagraph(tree);
+  transformXmdTable(tree);
   transformXmdTypography(tree);
 
   const content: FileChild[] = [];

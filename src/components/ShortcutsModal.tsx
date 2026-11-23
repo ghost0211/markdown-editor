@@ -83,6 +83,7 @@ export const ShortcutsModal: React.FC<ShortcutsModalProps> = ({ isOpen, onClose 
       items: [
         { key: 'Ctrl + N', desc: t('shortcutsModal.newTab') },
         { key: 'Ctrl + O', desc: t('shortcutsModal.openFile') },
+        { key: 'Ctrl + P', desc: t('quickOpen.title') },
         { key: 'Ctrl + S', desc: t('shortcutsModal.saveFile') },
         { key: 'Ctrl + Shift + S', desc: t('shortcutsModal.saveAsFile') },
         { key: 'Ctrl + W', desc: t('shortcutsModal.closeTab') },

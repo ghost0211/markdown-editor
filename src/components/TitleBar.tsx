@@ -42,6 +42,9 @@ interface TitleBarProps {
   onOpenReferences?: () => void;
   onOpenBatchExport?: () => void;
   onOpenTemplates?: () => void;
+  onQuickOpen?: () => void;
+  onImportWord?: () => void;
+  onOpenReview?: () => void;
   onOpenQuality?: () => void;
   onOpenExportTheme?: () => void;
   onOpenWorkspace?: () => void;
@@ -55,6 +58,7 @@ export const TitleBar: React.FC<TitleBarProps> = ({
   onCopyRichText, isExporting = false, exportingType = null, onOpenShortcuts, onOpenSettings,
   onCompare, recentFiles = [], onOpenRecent, onClearRecent, onOpenResources, onOpenSearch,
   onOpenHistory, onOpenReferences, onOpenBatchExport, onOpenTemplates, onOpenQuality, onOpenExportTheme, onOpenWorkspace,
+  onQuickOpen, onImportWord, onOpenReview,
 }) => {
   const { t } = useI18n();
   const themeLabel = theme === 'light' ? t('titleBar.themeLight') : theme === 'dark' ? t('titleBar.themeDark') : t('titleBar.themeSystem');
@@ -89,7 +93,10 @@ export const TitleBar: React.FC<TitleBarProps> = ({
           <FolderTree className="w-3.5 h-3.5 text-emerald-500" /><span className="hidden 2xl:inline">{t('titleBar.workspace')}</span>
         </button>}
 
-        {(onOpenResources || onOpenTemplates || onOpenQuality || onOpenHistory || onOpenReferences) && <DocumentToolsMenu activeTab={activeTab} onOpenResources={onOpenResources} onOpenTemplates={onOpenTemplates} onOpenQuality={onOpenQuality} onOpenHistory={onOpenHistory} onOpenReferences={onOpenReferences} />}
+        {(onOpenResources || onOpenTemplates || onOpenQuality || onOpenHistory || onOpenReferences || onQuickOpen || onImportWord || onOpenReview) &&
+          <DocumentToolsMenu activeTab={activeTab} onOpenResources={onOpenResources} onOpenTemplates={onOpenTemplates}
+            onOpenQuality={onOpenQuality} onOpenHistory={onOpenHistory} onOpenReferences={onOpenReferences}
+            onQuickOpen={onQuickOpen} onImportWord={onImportWord} onOpenReview={onOpenReview} />}
 
         <div className="h-5 w-px bg-slate-200 dark:bg-slate-700 mx-1 shrink-0" />
         <button type="button" onClick={onSave} title={t('titleBar.saveDocTooltip')} aria-label={t('titleBar.saveDocTooltip')} className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-blue-600 text-white hover:bg-blue-700 shadow-sm shadow-blue-600/10 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400 focus-visible:ring-offset-1 focus-visible:ring-offset-white dark:focus-visible:ring-offset-slate-900">
