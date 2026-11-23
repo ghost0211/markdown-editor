@@ -250,6 +250,9 @@ export function buildVisualDecorations(
               hide(close.from, node.to);
             }
           }
+        } else if (node.name === 'HardBreak') {
+          // The parser includes the newline in this node. Keep the editor's line boundary.
+          hide(node.from, Math.min(node.to, state.doc.lineAt(node.from).to));
         } else if (INLINE_MARKERS.has(node.name)) {
           hide(node.from, node.to);
         }

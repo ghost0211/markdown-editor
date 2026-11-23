@@ -50,6 +50,28 @@ describe('source-preserving visual editing', () => {
     expect(active.doc.toString()).toBe(doc);
   });
 
+  it('hides Markdown hard-break markers outside the active line while retaining the source newline', () => {
+    const doc = [
+      '<xmd-style font="楷体">字体</xmd-style>\\',
+      '<xmd-style size="36">字号</xmd-style>  ',
+      '<xmd-style color="#dc2626">颜色</xmd-style>',
+    ].join('\n');
+    const state = makeState(doc);
+    const hiddenBreaks = (value: EditorState) => hidden(value).filter((marker) => marker === '\\' || marker === '  ');
+    expect(hiddenBreaks(state)).toEqual(['\\', '  ']);
+    const editing = state.update({ selection: { anchor: state.doc.line(1).to } }).state;
+    expect(hiddenBreaks(editing)).toEqual(['  ']);
+    expect(editing.doc.toString()).toBe(doc);
+  });
+
+  it('keeps literal backslashes at the ends of headings, paragraphs, code and escaped lines', () => {
+    const doc = [
+      '# Heading \\', '', 'Escaped \\\\', 'Continuation', '',
+      'Paragraph end \\', '', '~~~text', 'Code \\', 'Next line', '~~~', '', 'End \\',
+    ].join('\n');
+    expect(hidden(makeState(doc)).filter((marker) => marker.includes('\\'))).toEqual([]);
+  });
+
   it('styles every heading level and hides heading/inline markers only off the selected line', () => {
     const doc = '# Heading\n\n**bold** *italic* ~~gone~~ `code`\n\nend';
     const state = makeState(doc);
