@@ -5,6 +5,7 @@ import {
   forwardRef,
   useMemo,
   useRef,
+  useState,
 } from 'react';
 import CodeMirror, { ReactCodeMirrorRef } from '@uiw/react-codemirror';
 import { markdown, markdownLanguage } from '@codemirror/lang-markdown';
@@ -28,6 +29,7 @@ import { createVisualSelectionToolbar } from '@/lib/visualSelectionToolbar';
 import { createSlashCommandExtension } from '@/lib/slashCommands';
 import { applyFocusedVisualTableAction, createVisualTableExtension, hasFocusedVisualTableCell } from '@/lib/visualTable';
 import { createVisualCodeBlockExtension } from '@/lib/visualCodeBlocks';
+import { MermaidLightbox } from '@/components/MermaidLightbox';
 import { getActiveMarkdownFormats } from '@/lib/markdownFormatting';
 import type { EditorPresentation } from '@/types';
 import {
@@ -191,6 +193,10 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
   ) => {
     const cmRef = useRef<ReactCodeMirrorRef>(null);
     const { t, language } = useI18n();
+    const [fullscreenMermaidSvg, setFullscreenMermaidSvg] = useState<string | null>(null);
+    const openMermaidFullscreen = useCallback((svg: string) => {
+      setFullscreenMermaidSvg(svg);
+    }, []);
 
     // Keeps the latest scroll handler reachable from the (stable) extension
     // list without making the extension list depend on its identity.
@@ -383,6 +389,8 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           label: t('visualCode.label'),
           copy: t('common.copyCode'), copied: t('common.copied'), copyFailed: t('visualCode.copyFailed'),
           mermaidRendering: t('preview.mermaidRendering'), mermaidError: t('preview.mermaidSyntaxError'),
+          mermaidFullscreen: t('preview.mermaidFullscreen'),
+          onOpenMermaidFullscreen: openMermaidFullscreen,
         }));
         ext.push(createVisualTableExtension({
           label: t('visualTable.label'), toolbar: t('visualTable.toolbar'),
@@ -447,7 +455,7 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
       }
 
       return ext;
-    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, presentation, renderHtml, sourcePath, t, language]);
+    }, [fontSize, lineHeight, tabSize, wordWrap, spellcheck, typewriterMode, focusMode, presentation, renderHtml, sourcePath, t, language, openMermaidFullscreen]);
 
     /**
      * Editor state to start this document from.
@@ -744,6 +752,12 @@ export const Editor = forwardRef<EditorHandle, EditorProps>(
           onCreateEditor={(_view, state) => { rememberState(docId, state); reportFormats(state, true); }}
           basicSetup={basicSetup}
           className="h-full font-mono"
+        />
+        <MermaidLightbox
+          isOpen={Boolean(fullscreenMermaidSvg)}
+          svg={fullscreenMermaidSvg ?? ''}
+          isDark={isDark}
+          onClose={() => setFullscreenMermaidSvg(null)}
         />
       </div>
     );

@@ -19,6 +19,8 @@ export interface VisualCodeBlockLabels {
   copyFailed: string;
   mermaidRendering: string;
   mermaidError: string;
+  mermaidFullscreen?: string;
+  onOpenMermaidFullscreen?: (svg: string) => void;
 }
 
 const codeBlockLabels = Facet.define<VisualCodeBlockLabels, VisualCodeBlockLabels | null>({
@@ -178,6 +180,29 @@ class VisualCodeWidget extends WidgetType {
     const languageLabel = document.createElement('span');
     languageLabel.className = 'cm-visual-code-language';
     languageLabel.textContent = language || this.labels.label;
+    const actions = document.createElement('div');
+    actions.className = 'cm-visual-code-actions';
+
+    let renderedSvg = '';
+    let fullscreenButton: HTMLButtonElement | null = null;
+    if (language === 'mermaid' && this.labels.onOpenMermaidFullscreen) {
+      fullscreenButton = document.createElement('button');
+      fullscreenButton.type = 'button';
+      fullscreenButton.className = 'cm-visual-code-copy cm-visual-code-fullscreen';
+      fullscreenButton.textContent = this.labels.mermaidFullscreen || 'Fullscreen';
+      fullscreenButton.setAttribute('aria-label', this.labels.mermaidFullscreen || 'Fullscreen');
+      fullscreenButton.hidden = true;
+      fullscreenButton.addEventListener('mousedown', (event) => event.preventDefault());
+      fullscreenButton.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (renderedSvg) {
+          this.labels.onOpenMermaidFullscreen?.(renderedSvg);
+        }
+      });
+      actions.append(fullscreenButton);
+    }
+
     const copy = document.createElement('button');
     copy.type = 'button';
     copy.className = 'cm-visual-code-copy';
@@ -189,7 +214,8 @@ class VisualCodeWidget extends WidgetType {
       event.stopPropagation();
       void this.copy(document, copy, code);
     });
-    header.append(languageLabel, copy);
+    actions.append(copy);
+    header.append(languageLabel, actions);
 
     const pre = document.createElement('pre');
     pre.className = 'cm-visual-code-body';
@@ -217,7 +243,13 @@ class VisualCodeWidget extends WidgetType {
     let disposed = false;
     let themeObserver: MutationObserver | null = null;
     if (language === 'mermaid' && code.length <= 20_000) {
-      const render = () => void this.renderMermaid(view, document, pre, header, code, () => disposed);
+      const render = () =>
+        void this.renderMermaid(view, document, pre, header, code, () => disposed, (svg) => {
+          renderedSvg = svg;
+          if (fullscreenButton) {
+            fullscreenButton.hidden = !svg;
+          }
+        });
       themeObserver = new MutationObserver((mutations) => {
         if (mutations.some((mutation) => mutation.attributeName === 'class')) render();
       });
@@ -275,7 +307,8 @@ class VisualCodeWidget extends WidgetType {
     pre: HTMLElement,
     header: HTMLElement,
     code: string,
-    isDisposed: () => boolean
+    isDisposed: () => boolean,
+    onRendered?: (svg: string) => void
   ): Promise<void> {
     const diagram = this.codeText(code, 'mermaid');
     if (!diagram.trim()) return;
@@ -287,6 +320,7 @@ class VisualCodeWidget extends WidgetType {
     status.setAttribute('role', 'status');
     status.textContent = this.labels.mermaidRendering;
     pre.replaceChildren(status);
+    onRendered?.('');
     const id = mermaidId();
     try {
       const mermaid = (await import('mermaid')).default;
@@ -302,10 +336,12 @@ class VisualCodeWidget extends WidgetType {
       pre.innerHTML = svg;
       pre.dataset.mermaidToken = token;
       delete pre.dataset.mermaidFailed;
+      onRendered?.(svg);
       view.requestMeasure();
     } catch {
       if (isDisposed() || !pre.isConnected) return;
       pre.dataset.mermaidFailed = 'true';
+      onRendered?.('');
       const fallback = document.createElement('div');
       fallback.className = 'cm-visual-code-status';
       fallback.textContent = this.labels.mermaidError;
@@ -390,6 +426,12 @@ const visualCodeTheme = EditorView.baseTheme({
     whiteSpace: 'nowrap',
     textTransform: 'uppercase',
     letterSpacing: '0.04em',
+  },
+  '.cm-visual-code-actions': {
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: '6px',
+    flexShrink: '0',
   },
   '.cm-visual-code-copy': {
     padding: '2px 7px',

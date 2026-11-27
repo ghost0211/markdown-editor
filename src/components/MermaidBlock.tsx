@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useI18n } from '@/i18n';
-import { Check, Copy, AlertCircle, Eye, Code as CodeIcon, Download } from 'lucide-react';
+import { Check, Copy, AlertCircle, Eye, Code as CodeIcon, Download, Maximize2 } from 'lucide-react';
 import { exportMermaidPng, exportMermaidSvg } from '@/lib/export/mermaidExporter';
+import { MermaidLightbox } from '@/components/MermaidLightbox';
 
 export interface MermaidBlockProps {
   className?: string;
@@ -114,6 +115,7 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
   const [copied, setCopied] = useState(false);
   const [exportedFormat, setExportedFormat] = useState<'svg' | 'png' | null>(null);
   const [showSource, setShowSource] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   const [renderState, setRenderState] = useState<MermaidRenderState>({ status: 'idle' });
 
@@ -227,6 +229,13 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
     };
   }, [rawCode, isDark]);
 
+  // Close fullscreen viewer if diagram becomes invalid or unrendered
+  useEffect(() => {
+    if (isFullscreen && (renderState.status !== 'success' || !renderState.svg)) {
+      setIsFullscreen(false);
+    }
+  }, [isFullscreen, renderState.status, renderState.svg]);
+
   // Bind interactive elements created by mermaid if any
   useEffect(() => {
     if (renderState.status === 'success' && containerRef.current && bindFunctionsRef.current) {
@@ -263,6 +272,16 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
         <div className="flex items-center space-x-1">
           {renderState.status === 'success' && renderState.svg && (
             <>
+              <button
+                type="button"
+                onClick={() => setIsFullscreen(true)}
+                title={t('preview.mermaidFullscreenTooltip')}
+                aria-label={t('preview.mermaidFullscreenTooltip')}
+                className="flex items-center space-x-1 px-1.5 py-0.5 rounded hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 transition-colors text-[11px]"
+              >
+                <Maximize2 className="w-3 h-3" />
+                <span>{t('preview.mermaidFullscreen')}</span>
+              </button>
               <button
                 type="button"
                 onClick={handleExportSvg}
@@ -364,7 +383,9 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
       ) : renderState.status === 'success' && renderState.svg ? (
         <div
           ref={containerRef}
-          className="md-mermaid-body"
+          onDoubleClick={() => setIsFullscreen(true)}
+          title={t('preview.mermaidDoubleClickHint')}
+          className="md-mermaid-body cursor-zoom-in"
           dangerouslySetInnerHTML={{ __html: renderState.svg }}
         />
       ) : (
@@ -375,6 +396,13 @@ export const MermaidBlock: React.FC<MermaidBlockProps> = ({
           </pre>
         </div>
       )}
+
+      <MermaidLightbox
+        isOpen={isFullscreen}
+        svg={renderState.svg ?? ''}
+        isDark={isDark}
+        onClose={() => setIsFullscreen(false)}
+      />
     </div>
   );
 };
